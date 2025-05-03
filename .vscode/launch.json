@@ -1,23 +1,45 @@
-// .vscode/launch.json
 {
-    "version": "0.2.0",
-    "configurations": [
-      {
-        "name": "Next.js: Debug Server",
-        "type": "node",
-        "request": "launch",
-        "cwd": "${workspaceFolder}",
-        // Update runtimeExecutable to the full path of your pnpm executable
-        "runtimeExecutable": "C:\\Users\\marem\\AppData\\Local\\fnm_multishells\\28216_1746178069451\\pnpm.ps1",
-        "runtimeArgs": [
-          "run",
-          "dev"
-        ],
-        "skipFiles": [
-          "<node_internals>/**"
-        ],
-        "console": "integratedTerminal"
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Next.js: debug server-side",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "npm run dev"
+    },
+    {
+      "name": "Next.js: debug client-side",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://localhost:3000"
+    },
+    {
+      "name": "Next.js: debug client-side (Firefox)",
+      "type": "firefox",
+      "request": "launch",
+      "url": "http://localhost:3000",
+      "reAttach": true,
+      "pathMappings": [
+        {
+          "url": "webpack://_N_E",
+          "path": "${workspaceFolder}"
+        }
+      ]
+    },
+    {
+      "name": "Next.js: debug full stack",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/node_modules/next/dist/bin/next",
+      "runtimeArgs": ["--inspect"],
+      "skipFiles": ["<node_internals>/**"],
+      "serverReadyAction": {
+        "action": "debugWithEdge",
+        "killOnServerStop": true,
+        "pattern": "- Local:.+(https?://.+)",
+        "uriFormat": "%s",
+        "webRoot": "${workspaceFolder}"
       }
-    ]
-  }
-  
+    }
+  ]
+}
