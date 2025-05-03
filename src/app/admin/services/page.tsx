@@ -2,90 +2,92 @@
 
 // This is a Server Component Page. It runs on the server and is good for data fetching.
 // It lives inside the /admin route segment, so it will use the AdminLayout.
-// Its purpose is to render the ServiceList component after fetching data.
+// Its purpose is to fetch data and render the Client Component that handles interactivity.
 
-import ServiceList from '@/components/admin/services/ServiceList'; // Import the ServiceList Client Component
+// No 'use client' directive here - this is a Server Component
+
+import AdminServicesClient from '@/components/admin/services/AdminServicesClient'; // Import the Client Component wrapper
 import { Service } from '@prisma/client'; // Import the Service type from Prisma
-import { headers } from 'next/headers'; // Import headers helper
-import Link from 'next/link'; // Import Link for navigation
+import prisma from '@/lib/prisma'; // Import your Prisma client utility for direct database access
+import { auth } from '@clerk/nextjs/server'; // Import auth helper for server-side authentication (for admin check)
+import { redirect } from 'next/navigation'; // Import redirect
+import Link from 'next/link'; // Import Link (needed if rendering unauthorized message)
 
-// Define the base URL for your API fetch from Server Components.
-// Use NEXT_PUBLIC_SITE_URL which should be set in your .env file (e.g., http://localhost:3000)
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL;
 
-console.log('AdminServicesPage: Value of SITE_URL:', SITE_URL); // Debug log - Check the value of the env variable
+// Helper function to check if the authenticated user is an admin
+// (Copied from src/app/api/admin/services/route.ts - could be moved to a shared utility)
+// We need this check here because this page is protected and needs to ensure
+// the fetching admin is authorized.
+async function isAdminUser(userId: string): Promise<boolean> {
+  console.log('isAdminUser (Page): Checking role for userId:', userId); // Debug log
 
-// Ensure SITE_URL is set, especially in development
-if (!SITE_URL) {
-  console.error('AdminServicesPage: NEXT_PUBLIC_SITE_URL is not set in environment variables.');
-  // In a real application, you might want to handle this more gracefully
-  // throw new Error('NEXT_PUBLIC_SITE_URL is not set.');
-   // Return an error message or redirect if the essential env var is missing
-   return <div>Configuration Error: Site URL is not set.</div>;
+  const dbUser = await prisma.user.findUnique({
+    where: { clerkId: userId },
+    select: { role: true },
+  });
+
+  console.log('isAdminUser (Page): Database user found:', dbUser); // Debug log
+
+  return dbUser?.role === 'admin';
 }
 
 
 export default async function AdminServicesPage() {
-  // Construct the full API URL using the SITE_URL environment variable
-  const apiUrl = `${SITE_URL}/api/admin/services`;
+  // Perform authentication and authorization check directly in the Server Component
+  // This is necessary because we are fetching data directly here.
+  const { userId } = await auth(); // Check authentication status
 
-  console.log('AdminServicesPage: Fetching services from URL:', apiUrl); // Debug log - Shows the URL being fetched
-
-  // Get the headers from the incoming request (the one from the browser)
-  // Await the headers() call as recommended by Next.js
-  const requestHeaders = new Headers(await headers()); // Added await here
-
-  // Explicitly forward the Cookie header from the incoming request
-  // This ensures Clerk session cookies are sent to the internal API route
-  const fetchHeaders: HeadersInit = {};
-   const cookieHeader = requestHeaders.get('Cookie');
-   if (cookieHeader) {
-       fetchHeaders['Cookie'] = cookieHeader;
-   }
-
-
-  // Fetch the list of services from your backend API Route Handler.
-  // This fetch call happens on the server because this is a Server Component.
-  // This is similar to making an HttpClient request in your .NET backend.
-  const res = await fetch(apiUrl, { // Use the full apiUrl
-    headers: fetchHeaders, // Include the forwarded headers, including the Cookie header
-    cache: 'no-store', // Ensure the data is always fresh on each request
-  });
-
-  console.log('AdminServicesPage: Fetch response status:', res.status); // Debug log - Shows the fetch response status
-
-  if (!res.ok) {
-    // Handle errors if the API call fails
-    console.error('Failed to fetch services:', res.status, res.statusText);
-    // In a real app, you might want to display an error message to the admin user.
-    return <div>Error loading services. Status: {res.status}</div>; // Display status for debugging
+  if (!userId) {
+    // If not authenticated, redirect to sign-in.
+    redirect('/sign-in');
   }
 
-  // Parse the JSON response into an array of Service objects.
-  // Prisma's generated types are helpful here.
-  const services: Service[] = await res.json();
+  const isAdmin = await isAdminUser(userId); // Check if the user is an admin
 
-  console.log('AdminServicesPage: Services data fetched successfully.'); // Debug log
-
-  // Render the page. We pass the fetched data down to a Client Component
-  // because the list and its interactions (edit/delete buttons) will be interactive.
-  return (
-    <div className="container mx-auto p-6 bg-white rounded-lg shadow-md">
-      <h1 className="text-3xl font-bold mb-6 text-gray-800">Manage Services</h1>
-
-      {/* TODO: Add a button or link to add a new service */}
-      {/* We will add the ServiceForm component and logic later */}
-       <div className="mb-4">
-          <Link href="/admin/services/new" className="inline-block bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded">
-            Add New Service
+  if (!isAdmin) {
+    // If not an admin, show unauthorized message or redirect.
+     return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-100">
+        <div className="p-6 bg-white rounded-lg shadow-md text-center">
+          <h1 className="text-2xl font-bold text-red-600 mb-4">Unauthorized Access</h1>
+          <p className="text-gray-700 mb-4">You do not have permission to view this page.</p>
+          <Link href="/" className="text-blue-500 hover:underline">
+            Go to Homepage
           </Link>
-       </div>
+        </div>
+      </div>
+    );
+  }
+
+  console.log('AdminServicesPage: User is admin, fetching services directly with Prisma...'); // Debug log
+
+  let services: Service[] = [];
+  let error: string | null = null;
+
+  try {
+    // Fetch all services directly from the database using Prisma
+    services = await prisma.service.findMany();
+    console.log('AdminServicesPage: Services fetched directly with Prisma successfully.'); // Debug log
+
+  } catch (fetchError) {
+    console.error('AdminServicesPage: Error fetching services directly with Prisma:', fetchError); // Debug log
+    error = 'Error loading services.';
+  }
 
 
-      {/* Render the list of services using a Client Component */}
-      {/* Pass the fetched services data as a prop */}
-      <ServiceList services={services} /> {/* This component will be created next */}
+  // If there was an error fetching data, display an error message.
+  if (error) {
+     return (
+        <div className="container mx-auto p-6 bg-white rounded-lg shadow-md">
+            <h1 className="text-3xl font-bold mb-6 text-gray-800">Manage Services</h1>
+            <p className="text-red-600">{error}</p>
+        </div>
+     );
+  }
 
-    </div>
+
+  // Render the Client Component and pass the fetched services data as a prop
+  return (
+     <AdminServicesClient services={services} />
   );
 }

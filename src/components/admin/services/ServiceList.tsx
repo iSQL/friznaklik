@@ -1,3 +1,4 @@
+// src/components/admin/services/ServiceList.tsx
 'use client'; // This directive marks this as a Client Component
 
 import { Service } from '@prisma/client'; // Import the Service type from Prisma
@@ -7,12 +8,13 @@ import ServiceItem from './ServiceItem'; // Import the component for a single se
 // Define the props for the ServiceList component
 interface ServiceListProps {
   services: Service[]; // Expects an array of Service objects
+  // Added prop: Callback function to handle edit button clicks
+  onEditClick: (service: Service) => void;
 }
 
 // This Client Component receives the list of services and renders them.
-// It's a Client Component because it will contain interactive elements
-// like buttons for editing and deleting services (handled by ServiceItem).
-export default function ServiceList({ services }: ServiceListProps) {
+// It passes the onEditClick callback down to each ServiceItem.
+export default function ServiceList({ services, onEditClick }: ServiceListProps) {
   return (
     <div className="overflow-x-auto"> {/* Added overflow-x-auto for responsiveness on small screens */}
       {/* Check if there are any services to display */}
@@ -42,7 +44,8 @@ export default function ServiceList({ services }: ServiceListProps) {
             {/* Map over the services array and render a ServiceItem for each */}
             {services.map((service) => (
               // The key prop is important for React to efficiently update lists
-              <ServiceItem key={service.id} service={service} />
+              // Pass the onEditClick callback down to ServiceItem
+              <ServiceItem key={service.id} service={service} onEditClick={onEditClick} />
             ))}
           </tbody>
         </table>

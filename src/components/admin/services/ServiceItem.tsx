@@ -21,6 +21,12 @@ export default function ServiceItem({ service }: ServiceItemProps) {
 
   // Handle the Delete button click
   const handleDelete = async () => {
+    // Add a check to prevent multiple deletions if already deleting
+    if (isDeleting) {
+      console.log('Deletion already in progress.');
+      return; // Exit the function if already deleting
+    }
+
     // Add a confirmation dialog before deleting
     // Similar to a confirmation dialog box in a .NET UI.
     if (!confirm(`Are you sure you want to delete the service "${service.name}"?`)) {
