@@ -24,28 +24,39 @@ export default function EditServiceModal({ serviceToEdit, onClose, onEditSuccess
   // Use useEffect to open/close the modal based on the serviceToEdit prop
   useEffect(() => {
     if (serviceToEdit) {
+      console.log('EditServiceModal: serviceToEdit received, opening modal.'); // Debug log
       setIsOpen(true);
     } else {
+      console.log('EditServiceModal: serviceToEdit is null, closing modal.'); // Debug log
       setIsOpen(false);
     }
   }, [serviceToEdit]); // Re-run this effect whenever serviceToEdit changes
 
   // Handle closing the modal
   const handleClose = () => {
+    console.log('EditServiceModal: Closing modal.'); // Debug log
     setIsOpen(false);
     onClose(); // Call the onClose prop provided by the parent
   };
 
   // Handle successful edit submission from the ServiceForm
   const handleEditSuccess = () => {
+    console.log('EditServiceModal: Edit successful, calling onEditSuccess and closing.'); // Debug log
     onEditSuccess(); // Trigger data revalidation in the parent
     handleClose(); // Close the modal
   };
 
   // If the modal is not open, render nothing
   if (!isOpen) {
+    console.log('EditServiceModal: Modal is not open, rendering null.'); // Debug log
     return null;
   }
+
+   console.log('EditServiceModal: Modal is open, attempting to render modal structure.'); // Debug log
+   // Temporary test render: If you see this text, the modal component is rendering when open.
+   // Remove this line after debugging.
+   // return <div>Modal is attempting to render!</div>;
+
 
   // Render the modal structure
   return (
@@ -82,3 +93,12 @@ export default function EditServiceModal({ serviceToEdit, onClose, onEditSuccess
     </div>
   );
 }
+
+// Troubleshooting: If the modal does not appear when clicking Edit:
+// 1. Verify the file path: src/components/admin/services/EditServiceModal.tsx
+// 2. Verify the import in src/components/admin/services/AdminServicesClient.tsx:
+//    import EditServiceModal from './EditServiceModal';
+// 3. Check terminal logs for "EditServiceModal: serviceToEdit received, opening modal."
+//    If this log appears, the modal component is receiving the data and attempting to open.
+// 4. Temporarily uncomment the 'return <div>Modal is attempting to render!</div>;' line
+//    to see if anything from the modal component renders at all when open.

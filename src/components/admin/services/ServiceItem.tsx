@@ -3,21 +3,26 @@
 
 import { Service } from '@prisma/client'; // Import the Service type from Prisma
 import { useRouter } from 'next/navigation'; // Import Next.js router for revalidation
-import { useState } from 'react'; // Import useState for local state (e.g., loading state)
+import { useState, useEffect } from 'react'; // Import useState and useEffect for local state (e.g., loading state)
 
 // Define the props for the ServiceItem component
 interface ServiceItemProps {
   service: Service; // Expects a single Service object
-  // Optional: Add a callback to trigger edit action (e.g., open a modal with the form)
-  // We'll outline this for a modal approach later.
-  // onEditClick: (service: Service) => void;
+  // Added prop: Callback function to trigger edit action (e.g., open a modal with the form)
+  onEditClick: (service: Service) => void;
 }
 
 // This Client Component renders a single row in the services table
 // and includes buttons for editing and deleting the service.
-export default function ServiceItem({ service }: ServiceItemProps) {
+export default function ServiceItem({ service, onEditClick }: ServiceItemProps) {
   const router = useRouter(); // Get the Next.js router instance
   const [isDeleting, setIsDeleting] = useState(false); // State to track delete loading state
+
+  // Debug log to see the onEditClick prop received
+  useEffect(() => {
+      console.log(`ServiceItem for ${service.name}: Received onEditClick prop:`, onEditClick);
+  }, [onEditClick, service.name]);
+
 
   // Handle the Delete button click
   const handleDelete = async () => {
@@ -71,24 +76,9 @@ export default function ServiceItem({ service }: ServiceItemProps) {
 
   // Handle the Edit button click
   const handleEditClick = () => {
-    // TODO: Implement the logic to show the ServiceForm for editing.
-    // This could involve:
-    // 1. Using a modal component on the AdminServicesPage that opens when this button is clicked.
-    //    The modal would contain the ServiceForm, pre-filled with the 'service' data.
-    //    This would require passing a callback function (e.g., onEditClick) from the parent
-    //    ServiceList component down to ServiceItem.
-    // 2. Navigating to a dedicated edit page (e.g., /admin/services/edit/[id]).
-    //    This page would fetch the service data by ID and render the ServiceForm with initialData.
-    console.log(`Edit button clicked for service: ${service.name}`);
-    // For now, we'll just log. You'll implement the actual UI/navigation in the next step.
-
-    // Example if navigating to a dedicated edit page:
-    // router.push(`/admin/services/edit/${service.id}`);
-
-    // Example if using a modal (requires onEditClick prop):
-    // if (onEditClick) {
-    //   onEditClick(service);
-    // }
+    console.log(`ServiceItem for ${service.name}: Edit button clicked, calling onEditClick.`); // Debug log
+    // Call the onEditClick callback provided by the parent, passing the service data
+    onEditClick(service);
   };
 
 

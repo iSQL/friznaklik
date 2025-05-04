@@ -4,7 +4,7 @@
 import { Service } from '@prisma/client'; // Import the Service type
 import ServiceList from './ServiceList'; // Import the ServiceList component
 import EditServiceModal from './EditServiceModal'; // Import the modal component
-import { useState } from 'react'; // Import useState for modal state
+import { useState, useEffect } from 'react'; // Import useState and useEffect for modal state
 import { useRouter } from 'next/navigation'; // Import useRouter for revalidation
 import Link from 'next/link'; // Import Link for the Add New Service button
 
@@ -22,18 +22,27 @@ export default function AdminServicesClient({ services }: AdminServicesClientPro
 
   const router = useRouter(); // Get the router for revalidation
 
+  // Debug log to check the value of serviceToEdit whenever it changes
+  useEffect(() => {
+      console.log('AdminServicesClient: serviceToEdit state changed to:', serviceToEdit);
+  }, [serviceToEdit]);
+
+
   // Function to handle when the Edit button is clicked in a ServiceItem
   const handleEditClick = (service: Service) => {
-    setServiceToEdit(service); // Set the service to be edited, which opens the modal
+    console.log('AdminServicesClient: handleEditClick called with service:', service); // Debug log
+    setServiceToEdit(service); // Set the service to be edited, which should open the modal
   };
 
   // Function to handle closing the modal
   const handleCloseModal = () => {
+    console.log('AdminServicesClient: handleCloseModal called.'); // Debug log
     setServiceToEdit(null); // Set serviceToEdit to null, which closes the modal
   };
 
   // Function to handle successful edit submission from the modal
   const handleEditSuccess = () => {
+    console.log('AdminServicesClient: handleEditSuccess called.'); // Debug log
     console.log('Edit successful, revalidating data...');
     router.refresh(); // Revalidate the data on the page to show updated list
   };
@@ -57,6 +66,7 @@ export default function AdminServicesClient({ services }: AdminServicesClientPro
 
       {/* Render the Edit Service Modal */}
       {/* Pass the service to edit and the close/success callbacks */}
+      {/* This component is always rendered, its visibility is controlled internally */}
       <EditServiceModal
         serviceToEdit={serviceToEdit}
         onClose={handleCloseModal}

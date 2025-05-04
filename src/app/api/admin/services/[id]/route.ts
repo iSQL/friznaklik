@@ -5,7 +5,7 @@ import { NextResponse } from 'next/server'; // Import NextResponse for sending r
 import prisma from '@/lib/prisma'; // Import your Prisma client utility
 
 // Helper function to check if the authenticated user is an admin
-// (Copied from src/app/api/admin/services/route.ts - could be moved to a shared utility)
+// (Copied from other admin route handlers - consider moving to shared utility later)
 async function isAdminUser(userId: string): Promise<boolean> {
   const dbUser = await prisma.user.findUnique({
     where: { clerkId: userId },
@@ -137,25 +137,50 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
 
   // Get the service ID from the dynamic route parameters
   const serviceId = params.id;
+   console.log(`DELETE /api/admin/services/${serviceId}: User is admin, attempting to delete...`); // Debug log
+
 
   try {
-     console.log(`DELETE /api/admin/services/${serviceId}: User is admin, deleting service...`); // Debug log
+    // --- Check for related appointments before deleting the service ---
+    console.log(`DELETE /api/admin/services/${serviceId}: Checking for related appointments...`); // Debug log
+    const relatedAppointmentsCount = await prisma.appointment.count({
+        where: { serviceId: serviceId },
+    });
+
+    console.log(`DELETE /api/admin/services/${serviceId}: Found ${relatedAppointmentsCount} related appointments.`); // Debug log
+
+    if (relatedAppointmentsCount > 0) {
+        // If related appointments exist, prevent deletion and return a conflict response
+        console.log(`DELETE /api/admin/services/${serviceId}: Cannot delete service due to related appointments.`); // Debug log
+        return new NextResponse('Cannot delete service: Related appointments exist. Please delete appointments first.', { status: 409 }); // 409 Conflict
+    }
+    // --- End of check ---
+
+
+     console.log(`DELETE /api/admin/services/${serviceId}: No related appointments found, calling prisma.service.delete...`); // Debug log before Prisma call
     // Delete the service from the database using Prisma
     const deletedService = await prisma.service.delete({
       where: { id: serviceId },
     });
 
-    console.log(`DELETE /api/admin/services/${serviceId}: Service deleted successfully.`); // Debug log
+    console.log(`DELETE /api/admin/services/${serviceId}: Service deleted successfully.`); // Debug log after Prisma call
+
+    // TODO: Trigger notification (e.g., email) to the user about the approval
 
     // Return the deleted service as a JSON response with a 200 status code.
     // Returning the deleted item is common practice, but you could also return a success status.
     return NextResponse.json(deletedService, { status: 200 });
-  } catch (error) {
-    console.error(`Error deleting service with ID ${serviceId}:`, error);
-     // Handle case where service is not found during delete
-     if (error instanceof Error && error.message.includes('Record to delete not found')) {
+
+  } catch (error: any) { // Catch error as 'any' to access message property
+    console.error(`Error deleting service with ID ${serviceId}:`, error); // Debug log the error object
+    console.error(`Error message: ${error.message}`); // Log the error message
+
+     // Handle case where service is not found during delete (if it wasn't caught by related appointments check)
+     if (error.message && error.message.includes('Record to delete not found')) { // Check error message property
+       console.log(`DELETE /api/admin/services/${serviceId}: Service not found for deletion.`); // Debug log
        return new NextResponse('Service not found', { status: 404 });
      }
+     console.log(`DELETE /api/admin/services/${serviceId}: Unexpected internal server error during deletion.`); // Debug log
     return new NextResponse('Internal Server Error', { status: 500 });
   }
 }

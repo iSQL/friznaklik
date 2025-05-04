@@ -20,10 +20,15 @@ export default function Header() {
         <nav>
           <ul className="flex space-x-4">
             <li><Link href="/services" className="hover:underline">Services</Link></li>
+            <li><Link href="/book" className="hover:underline">Book</Link></li> {/* Added Book link */}
             {userId ? (
               // If user is signed in
               <>
                 <li><Link href="/dashboard" className="hover:underline">Dashboard</Link></li>
+                {/* TODO: Implement actual admin role check before showing Admin link */}
+                {/* For now, show Admin link if logged in */}
+                <li><Link href="/admin/services" className="hover:underline">Admin</Link></li> {/* Added Admin link */}
+                {/* Removed deprecated afterSignOutUrl prop */}
                 <li><UserButton /></li> {/* Clerk's user button */}
               </>
             ) : (

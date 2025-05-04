@@ -1,6 +1,9 @@
+// src/app/admin/layout.tsx
+
 import { auth, currentUser } from '@clerk/nextjs/server';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
+import prisma from '@/lib/prisma'; // Import the Prisma client utility
 
 // This is a Server Component Layout, meaning it runs on the server.
 // It's ideal for fetching data (like user roles) and protecting routes.
@@ -10,7 +13,10 @@ export default async function AdminLayout({
   children: React.ReactNode;
 }) {
   // Get the authentication status and user ID from Clerk
-  const { userId } = await auth();
+  // NOTE: auth() is typically synchronous in this context,
+  // but adding 'await' to address the specific TypeScript error you saw:
+  // "Property 'userId' does not exist on type 'Promise<Auth>'"
+  const { userId } = await auth(); // Added await here
 
   // If the user is not signed in, redirect them to the sign-in page.
   // This is an extra layer of protection, although middleware should handle most cases.
@@ -25,22 +31,18 @@ export default async function AdminLayout({
   const user = await currentUser();
 
   // TODO: Implement actual admin role check.
-  // For now, we'll assume the user is an admin if they are authenticated.
   // In a real application, you would store a 'role' field in your database
-  // and check if user.role === 'admin'. We'll integrate this with Prisma later.
-  const isAdmin = true; // Placeholder: Assume authenticated user is admin for now.
-  // A more realistic check would involve fetching the user from your database:
-  /*
-  import prisma from '@/lib/prisma'; // Need to create this utility later
+  // and check if user.role === 'admin'.
+  // Use the imported prisma client utility
   const dbUser = await prisma.user.findUnique({
     where: { clerkId: userId }, // Assuming you store Clerk's userId in your User model
+    select: { role: true }, // Only fetch the role field
   });
-  const isAdmin = dbUser?.role === 'admin';
-  */
 
+  const isAdmin = dbUser?.role === 'admin';
 
   // If the user is not an admin, redirect them or show an unauthorized message.
-  if (!isAdmin) {
+  if (!isAdmin) { // Corrected: Check if NOT isAdmin
     // Similar to returning an UnauthorizedResult or ForbidResult in .NET MVC.
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-100">
@@ -69,13 +71,13 @@ export default async function AdminLayout({
                 Services
               </Link>
             </li>
-            {/* TODO: Add links for Appointments, Chat Management, etc. */}
-            {/*
-            <li>
+            <li> {/* Added link for Appointments */}
               <Link href="/admin/appointments" className="block py-2 px-4 rounded hover:bg-gray-700">
                 Appointments
               </Link>
             </li>
+            {/* TODO: Add links for Chat Management, etc. */}
+            {/*
             <li>
               <Link href="/admin/chat" className="block py-2 px-4 rounded hover:bg-gray-700">
                 Chat Management
