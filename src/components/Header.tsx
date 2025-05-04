@@ -21,6 +21,8 @@ export default function Header() {
           <ul className="flex space-x-4">
             <li><Link href="/services" className="hover:underline">Services</Link></li>
             <li><Link href="/book" className="hover:underline">Book</Link></li> {/* Added Book link */}
+            <li><Link href="/chat" className="hover:underline">Chat</Link></li> {/* Added chat link */}
+
             {userId ? (
               // If user is signed in
               <>
