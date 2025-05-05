@@ -14,7 +14,7 @@ A web application built with Next.js for managing haircut appointments, includin
 
 * **Admin Appointment Management:** Admin panel for viewing pending appointments and approving/rejecting them.
 
-* **AI Chat Assistant (Upcoming):** Conversational interface for user inquiries and potentially booking.
+* **AI Chat Assistant:** Conversational interface for user inquiries and potentially booking.
 
 * **Email Notifications (Upcoming):** Inform users about appointment status changes.
 
