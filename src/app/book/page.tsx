@@ -10,8 +10,10 @@ import Link from 'next/link'; // Import Link for navigation (e.g., back to home)
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 
+// *** Import format function from date-fns ***
+import { format } from 'date-fns';
+
 // Define the base URL for your API.
-// Use NEXT_PUBLIC_SITE_URL which should be set in your .env file (e.g., http://localhost:3000)
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
 
 // This Client Component page handles the appointment booking flow.
@@ -67,11 +69,6 @@ export default function BookingPage() {
 
     fetchServices();
 
-    // Clean up the booking state when the component unmounts (optional, but good practice)
-    // return () => {
-    //   resetBooking();
-    // };
-
   }, []); // Empty dependency array means this effect runs only once on mount
 
 
@@ -85,14 +82,19 @@ export default function BookingPage() {
         setAvailableSlots([]); // Clear previous slots
 
         try {
-          // Fetch available slots from the backend API route
-          const response = await fetch(`${SITE_URL}/api/appointments/available?serviceId=${selectedServiceId}&date=${selectedDate.toISOString().split('T')[0]}`); // Pass serviceId and date as query params
-          if (!response.ok) {
-             const errorText = await response.text();
-             throw new Error(`Failed to fetch available slots: ${response.status} ${errorText}`);
-          }
-          const data: string[] = await response.json(); // Assuming the API returns an array of time strings (HH:mm)
-          setAvailableSlots(data);
+           // *** Use date-fns format for the date string ***
+           const formattedDate = format(selectedDate, 'yyyy-MM-dd');
+           console.log(`Fetching slots for service ${selectedServiceId} on date ${formattedDate}`); // Debug log
+
+           // Fetch available slots from the backend API route
+           const response = await fetch(`${SITE_URL}/api/appointments/available?serviceId=${selectedServiceId}&date=${formattedDate}`); // Pass serviceId and formatted date
+
+           if (!response.ok) {
+              const errorText = await response.text();
+              throw new Error(`Failed to fetch available slots: ${response.status} ${errorText}`);
+           }
+           const data: string[] = await response.json(); // Assuming the API returns an array of time strings (HH:mm)
+           setAvailableSlots(data);
         } catch (err: any) {
           console.error('Error fetching available slots:', err);
           setSlotsError(err.message || 'Failed to load available slots.');
@@ -137,8 +139,10 @@ export default function BookingPage() {
       setBookingError(null);
 
       try {
+          // *** Use date-fns format for the date string ***
+          const formattedDate = format(selectedDate, 'yyyy-MM-dd');
+
           // Call the backend API to submit the booking request
-          // This will hit your src/app/api/appointments/route.ts POST handler
           const response = await fetch(`${SITE_URL}/api/appointments`, {
               method: 'POST',
               headers: {
@@ -146,14 +150,22 @@ export default function BookingPage() {
               },
               body: JSON.stringify({
                   serviceId: selectedServiceId,
-                  date: selectedDate.toISOString().split('T')[0], // Send date as YYYY-MM-DD string
+                  date: formattedDate, // Send formatted date string
                   slot: selectedSlot, // Send selected time slot string (HH:mm)
               }),
           });
 
           if (!response.ok) {
-              const errorData = await response.json(); // Assuming API returns JSON error
-              throw new Error(errorData.message || `Booking failed with status ${response.status}`);
+              let errorMsg = `Booking failed with status ${response.status}`;
+              try {
+                 const errorData = await response.json(); // Try parsing JSON error
+                 errorMsg = errorData.message || errorMsg;
+              } catch {
+                 // If response is not JSON, use text
+                 const errorText = await response.text();
+                 errorMsg = errorText || errorMsg;
+              }
+              throw new Error(errorMsg);
           }
 
           // If booking was successful
@@ -172,13 +184,13 @@ export default function BookingPage() {
 
   return (
     <div className="container mx-auto p-6">
-      <h1 className="text-3xl font-bold mb-6 text-gray-800">Book an Appointment</h1>
+      <h1 className="text-3xl font-bold mb-6 text-gray-800 dark:text-white">Book an Appointment</h1>
 
       {/* Step 1: Service Selection */}
       <div className="mb-8">
-        <h2 className="text-2xl font-semibold mb-4">1. Select a Service</h2>
+        <h2 className="text-2xl font-semibold mb-4 dark:text-gray-200">1. Select a Service</h2>
         {isLoadingServices ? (
-          <p>Loading services...</p>
+          <p className="dark:text-gray-400">Loading services...</p>
         ) : servicesError ? (
           <p className="text-red-600">Error loading services: {servicesError}</p>
         ) : (
@@ -187,14 +199,16 @@ export default function BookingPage() {
               <div
                 key={service.id}
                 // Apply Tailwind classes for styling and selection state
-                className={`p-4 border rounded-md cursor-pointer hover:border-blue-500 transition-colors ${
-                  selectedServiceId === service.id ? 'border-blue-500 ring-2 ring-blue-500' : 'border-gray-300'
+                className={`p-4 border rounded-lg cursor-pointer hover:shadow-md transition-all duration-200 dark:border-gray-700 ${
+                  selectedServiceId === service.id
+                    ? 'border-blue-500 ring-2 ring-blue-500/50 bg-blue-50 dark:bg-blue-900/30'
+                    : 'border-gray-300 bg-white dark:bg-gray-800 hover:border-blue-400 dark:hover:border-blue-600'
                 }`}
                 onClick={() => handleServiceSelect(service.id)} // Call handler on click
               >
-                <h3 className="text-lg font-bold">{service.name}</h3>
-                <p className="text-gray-600 text-sm mb-2">{service.description}</p>
-                <p className="text-gray-800 font-semibold">${service.price.toFixed(2)} - {service.duration} min</p>
+                <h3 className="text-lg font-bold dark:text-white">{service.name}</h3>
+                <p className="text-gray-600 dark:text-gray-400 text-sm mb-2">{service.description}</p>
+                <p className="text-gray-800 dark:text-gray-200 font-semibold">${service.price.toFixed(2)} - {service.duration} min</p>
               </div>
             ))}
           </div>
@@ -204,45 +218,58 @@ export default function BookingPage() {
       {/* Step 2: Date Selection */}
       {selectedServiceId && ( // Only show date selection if a service is selected
         <div className="mb-8">
-          <h2 className="text-2xl font-semibold mb-4">2. Select a Date</h2>
-          <div className="border p-4 rounded-md inline-block"> {/* Use inline-block to wrap the date picker */}
+          <h2 className="text-2xl font-semibold mb-4 dark:text-gray-200">2. Select a Date</h2>
+          {/* Apply some basic styling to the datepicker container */}
+          <div className="p-4 border rounded-lg inline-block bg-white dark:bg-gray-800 dark:border-gray-700 shadow-sm">
              {/* React DatePicker Component */}
              <DatePicker
-                selected={selectedDate} // Currently selected date from store
-                onChange={handleDateSelect} // Call handler when date is selected
-                dateFormat="yyyy/MM/dd" // Date format
-                minDate={new Date()} // Prevent selecting past dates
-                // You can add more props here for customization, e.g.,
-                // filterDate={(date) => isWeekday(date)} // Example: Only allow weekdays
-                // highlightDates={highlightedDates} // Example: Highlight specific dates
+               selected={selectedDate} // Currently selected date from store
+               onChange={handleDateSelect} // Call handler when date is selected
+               dateFormat="yyyy/MM/dd" // Date format
+               minDate={new Date()} // Prevent selecting past dates
+               inline // Display the calendar inline
+               className="react-datepicker-override" // Add a class for potential CSS overrides
              />
           </div>
+          {/* Basic CSS override example (add to your global CSS or component style) */}
+          <style jsx global>{`
+            .react-datepicker {
+              font-family: inherit; /* Use website font */
+              border-color: #e5e7eb; /* Match border color */
+            }
+            .react-datepicker__header {
+              background-color: #f3f4f6; /* Light gray header */
+            }
+            /* Add more overrides as needed */
+          `}</style>
         </div>
       )}
 
       {/* Step 3: Time Slot Selection */}
       {selectedDate && ( // Only show time slot selection if a date is selected
         <div className="mb-8">
-          <h2 className="text-2xl font-semibold mb-4">3. Select a Time Slot</h2>
+          <h2 className="text-2xl font-semibold mb-4 dark:text-gray-200">3. Select a Time Slot</h2>
           {isLoadingSlots ? (
-             <p>Loading available slots...</p>
+             <p className="dark:text-gray-400">Loading available slots...</p>
           ) : slotsError ? (
              <p className="text-red-600">Error loading slots: {slotsError}</p>
           ) : availableSlots.length === 0 ? (
-             <p className="text-gray-600">No available slots for the selected date.</p>
+             <p className="text-gray-600 dark:text-gray-400">No available slots for the selected date.</p>
           ) : (
-             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                {availableSlots.map(slot => (
-                   <button
-                      key={slot}
-                       className={`p-3 border rounded-md text-center transition-colors ${
-                          selectedSlot === slot ? 'bg-blue-500 text-white' : 'bg-gray-100 hover:bg-gray-200'
-                       }`}
-                      onClick={() => handleSlotSelect(slot)} // Call handler on click
-                   >
-                      {slot}
-                   </button>
-                ))}
+             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3">
+               {availableSlots.map(slot => (
+                  <button
+                    key={slot}
+                     className={`p-3 border rounded-md text-center transition-colors duration-150 font-medium ${
+                       selectedSlot === slot
+                         ? 'bg-blue-600 text-white border-blue-700 ring-2 ring-blue-500/50'
+                         : 'bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600 dark:text-white'
+                     }`}
+                    onClick={() => handleSlotSelect(slot)} // Call handler on click
+                  >
+                    {slot}
+                  </button>
+               ))}
              </div>
           )}
         </div>
@@ -250,29 +277,30 @@ export default function BookingPage() {
 
       {/* Booking Button */}
       {selectedSlot && ( // Only show button if a slot is selected
-         <div>
-            {/* Call handleBookingSubmit when the button is clicked */}
-            <button
-               onClick={handleBookingSubmit} // Uncommented the onClick handler
-               className={`bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-6 rounded-md ${
-                  bookingStatus === 'submitting' ? 'opacity-50 cursor-not-allowed' : ''
-               }`}
-               disabled={bookingStatus === 'submitting'}
-            >
-               {bookingStatus === 'submitting' ? 'Requesting...' : 'Request Appointment'}
-            </button>
-            {bookingStatus === 'success' && <p className="text-green-600 mt-2">Appointment requested successfully!</p>}
-            {bookingStatus === 'error' && <p className="text-red-600 mt-2">Booking failed: {bookingError}</p>}
+         <div className="mt-6">
+           {/* Call handleBookingSubmit when the button is clicked */}
+           <button
+             onClick={handleBookingSubmit}
+             className={`bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-md transition-colors duration-200 shadow-md ${
+               bookingStatus === 'submitting' ? 'opacity-60 cursor-not-allowed' : ''
+             }`}
+             disabled={bookingStatus === 'submitting'}
+           >
+             {bookingStatus === 'submitting' ? 'Requesting...' : 'Request Appointment'}
+           </button>
+           {bookingStatus === 'success' && <p className="text-green-600 dark:text-green-400 mt-3 font-medium">Appointment requested successfully! You will receive confirmation once approved.</p>}
+           {bookingStatus === 'error' && <p className="text-red-600 dark:text-red-400 mt-3 font-medium">Booking failed: {bookingError}</p>}
          </div>
       )}
 
 
       {/* Optional: Back to Home Link */}
-      <div className="mt-8">
-        <Link href="/" className="text-indigo-600 hover:text-indigo-900">
+      <div className="mt-10">
+        <Link href="/" className="text-blue-600 dark:text-blue-400 hover:underline">
           &larr; Back to Home
         </Link>
       </div>
     </div>
   );
 }
+

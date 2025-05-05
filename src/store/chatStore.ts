@@ -17,17 +17,19 @@ interface ChatState {
   isSending: boolean;      // Indicates if a message is being sent to the AI
 
   // Actions to update the state
-  addMessage: (message: Omit<ChatMessage, 'id' | 'timestamp'>) => void; // Add a new message (ID and timestamp generated)
+  // setMessages action to load initial history
+  setMessages: (messages: ChatMessage[]) => void;
+  // addMessage now takes the full ChatMessage object
+  addMessage: (message: ChatMessage) => void;
   setInputMessage: (message: string) => void; // Update the input field text
   setIsSending: (sending: boolean) => void;   // Set the sending status
   clearChat: () => void;                     // Clear all messages (optional)
 
   // New async action to send message to backend API
-  sendMessage: (messageText: string) => Promise<void>; // <-- Ensure this is in the interface
+  sendMessage: (messageText: string) => Promise<void>;
 }
 
 // Define the base URL for your API.
-// Use NEXT_PUBLIC_SITE_URL which should be set in your .env file (e.g., http://localhost:3000)
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
 
 
@@ -39,43 +41,53 @@ export const useChatStore = create<ChatState>((set, get) => ({
   isSending: false,
 
   // Action implementations
+  // Action to set the entire messages array (for loading history)
+  setMessages: (messages) => set({ messages }),
+  // Action to add a single message (now takes the full object)
   addMessage: (message) => set((state) => ({
-    messages: [
-      ...state.messages,
-      {
-        ...message,
-        id: Date.now().toString() + Math.random().toString(36).substring(2, 9), // Simple unique ID
-        timestamp: new Date(),
-      },
-    ],
+    messages: [...state.messages, message],
   })),
   setInputMessage: (message) => set({ inputMessage: message }),
   setIsSending: (sending) => set({ isSending: sending }),
   clearChat: () => set({ messages: [] }),
 
   // Async action to send message to backend API
-  sendMessage: async (messageText: string) => { // <-- Ensure this implementation exists
+  sendMessage: async (messageText: string) => {
     // Prevent sending if already sending or message is empty
     if (get().isSending || !messageText.trim()) {
       return;
     }
 
+    // Create the user message object with ID and timestamp before adding
+    const userMessageObject: ChatMessage = {
+        text: messageText,
+        sender: 'user',
+        timestamp: new Date(),
+        id: Date.now().toString() + Math.random().toString(36).substring(2, 9), // Simple unique ID
+    };
+
     // Add user message to the chat
-    get().addMessage({ text: messageText, sender: 'user' });
+    get().addMessage(userMessageObject);
     // Clear the input field
     get().setInputMessage('');
     // Set sending status to true
     get().setIsSending(true);
 
+    // Prepare the request body - Send the entire userMessageObject
+    const requestBody = JSON.stringify(userMessageObject); // Corrected: Send the full object
+
+    console.log('chatStore: Sending fetch request with body:', requestBody); // Debug log - Log the request body
+
     try {
-      // Call the backend API to send the message to the AI
-      // This will hit your src/app/api/chat/route.ts POST handler (to be created)
+      // Call the backend API to send the message to the AI and save it
+      // This will hit your src/app/api/chat/route.ts POST handler
       const response = await fetch(`${SITE_URL}/api/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ message: messageText }),
+        // Send the full user message object, including ID and timestamp
+        body: requestBody, // Use the prepared requestBody
       });
 
       if (!response.ok) {
@@ -83,16 +95,25 @@ export const useChatStore = create<ChatState>((set, get) => ({
          throw new Error(`API request failed with status ${response.status}: ${errorText}`);
       }
 
-      const data = await response.json(); // Assuming the API returns JSON with the AI's response
+      // Assuming the API returns the AI's response including its ID and timestamp
+      const aiResponseMessage: ChatMessage = await response.json();
 
       // Add AI response to the chat
-      get().addMessage({ text: data.reply || 'Sorry, I could not get a response.', sender: 'ai' }); // Assuming AI response is in data.reply
+      get().addMessage({
+          ...aiResponseMessage,
+          timestamp: new Date(aiResponseMessage.timestamp), // Ensure timestamp is a Date object
+      });
 
 
     } catch (err: any) {
       console.error('Error sending message:', err);
       // Add an error message to the chat if the API call fails
-      get().addMessage({ text: `Error sending message: ${err.message || 'Unknown error'}`, sender: 'ai' });
+      get().addMessage({
+          text: `Error sending message: ${err.message || 'Unknown error'}`,
+          sender: 'ai',
+          timestamp: new Date(), // Add timestamp for the error message
+          id: Date.now().toString() + Math.random().toString(36).substring(2, 9), // Simple unique ID
+      });
     } finally {
       // Set sending status back to false
       get().setIsSending(false);

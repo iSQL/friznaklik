@@ -18,6 +18,9 @@ export default function MessageInput() {
   const handleSend = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); // Prevent default form submission
 
+    console.log('MessageInput: handleSend called.'); // Debug log
+    console.log('MessageInput: inputMessage value:', inputMessage); // Debug log - Check the value before sending
+
     // Call the sendMessage action from the store
     sendMessage(inputMessage);
   };

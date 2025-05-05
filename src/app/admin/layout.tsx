@@ -13,27 +13,21 @@ export default async function AdminLayout({
   children: React.ReactNode;
 }) {
   // Get the authentication status and user ID from Clerk
-  // NOTE: auth() is typically synchronous in this context,
-  // but adding 'await' to address the specific TypeScript error you saw:
-  // "Property 'userId' does not exist on type 'Promise<Auth>'"
-  const { userId } = await auth(); // Added await here
+  // Added await based on previous correction
+  const { userId } = await auth();
 
   // If the user is not signed in, redirect them to the sign-in page.
-  // This is an extra layer of protection, although middleware should handle most cases.
   if (!userId) {
-    // In .NET MVC/Razor Pages, this is similar to an [Authorize] attribute
-    // redirecting to a login page if the user is not authenticated.
     redirect('/sign-in');
   }
 
   // Fetch the full user object to check their role.
-  // currentUser() is a helper from Clerk for Server Components.
-  const user = await currentUser();
+  // Note: currentUser() is deprecated in latest Next.js/Clerk versions,
+  // but keeping it if your version requires it.
+  // Consider fetching role directly via prisma if currentUser() causes issues.
+  // const user = await currentUser(); // Deprecated, use prisma fetch below
 
-  // TODO: Implement actual admin role check.
-  // In a real application, you would store a 'role' field in your database
-  // and check if user.role === 'admin'.
-  // Use the imported prisma client utility
+  // Use the imported prisma client utility to fetch the user's role
   const dbUser = await prisma.user.findUnique({
     where: { clerkId: userId }, // Assuming you store Clerk's userId in your User model
     select: { role: true }, // Only fetch the role field
@@ -41,14 +35,13 @@ export default async function AdminLayout({
 
   const isAdmin = dbUser?.role === 'admin';
 
-  // If the user is not an admin, redirect them or show an unauthorized message.
-  if (!isAdmin) { // Corrected: Check if NOT isAdmin
-    // Similar to returning an UnauthorizedResult or ForbidResult in .NET MVC.
+  // If the user is not an admin, show an unauthorized message.
+  if (!isAdmin) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-100">
-        <div className="p-6 bg-white rounded-lg shadow-md text-center">
+      <div className="flex items-center justify-center min-h-screen bg-gray-100 dark:bg-gray-900">
+        <div className="p-6 bg-white dark:bg-gray-800 rounded-lg shadow-md text-center">
           <h1 className="text-2xl font-bold text-red-600 mb-4">Unauthorized Access</h1>
-          <p className="text-gray-700 mb-4">You do not have permission to view this page.</p>
+          <p className="text-gray-700 dark:text-gray-300 mb-4">You do not have permission to view this page.</p>
           <Link href="/" className="text-blue-500 hover:underline">
             Go to Homepage
           </Link>
@@ -59,37 +52,42 @@ export default async function AdminLayout({
 
   // If the user is authenticated and is an admin, render the admin layout.
   return (
-    <div className="flex min-h-screen bg-gray-100">
+    <div className="flex min-h-screen bg-gray-100 dark:bg-gray-900">
       {/* Admin Sidebar Navigation */}
-      <aside className="w-64 bg-gray-800 text-white p-6 space-y-6">
-        <h2 className="text-2xl font-bold mb-6">Admin Panel</h2>
+      <aside className="w-64 bg-gray-800 text-white p-6 space-y-6 shadow-lg">
+        <h2 className="text-2xl font-bold mb-6 text-center border-b border-gray-700 pb-3">Admin Panel</h2>
         <nav>
           <ul className="space-y-2">
+             <li>
+                 {/* Link to the Admin Dashboard home page */}
+                 <Link href="/admin" className="block py-2 px-4 rounded hover:bg-gray-700 transition-colors duration-150">
+                   Dashboard
+                 </Link>
+             </li>
             <li>
               {/* Link to the Services management page */}
-              <Link href="/admin/services" className="block py-2 px-4 rounded hover:bg-gray-700">
+              <Link href="/admin/services" className="block py-2 px-4 rounded hover:bg-gray-700 transition-colors duration-150">
                 Services
               </Link>
             </li>
-            <li> {/* Added link for Appointments */}
-              <Link href="/admin/appointments" className="block py-2 px-4 rounded hover:bg-gray-700">
+            <li> {/* Link for Appointments */}
+              <Link href="/admin/appointments" className="block py-2 px-4 rounded hover:bg-gray-700 transition-colors duration-150">
                 Appointments
               </Link>
             </li>
-            {/* TODO: Add links for Chat Management, etc. */}
-            {/*
+            {/* *** ADDED LINK FOR CHAT MANAGEMENT *** */}
             <li>
-              <Link href="/admin/chat" className="block py-2 px-4 rounded hover:bg-gray-700">
+              <Link href="/admin/chat" className="block py-2 px-4 rounded hover:bg-gray-700 transition-colors duration-150">
                 Chat Management
               </Link>
             </li>
-            */}
+             {/* Add more admin links here as needed */}
           </ul>
         </nav>
       </aside>
 
       {/* Main content area - renders the nested admin pages (children) */}
-      <main className="flex-1 p-6">
+      <main className="flex-1 p-6 lg:p-8">
         {children}
       </main>
     </div>

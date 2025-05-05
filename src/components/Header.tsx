@@ -29,7 +29,7 @@ export default function Header() {
                 <li><Link href="/dashboard" className="hover:underline">Dashboard</Link></li>
                 {/* TODO: Implement actual admin role check before showing Admin link */}
                 {/* For now, show Admin link if logged in */}
-                <li><Link href="/admin/services" className="hover:underline">Admin</Link></li> {/* Added Admin link */}
+                <li><Link href="/admin" className="hover:underline">Admin</Link></li> {/* Added Admin link */}
                 {/* Removed deprecated afterSignOutUrl prop */}
                 <li><UserButton /></li> {/* Clerk's user button */}
               </>
