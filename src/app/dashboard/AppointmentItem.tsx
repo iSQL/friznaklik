@@ -1,109 +1,161 @@
 // src/app/dashboard/AppointmentItem.tsx
-"use client"; // Mark this as a Client Component
+"use client";
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation'; // For refreshing data
+import { useState, useRef } from 'react'; // Added useRef for modal
+import { useRouter } from 'next/navigation';
 import { Appointment, Service } from '@prisma/client';
 import { format } from 'date-fns';
 
-// Define the props for the component
 interface AppointmentItemProps {
-  appointment: Appointment & { service: Service }; // Expect appointment with service details
+  appointment: Appointment & { // Or your ProcessedAppointment type
+    service: Service;
+    startTime: Date; // Expect Date object
+    endTime: Date;   // Expect Date object
+  };
 }
 
 export default function AppointmentItem({ appointment }: AppointmentItemProps) {
-  const router = useRouter(); // Hook to refresh the page data
-  const [isCancelling, setIsCancelling] = useState(false); // State for loading indicator
-  const [error, setError] = useState<string | null>(null); // State for error messages
+  const router = useRouter();
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const modalRef = useRef<HTMLDialogElement>(null); // Ref for the modal
 
-  // Function to handle the cancellation request
+  const handleOpenCancelModal = () => {
+    if (modalRef.current) {
+      modalRef.current.showModal();
+    }
+  };
+
   const handleCancel = async () => {
-    // Prevent multiple clicks while processing
     if (isCancelling) return;
 
-    // Confirm with the user before cancelling
-    if (!window.confirm(`Are you sure you want to cancel the appointment for ${appointment.service.name} on ${format(new Date(appointment.startTime), 'MMMM d')}?`)) {
-      return;
-    }
-
     setIsCancelling(true);
-    setError(null); // Clear previous errors
+    setError(null);
 
     try {
-      // Make the API call to the cancellation endpoint
       const response = await fetch(`/api/appointments/${appointment.id}/cancel`, {
         method: 'PUT',
         headers: {
-          'Content-Type': 'application/json', // Optional, but good practice
+          'Content-Type': 'application/json',
         },
-        // No body needed for this specific PUT request based on the API route
       });
 
       if (!response.ok) {
-        // Handle API errors (e.g., appointment not found, not cancellable)
         const errorData = await response.json();
         throw new Error(errorData.message || `Failed to cancel appointment (Status: ${response.status})`);
       }
 
-      // Cancellation successful
       console.log(`Appointment ${appointment.id} cancelled.`);
-
-      // Refresh the data on the page to show the updated status
-      // This will re-run the server component's data fetching
+      if (modalRef.current) {
+        modalRef.current.close(); // Close modal on success
+      }
       router.refresh();
-
-      // Optionally, you could update local state immediately for a faster UI update,
-      // but router.refresh() ensures consistency with the server.
-
     } catch (err: any) {
       console.error('Cancellation error:', err);
       setError(err.message || 'An unexpected error occurred.');
+      // Keep modal open if error to show message, or close and show elsewhere
     } finally {
-      // Reset loading state regardless of success or failure
       setIsCancelling(false);
     }
   };
 
-  // Determine if the cancel button should be shown
   const canCancel = ['pending', 'approved'].includes(appointment.status);
 
+  const getStatusBadgeColor = (status: string) => {
+    switch (status) {
+      case 'approved':
+        return 'badge-success';
+      case 'pending':
+        return 'badge-warning';
+      case 'cancelled':
+      case 'rejected':
+        return 'badge-error';
+      default:
+        return 'badge-ghost'; // Neutral/default badge
+    }
+  };
+
   return (
-    <div
-      className={`bg-white dark:bg-gray-800 p-4 rounded-lg shadow border border-gray-200 dark:border-gray-700 flex flex-col sm:flex-row justify-between items-start sm:items-center ${isCancelling ? 'opacity-70' : ''}`}
-    >
-      {/* Appointment Details */}
-      <div>
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">
-          {appointment.service.name}
-        </h2>
-        <p className="text-sm text-gray-600 dark:text-gray-400">
-          {format(new Date(appointment.startTime), 'eeee, MMMM d, yyyy')} at {format(new Date(appointment.startTime), 'HH:mm')}
-        </p>
-        <p className="text-sm text-gray-500 dark:text-gray-500 mt-1">
-          Status: <span className={`font-medium ${
-            appointment.status === 'approved' ? 'text-green-600 dark:text-green-400' :
-            appointment.status === 'pending' ? 'text-yellow-600 dark:text-yellow-400' :
-            appointment.status === 'cancelled' ? 'text-red-600 dark:text-red-400' :
-            appointment.status === 'rejected' ? 'text-red-600 dark:text-red-400' :
-            'text-gray-500 dark:text-gray-500'
-          }`}>
-            {appointment.status.charAt(0).toUpperCase() + appointment.status.slice(1)}
-          </span>
-        </p>
-        {/* Display Error Message */}
-        {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
+    <>
+      {/* DaisyUI Card */}
+      <div
+        className={`card card-bordered bg-base-100 shadow-lg mb-4 ${isCancelling ? 'opacity-70' : ''}`}
+      >
+        <div className="card-body p-4 sm:p-6">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
+            {/* Appointment Details */}
+            <div className="mb-3 sm:mb-0">
+              <h2 className="card-title text-lg mb-1"> {/* card-title for heading */}
+                {appointment.service.name}
+              </h2>
+              <p className="text-sm text-base-content/80"> {/* text-base-content with opacity */}
+                {format(new Date(appointment.startTime), 'eeee, MMMM d, yyyy')} at {format(new Date(appointment.startTime), 'HH:mm')}
+              </p>
+              <div className="mt-2">
+                <span className="text-sm text-base-content/70">Status: </span>
+                <span className={`badge ${getStatusBadgeColor(appointment.status)} badge-md font-medium`}>
+                  {appointment.status.charAt(0).toUpperCase() + appointment.status.slice(1)}
+                </span>
+              </div>
+            </div>
+
+            {/* Cancel Button */}
+            {canCancel && (
+              <button
+                onClick={handleOpenCancelModal} // Open modal instead of direct cancel
+                disabled={isCancelling}
+                className="btn btn-error btn-sm mt-2 sm:mt-0 sm:ml-4" // DaisyUI button
+              >
+                Cancel Appointment
+              </button>
+            )}
+          </div>
+          {/* Display Error Message for cancellation */}
+          {error && !isCancelling && ( // Show error if not currently cancelling (error displayed in modal during cancel)
+            <div role="alert" className="alert alert-error text-xs p-2 mt-3">
+               <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current shrink-0 h-4 w-4" fill="none" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2 2m2-2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              <span>{error}</span>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Cancel Button */}
-      {canCancel && (
-        <button
-          onClick={handleCancel}
-          disabled={isCancelling} // Disable button while processing
-          className={`mt-2 sm:mt-0 sm:ml-4 bg-red-500 hover:bg-red-600 text-white text-sm py-1 px-3 rounded transition duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-opacity-75 ${isCancelling ? 'cursor-not-allowed opacity-50' : ''}`}
-        >
-          {isCancelling ? 'Cancelling...' : 'Cancel'}
-        </button>
-      )}
-    </div>
+      {/* DaisyUI Modal for Confirmation */}
+      <dialog id={`cancel-modal-${appointment.id}`} className="modal" ref={modalRef}>
+        <div className="modal-box">
+          <h3 className="font-bold text-lg">Confirm Cancellation</h3>
+          <p className="py-4">
+            Are you sure you want to cancel the appointment for <span className="font-semibold">{appointment.service.name}</span> on <span className="font-semibold">{format(new Date(appointment.startTime), 'MMMM d')}</span>? This action cannot be undone.
+          </p>
+          {error && ( // Show error within the modal if cancellation fails
+             <div role="alert" className="alert alert-error text-xs p-2 mb-3">
+               <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current shrink-0 h-4 w-4" fill="none" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2 2m2-2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              <span>{error}</span>
+            </div>
+          )}
+          <div className="modal-action">
+            <button className="btn btn-ghost" onClick={() => { setError(null); if (modalRef.current) modalRef.current.close();}}>Close</button>
+            <button
+              className={`btn btn-error ${isCancelling ? 'btn-disabled' : ''}`} // DaisyUI button classes
+              onClick={handleCancel}
+              disabled={isCancelling}
+            >
+              {isCancelling ? (
+                <>
+                  <span className="loading loading-spinner loading-xs"></span> {/* DaisyUI spinner */}
+                  Cancelling...
+                </>
+              ) : (
+                'Yes, Cancel'
+              )}
+            </button>
+          </div>
+        </div>
+        {/* Optional: close modal when clicking outside */}
+        <form method="dialog" className="modal-backdrop">
+            <button onClick={() => setError(null)}>close</button>
+        </form>
+      </dialog>
+    </>
   );
 }

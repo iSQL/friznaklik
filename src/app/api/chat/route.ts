@@ -478,7 +478,7 @@ Proaktivno ponudite ove opcije korisniku. Zaključite datume kao što je 'sutra'
             });
             console.log(`[DB Pruning] Total messages in session ${currentSessionId}: ${messageCount}`);
 
-            const historyLimit = 10; // Define the limit
+            const historyLimit = 20; // Define the limit
 
             // If count exceeds the limit, delete the oldest ones
             if (messageCount > historyLimit) {

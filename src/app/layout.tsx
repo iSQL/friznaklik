@@ -26,8 +26,8 @@ export default function RootLayout({
 }>) {
   return (
     <ClerkProvider>
-      <html lang="en">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`} >
+      <html lang="en" data-theme="dark">
+      <body>
       <Header /> 
         <main className="container mx-auto p-4"> 
           {/* Main content area */}

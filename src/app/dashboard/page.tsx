@@ -1,88 +1,84 @@
 // src/app/dashboard/page.tsx
 
-// Import necessary modules
-import { auth } from '@clerk/nextjs/server';
-import prisma from '@/lib/prisma';
+import { currentUser } from "@clerk/nextjs/server";
+import { redirect } from 'next/navigation';
+import UserAppointmentList from '@/components/user/UserAppointmentList'; // Assuming this path is correct
 import { Appointment, Service } from '@prisma/client';
-// Removed date-fns format import as formatting is now in AppointmentItem
+import { headers } from 'next/headers';
 
-// Import the new Client Component
-import AppointmentItem from './AppointmentItem'; // Adjust path if needed
-
-// Define a type for appointments that include the related service
 type AppointmentWithService = Appointment & {
   service: Service;
 };
 
-/**
- * Server-side function to fetch appointments directly from the database
- * for the currently authenticated user.
- * @returns {Promise<AppointmentWithService[]>} A promise that resolves to an array of appointments with service details.
- */
-async function getUserAppointments(): Promise<AppointmentWithService[]> {
-  console.log('getUserAppointments: Fetching appointments directly from DB...');
-  try {
-    const { userId } = await auth();
-    if (!userId) {
-      console.log('getUserAppointments: User not authenticated.');
-      return [];
-    }
-    console.log('getUserAppointments: Clerk userId:', userId);
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL;
 
-    const dbUser = await prisma.user.findUnique({
-      where: { clerkId: userId },
-      select: { id: true },
-    });
-
-    if (!dbUser) {
-      console.error('getUserAppointments: Database user not found for clerkId:', userId);
-      return [];
-    }
-    console.log(`getUserAppointments: Database userId: ${dbUser.id}`);
-
-    const userAppointments = await prisma.appointment.findMany({
-      where: {
-        userId: dbUser.id,
-      },
-      include: {
-        service: true,
-      },
-      orderBy: {
-        startTime: 'asc',
-      },
-    });
-
-    console.log(`getUserAppointments: Found ${userAppointments.length} appointments.`);
-    return userAppointments;
-
-  } catch (error) {
-    console.error('Error fetching user appointments directly:', error);
-    return [];
-  }
+if (!SITE_URL) {
+  console.error('DashboardPage: NEXT_PUBLIC_SITE_URL is not set in environment variables.');
+  // Consider a more robust error handling or default for development
 }
 
-
-// --- Your Dashboard Page Component ---
 export default async function DashboardPage() {
+  const user = await currentUser();
 
-  // Fetch appointments directly when the page renders on the server
-  const appointments = await getUserAppointments();
+  if (!user) {
+    redirect('/sign-in');
+  }
+
+  console.log('DashboardPage: User is authenticated, fetching appointments...');
+
+  let userAppointments: AppointmentWithService[] = [];
+  let error: string | null = null;
+
+  try {
+    const apiUrl = `${SITE_URL}/api/appointments/my`;
+    console.log('DashboardPage: Fetching user appointments from URL:', apiUrl);
+
+    const requestHeaders = new Headers(await headers());
+    const fetchHeaders: HeadersInit = {};
+    const cookieHeader = requestHeaders.get('Cookie');
+    if (cookieHeader) {
+      fetchHeaders['Cookie'] = cookieHeader;
+    }
+
+    const res = await fetch(apiUrl, {
+      headers: fetchHeaders,
+      cache: 'no-store',
+    });
+
+    console.log('DashboardPage: Fetch response status:', res.status);
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      console.error('Failed to fetch user appointments:', res.status, errorText);
+      throw new Error(`Failed to fetch appointments: ${res.status} ${errorText}`);
+    }
+
+    userAppointments = await res.json();
+    console.log(`DashboardPage: Found ${userAppointments.length} user appointments.`);
+
+  } catch (fetchError: any) {
+    console.error('DashboardPage: Error during fetch:', fetchError);
+    error = `Error loading appointments: ${fetchError.message}`;
+  }
 
   return (
-    <div className="container mx-auto p-4 md:p-8">
-      <h1 className="text-2xl md:text-3xl font-bold mb-6 text-gray-800 dark:text-gray-200">
-        My Appointments
+    <div className="container mx-auto p-4 md:p-6"> {/* Adjusted padding */}
+      <h1 className="text-3xl font-bold mb-6 text-neutral-content"> {/* DaisyUI text color for contrast if needed, or remove text-neutral-content if base styles are enough */}
+        Welcome to Your Dashboard, {user.firstName}!
       </h1>
 
-      {appointments.length === 0 ? (
-        <p className="text-gray-600 dark:text-gray-400">You have no upcoming appointments.</p>
-      ) : (
-        <div className="space-y-4">
-          {/* Map over appointments and render the AppointmentItem client component for each */}
-          {appointments.map((appointment) => (
-            <AppointmentItem key={appointment.id} appointment={appointment} />
-          ))}
+      {error ? (
+        <div role="alert" className="alert alert-error shadow-lg"> {/* DaisyUI Alert */}
+          <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2 2m2-2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <div>
+            <h3 className="font-bold">Error!</h3>
+            <div className="text-xs">{error}</div>
+          </div>
         </div>
+      ) : (
+        <UserAppointmentList appointments={userAppointments} />
       )}
     </div>
   );

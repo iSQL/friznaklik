@@ -24,6 +24,3 @@ export async function GET(request: Request) {
     return new NextResponse('Internal Server Error', { status: 500 });
   }
 }
-
-// Note: You might not need POST, PUT, or DELETE handlers for this public route,
-// as those operations are typically restricted to administrators via the /api/admin/services routes.

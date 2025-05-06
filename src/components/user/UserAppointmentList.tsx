@@ -1,144 +1,136 @@
 // src/components/user/UserAppointmentList.tsx
-'use client'; // This is a Client Component
+'use client';
 
-import { Appointment, Service } from '@prisma/client'; // Import necessary types from Prisma
-import { format } from 'date-fns'; // Import format from date-fns for date/time display
-import { useState } from 'react'; // Import useState for local state (e.g., cancellation loading)
-import { useRouter } from 'next/navigation'; // Import useRouter for revalidation
+import { useState, useMemo } from 'react';
+import { Appointment, Service } from '@prisma/client';
+import { parseISO } from 'date-fns'; // For parsing date strings
+import AppointmentItem from '@/app/dashboard/AppointmentItem'; // Adjust path if necessary
 
 // Define the type for appointments including related Service data
+// Ensuring startTime and endTime are handled as Date objects internally after parsing
 type AppointmentWithService = Appointment & {
-  service: Service; // Include related Service data
+  service: Service;
+  startTime: string | Date; // From props, could be string or Date
+  endTime: string | Date;   // From props, could be string or Date
+};
+
+// This is the type of appointment object AppointmentItem expects (with Date objects)
+type ProcessedAppointment = Omit<AppointmentWithService, 'startTime' | 'endTime'> & {
+  service: Service;
+  startTime: Date;
+  endTime: Date;
 };
 
 // Define the props for the UserAppointmentList component
 interface UserAppointmentListProps {
-  appointments: AppointmentWithService[]; // Expects an array of user appointments with service details
+  appointments: AppointmentWithService[]; // Expects an array of user appointments
 }
 
-// Define the base URL for your API.
-// Use NEXT_PUBLIC_SITE_URL which should be set in your .env file (e.g., http://localhost:3000)
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
+// Define available appointment statuses for filtering
+const appointmentStatuses = ['all', 'pending', 'approved', 'cancelled', 'rejected'] as const;
+type AppointmentStatusFilter = typeof appointmentStatuses[number];
 
+export default function UserAppointmentList({ appointments: initialAppointments }: UserAppointmentListProps) {
+  const [activeFilter, setActiveFilter] = useState<AppointmentStatusFilter>('all');
 
-// This Client Component displays a list of the user's appointments.
-export default function UserAppointmentList({ appointments }: UserAppointmentListProps) {
-   const router = useRouter(); // Get the router for revalidation
+  // Memoize the appointments list with parsed dates for performance and consistency
+  // Prisma might return Date objects, but JSON serialization turns them to strings.
+  const appointments = useMemo((): ProcessedAppointment[] => {
+    return initialAppointments.map(app => ({
+      ...app,
+      // Ensure service object is correctly passed
+      service: app.service,
+      // Parse startTime and endTime if they are strings
+      startTime: typeof app.startTime === 'string' ? parseISO(app.startTime) : app.startTime,
+      endTime: typeof app.endTime === 'string' ? parseISO(app.endTime) : app.endTime,
+    }));
+  }, [initialAppointments]);
 
-   // State to manage cancellation loading state per appointment ID
-   const [cancellationLoading, setCancellationLoading] = useState<Record<string, boolean>>({});
-   const [cancellationError, setCancellationError] = useState<Record<string, string | null>>({});
+  const filteredAndSortedAppointments = useMemo(() => {
+    let filtered = appointments;
 
+    // 1. Filter based on activeFilter
+    if (activeFilter !== 'all') {
+      filtered = appointments.filter(app => app.status === activeFilter);
+    }
 
-   // Implement appointment cancellation logic
-   const handleCancel = async (appointmentId: string) => {
-       // Prevent cancellation if already processing for this appointment
-       if (cancellationLoading[appointmentId]) {
-           console.log('Cancellation already in progress.');
-           return;
-       }
+    // 2. Sort the filtered appointments
+    return filtered.sort((a, b) => {
+      // Helper to define a sort order for statuses
+      const statusOrder = (status: string): number => {
+        switch (status.toLowerCase()) { // Use toLowerCase for robustness
+          case 'pending': return 0;
+          case 'approved': return 1;
+          // You can add more statuses here if needed, e.g., 'rescheduled', 'confirmed'
+          case 'cancelled': return 2;
+          case 'rejected': return 3;
+          case 'completed': return 4; // Example if you have a 'completed' status
+          default: return 5; // Other statuses appear last
+        }
+      };
 
-       if (!confirm('Are you sure you want to cancel this appointment?')) {
-           return; // If the user cancels, do nothing
-       }
+      // If 'all' filter is active, sort by status first
+      if (activeFilter === 'all') {
+        const statusComparison = statusOrder(a.status) - statusOrder(b.status);
+        if (statusComparison !== 0) {
+          return statusComparison;
+        }
+      }
 
-       setCancellationLoading(prev => ({ ...prev, [appointmentId]: true }));
-       setCancellationError(prev => ({ ...prev, [appointmentId]: null }));
+      // Secondary sort: by startTime, most recent/upcoming first (descending)
+      // getTime() returns milliseconds, ensuring correct numerical comparison
+      return b.startTime.getTime() - a.startTime.getTime();
+    });
+  }, [appointments, activeFilter]);
 
-       try {
-           // Call the backend API to cancel the appointment
-           // This will hit your src/app/api/appointments/[id]/cancel/route.ts PUT handler
-           const response = await fetch(`${SITE_URL}/api/appointments/${appointmentId}/cancel`, {
-               method: 'PUT', // Use PUT to update the status
-           });
-
-           if (!response.ok) {
-               const errorText = await response.text();
-               console.error('Cancellation failed:', response.status, errorText);
-               throw new Error(`Cancellation failed with status ${response.status}: ${errorText}`);
-           }
-
-           console.log(`Appointment ${appointmentId} cancelled successfully!`);
-           router.refresh(); // Revalidate to remove the cancelled appointment from the list
-
-
-       } catch (err: any) {
-           console.error(`Error cancelling appointment ${appointmentId}:`, err);
-           setCancellationError(prev => ({ ...prev, [appointmentId]: `Failed to cancel: ${err instanceof Error ? err.message : 'An unknown error occurred.'}` }));
-           alert(`Failed to cancel appointment: ${err instanceof Error ? err.message : 'An unknown error occurred.'}`);
-       } finally {
-           setCancellationLoading(prev => ({ ...prev, [appointmentId]: false }));
-       }
-   };
-
+  // Define options for the filter buttons
+  const filterOptions: { value: AppointmentStatusFilter; label: string }[] = [
+    { value: 'all', label: 'All' },
+    { value: 'pending', label: 'Pending' },
+    { value: 'approved', label: 'Upcoming' }, // "Approved" often means upcoming
+    { value: 'cancelled', label: 'Cancelled' },
+    { value: 'rejected', label: 'Rejected' },
+    // Consider adding 'completed' if it's a relevant status in your application
+  ];
 
   return (
     <div className="mt-6">
-      <h2 className="text-xl font-semibold mb-4">Your Appointments</h2>
-      {appointments.length === 0 ? (
-        <p className="text-gray-600">You have no upcoming or pending appointments.</p>
+      <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
+        <h2 className="text-2xl font-semibold text-neutral-content">
+          Your Appointments
+        </h2>
+        <div className="btn-group">
+          {filterOptions.map(option => (
+            <button
+              key={option.value}
+              className={`btn btn-sm sm:btn-md ${activeFilter === option.value ? 'btn-active btn-primary' : 'btn-ghost'}`}
+              onClick={() => setActiveFilter(option.value)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {filteredAndSortedAppointments.length === 0 ? (
+        <div className="card bg-base-200 shadow-xl">
+          <div className="card-body items-center text-center py-10">
+            <h2 className="card-title text-xl">
+              {activeFilter === 'all' ? 'No Appointments Found' : `No ${activeFilter} appointments`}
+            </h2>
+            <p className="text-base-content/70 mt-2">
+              {activeFilter === 'all'
+                ? 'There are no appointments matching your criteria.'
+                : `You currently have no appointments with the status "${activeFilter}".`}
+            </p>
+          </div>
+        </div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="min-w-full bg-white rounded-lg shadow overflow-hidden">
-            <thead className="bg-gray-200">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Service
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Date
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Time
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Status
-                </th>
-                 <th className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {appointments.map((appointment) => (
-                <tr key={appointment.id} className="hover:bg-gray-50">
-                  {/* Service Name */}
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {appointment.service.name}
-                  </td>
-                  {/* Appointment Date */}
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {format(appointment.startTime, 'yyyy/MM/dd')} {/* Format date */}
-                  </td>
-                  {/* Appointment Time */}
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {format(appointment.startTime, 'HH:mm')} - {format(appointment.endTime, 'HH:mm')} {/* Format time range */}
-                  </td>
-                  {/* Appointment Status */}
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 capitalize">
-                    {appointment.status} {/* Display status */}
-                  </td>
-                   {/* Actions */}
-                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                     {/* Show Cancel button for pending or approved appointments */}
-                     {(appointment.status === 'pending' || appointment.status === 'approved') && (
-                         <button
-                             onClick={() => handleCancel(appointment.id)}
-                             className="text-red-600 hover:text-red-900"
-                             disabled={cancellationLoading[appointment.id]} // Disable while cancelling
-                         >
-                             {cancellationLoading[appointment.id] ? 'Cancelling...' : 'Cancel'}
-                         </button>
-                     )}
-                      {/* Display error message for this item if any */}
-                      {cancellationError[appointment.id] && (
-                          <p className="text-red-600 text-xs mt-1">{cancellationError[appointment.id]}</p>
-                      )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="space-y-6">
+          {filteredAndSortedAppointments.map((appointment) => (
+            // The appointment object passed here now has startTime and endTime as Date objects
+            <AppointmentItem key={appointment.id} appointment={appointment} />
+          ))}
         </div>
       )}
     </div>

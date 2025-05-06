@@ -4,24 +4,23 @@
 // It lives inside the /admin route segment, so it will use the AdminLayout for protection.
 // Its purpose is to fetch pending appointments and render the Client Component list.
 
-// No 'use client' directive here - this is a Server Component
-
-import AppointmentList from '@/components/admin/appointments/AppointmentList'; // We will create this Client Component next
+import AppointmentList from '@/components/admin/appointments/AppointmentList'; // Client Component to display the list
 import { Appointment, Service, User } from '@prisma/client'; // Import necessary types from Prisma
-import prisma from '@/lib/prisma'; // Import your Prisma client utility for direct database access
-// Note: Authentication and authorization checks are handled by the AdminLayout parent.
-// No need for auth() or isAdminUser checks directly in this page component.
+import prisma from '@/lib/prisma'; // Import your Prisma client utility
+import { parseISO } from 'date-fns'; // To ensure date fields are Date objects
 
 // Define the type for appointments including related Service and User data
-// Prisma allows including related models in queries
-type AppointmentWithDetails = Appointment & {
-  service: Service; // Include related Service data
-  user: User;     // Include related User data
+// This type is used by AppointmentList and AdminAppointmentCard as well
+export type AppointmentWithDetails = Appointment & {
+  service: Service;
+  user: User;
+  // Ensure startTime and endTime are Date objects for client components
+  startTime: Date;
+  endTime: Date;
 };
 
-
 export default async function AdminAppointmentsPage() {
-  console.log('AdminAppointmentsPage: Fetching pending appointments directly with Prisma...'); // Debug log
+  console.log('AdminAppointmentsPage: Fetching pending appointments directly with Prisma...');
 
   let pendingAppointments: AppointmentWithDetails[] = [];
   let error: string | null = null;
@@ -29,46 +28,66 @@ export default async function AdminAppointmentsPage() {
   try {
     // Fetch pending appointments directly from the database using Prisma
     // Include related service and user data for display
-    pendingAppointments = await prisma.appointment.findMany({
+    const rawAppointments = await prisma.appointment.findMany({
       where: {
         status: 'pending', // Fetch only appointments with status 'pending'
       },
       include: {
         service: true, // Include the related Service model data
-        user: true,     // Include the related User model data
+        user: true,    // Include the related User model data
       },
       orderBy: {
-        startTime: 'asc', // Order appointments by start time
+        startTime: 'asc', // Order pending appointments by start time
       },
     });
-    console.log(`AdminAppointmentsPage: Found ${pendingAppointments.length} pending appointments.`); // Debug log
 
-  } catch (fetchError) {
-    console.error('AdminAppointmentsPage: Error fetching pending appointments directly with Prisma:', fetchError); // Debug log
-    error = 'Error loading pending appointments.';
+    // Ensure startTime and endTime are Date objects before passing to client components
+    pendingAppointments = rawAppointments.map(app => ({
+      ...app,
+      startTime: typeof app.startTime === 'string' ? parseISO(app.startTime) : app.startTime,
+      endTime: typeof app.endTime === 'string' ? parseISO(app.endTime) : app.endTime,
+    }));
+
+    console.log(`AdminAppointmentsPage: Found ${pendingAppointments.length} pending appointments.`);
+
+  } catch (fetchError: any) {
+    console.error('AdminAppointmentsPage: Error fetching pending appointments directly with Prisma:', fetchError);
+    let errorMessage = 'Error loading pending appointments.';
+    if (fetchError.message) {
+        errorMessage += ` Details: ${fetchError.message}`;
+    }
+    if (fetchError.code) {
+        console.error(`Prisma error code: ${fetchError.code}`);
+    }
+    error = errorMessage;
   }
 
-  // If there was an error fetching data, display an error message.
-  if (error) {
-     return (
-        <div className="container mx-auto p-6 bg-white rounded-lg shadow-md">
-            <h1 className="text-3xl font-bold mb-6 text-gray-800">Manage Appointments</h1>
-            <p className="text-red-600">{error}</p>
-        </div>
-     );
-  }
-
-
-  // Render the Client Component that will display the list of appointments
-  // Pass the fetched pending appointments data as a prop
   return (
-    <div className="container mx-auto p-6 bg-white rounded-lg shadow-md">
-      <h1 className="text-3xl font-bold mb-6 text-gray-800">Manage Appointments</h1>
+    <div className="container mx-auto p-4 sm:p-6">
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-neutral-content">Manage Pending Appointments</h1>
+        <p className="text-neutral-content/80">
+          Review, update duration, approve, or reject pending client appointments.
+        </p>
+      </div>
 
-      {/* Render the list of appointments using the AppointmentList Client Component */}
-      {/* Pass the fetched pending appointments data as a prop */}
-      <AppointmentList appointments={pendingAppointments} /> {/* This component will be created next */}
+      {error && (
+        <div role="alert" className="alert alert-error shadow-lg max-w-2xl mx-auto">
+          <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2 2m2-2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <div>
+            <h3 className="font-bold">Error Loading Appointments!</h3>
+            <div className="text-xs">{error}</div>
+          </div>
+        </div>
+      )}
 
+      {!error && (
+        // Render the list of appointments using the AppointmentList Client Component
+        // Pass the fetched pending appointments data as a prop
+        <AppointmentList appointments={pendingAppointments} />
+      )}
     </div>
   );
 }
