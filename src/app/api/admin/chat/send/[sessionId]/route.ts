@@ -25,21 +25,43 @@ async function isAdminUser(userId: string): Promise<boolean> {
 
 // Handles POST requests to /api/admin/chat/send/:sessionId
 // Allows an admin to send a message to a specific chat session.
+// Uses URL parsing to get the sessionId
 export async function POST(
-  request: Request,
-  { params }: { params: { sessionId: string } } // Destructure params to get sessionId
+  request: Request
+  // Removed second argument: { params }: { params: { sessionId: string } }
 ) {
-  const sessionId = params.sessionId; // Get sessionId from the route parameter
-  console.log(`POST /api/admin/chat/send/${sessionId}: Request received`);
 
   // 1. Authentication & Authorization
   const { userId } = await auth(); // Use await for auth()
-  console.log(`POST /api/admin/chat/send/${sessionId}: Clerk userId:`, userId);
 
   if (!userId) {
-    console.log(`POST /api/admin/chat/send/${sessionId}: User not authenticated, returning 401`);
+    // Logged out before extracting sessionId
+    console.log(`POST /api/admin/chat/send/[sessionId]: User not authenticated, returning 401`);
     return new NextResponse('Unauthorized', { status: 401 });
   }
+
+  // Extract sessionId from the URL path
+  let sessionId: string | undefined;
+  try {
+      const url = new URL(request.url);
+      // Example URL: /api/admin/chat/send/some-session-id
+      // Split by '/' -> ['', 'api', 'admin', 'chat', 'send', 'some-session-id']
+      // The ID should be the last element
+      sessionId = url.pathname.split('/').pop(); // Use pop() to get the last segment
+  } catch (urlError) {
+       console.error('POST /api/admin/chat/send/[sessionId]: Error parsing request URL:', urlError);
+       return new NextResponse('Internal Server Error', { status: 500 });
+  }
+
+   // 2. Validate sessionId
+  if (!sessionId) {
+      console.log(`POST /api/admin/chat/send/[sessionId]: Missing or could not parse sessionId from URL`);
+      return new NextResponse('Bad Request: Invalid Session ID in URL', { status: 400 });
+  }
+
+  console.log(`POST /api/admin/chat/send/${sessionId}: Request received for ID`);
+  console.log(`POST /api/admin/chat/send/${sessionId}: Clerk userId:`, userId);
+
 
   const isAdmin = await isAdminUser(userId);
   if (!isAdmin) {
@@ -49,17 +71,13 @@ export async function POST(
 
   console.log(`POST /api/admin/chat/send/${sessionId}: User is admin. Proceeding to send message.`);
 
-  // 2. Validate sessionId
-  if (!sessionId) {
-      console.log(`POST /api/admin/chat/send/${sessionId}: Missing sessionId parameter`);
-      return new NextResponse('Bad Request: Missing sessionId', { status: 400 });
-  }
 
   // 3. Parse Request Body & Validate Message
   let messageText: string;
   try {
       const body = await request.json();
-      messageText = body.message; // Expecting { "message": "..." }
+      // Add type assertion if necessary, or define an interface for the body
+      messageText = (body as { message?: string }).message ?? ''; // Use optional chaining and nullish coalescing
 
       if (!messageText || typeof messageText !== 'string' || messageText.trim() === '') {
           console.log(`POST /api/admin/chat/send/${sessionId}: Invalid or empty message in request body`);

@@ -1,24 +1,29 @@
-import { WebhookEvent } from '@clerk/nextjs/server'; // Import Clerk webhook event types
-import { headers } from 'next/headers'; // Import headers helper for accessing request headers
-import { Webhook } from 'svix'; // Import Svix for verifying webhook signatures
-import prisma from '@/lib/prisma'; // Import your Prisma client utility
-import { NextResponse } from 'next/server'; // Import NextResponse for sending responses
+// src/app/api/webhooks/clerk/route.ts
+
+import { WebhookEvent, UserJSON } from '@clerk/nextjs/server'; // Import specific type UserJSON if available, or use type assertion
+import { headers } from 'next/headers';
+import { Webhook } from 'svix';
+import prisma from '@/lib/prisma';
+import { NextResponse } from 'next/server';
 
 // This is your Clerk webhook secret.
-// You can find it in the Clerk Dashboard -> Webhooks -> Your Webhook Endpoint -> Reveal Secret.
-// Store this in your environment variables for security.
 const webhookSecret = process.env.CLERK_WEBHOOK_SECRET;
 
 // Handles POST requests from Clerk webhooks
 export async function POST(req: Request) {
   // Get the headers from the incoming request
   const headerPayload = headers();
-  const svix_id = (await headerPayload).get('svix-id');
+  const svix_id = (await headerPayload).get('svix-id'); // Removed await as headers() returns Headers object directly
   const svix_timestamp = (await headerPayload).get('svix-timestamp');
   const svix_signature = (await headerPayload).get('svix-signature');
 
   // If there are no Svix headers, return an error
+  if (!webhookSecret) {
+     console.error('Error: CLERK_WEBHOOK_SECRET is not set in environment variables.');
+     return new NextResponse('Webhook secret not configured', { status: 500 });
+  }
   if (!svix_id || !svix_timestamp || !svix_signature) {
+    console.log('Webhook Error: Missing Svix headers');
     return new NextResponse('Error occured -- no Svix headers', {
       status: 400,
     });
@@ -28,8 +33,7 @@ export async function POST(req: Request) {
   const payload = await req.text();
 
   // Verify the webhook signature
-  // This is crucial to ensure the request is genuinely from Clerk
-  const wh = new Webhook(webhookSecret!); // Use webhookSecret! because we check for its existence below
+  const wh = new Webhook(webhookSecret);
   let msg: WebhookEvent;
 
   try {
@@ -48,27 +52,32 @@ export async function POST(req: Request) {
   }
 
   // --- Process the webhook event ---
-  // Get the event type and data
   const eventType = msg.type;
-  const data = msg.data;
+  const eventData = msg.data; // Use a different variable name to avoid confusion
 
   console.log(`Processing webhook event: ${eventType}`);
 
   // Handle the 'user.created' event
   if (eventType === 'user.created') {
-    console.log('User created event received:', data);
+    console.log('User created event received:', eventData);
 
-    // Extract necessary data from the Clerk user object
-    const clerkId = data.id;
+    // *** Type Assertion/Guard for User Data ***
+    // Since we are inside the 'user.created' block, we expect data matching UserJSON
+    // Use type assertion to inform TypeScript
+    const userData = eventData as UserJSON; // Assert type here
+
+    // Extract necessary data from the typed userData object
+    const clerkId = userData.id;
     // Clerk stores emails in an array, get the first one (primary)
-    const email = data.email_addresses[0]?.email_address;
-    const firstName = data.first_name;
-    const lastName = data.last_name;
+    // Accessing email_addresses is now safe due to the type assertion above
+    const email = userData.email_addresses[0]?.email_address;
+    const firstName = userData.first_name;
+    const lastName = userData.last_name;
     const name = `${firstName || ''} ${lastName || ''}`.trim() || 'New User'; // Construct full name
 
     // Basic validation
     if (!clerkId || !email) {
-        console.error('Webhook data missing required fields (clerkId or email)');
+        console.error('Webhook Error (user.created): Data missing required fields (clerkId or email)');
          return new NextResponse('Webhook data missing required fields', { status: 400 });
     }
 
@@ -94,34 +103,43 @@ export async function POST(req: Request) {
     }
   }
 
-  // TODO: Handle other webhook events like 'user.updated', 'user.deleted', etc.
-  // Example for user.deleted:
-  /*
+  // Handle the 'user.deleted' event
   if (eventType === 'user.deleted') {
-      console.log('User deleted event received:', data);
-      const clerkId = data.id; // Clerk user ID of the deleted user
+      console.log('User deleted event received:', eventData);
+      // *** Type Assertion/Guard for Deleted Object Data ***
+      // Assert the type expected for deleted events (often contains just 'id' and 'deleted')
+      const deletedData = eventData as { id?: string; deleted?: boolean }; // Adjust type as needed based on Clerk docs
+
+      const clerkId = deletedData.id; // Accessing 'id' should be safer now
       if (!clerkId) {
-           console.error('Webhook data missing clerkId for deletion');
+           console.error('Webhook Error (user.deleted): Data missing clerkId for deletion');
            return new NextResponse('Webhook data missing clerkId', { status: 400 });
       }
       try {
-          await prisma.user.delete({
+          // Use deleteMany as the user might not exist if webhook failed before
+          const deleteResult = await prisma.user.deleteMany({
               where: { clerkId: clerkId }
           });
-          console.log('User deleted from database:', clerkId);
-          return NextResponse.json({ message: 'User deleted successfully' }, { status: 200 });
-      } catch (dbError) {
-          console.error('Error deleting user from database:', dbError);
-          // Handle case where user might not exist in your DB (already deleted or never created)
-          if (dbError instanceof Error && dbError.message.includes('Record to delete not found')) {
-             return new NextResponse('User not found in database for deletion', { status: 404 });
+          if (deleteResult.count > 0) {
+             console.log(`User deleted from database (Clerk ID: ${clerkId}). Count: ${deleteResult.count}`);
+          } else {
+             console.log(`User with Clerk ID ${clerkId} not found in database for deletion (might have been deleted already).`);
           }
+          return NextResponse.json({ message: 'User deletion processed' }, { status: 200 });
+      } catch (dbError) {
+          console.error(`Error deleting user (Clerk ID: ${clerkId}) from database:`, dbError);
           return new NextResponse('Database error deleting user', { status: 500 });
       }
   }
-  */
+
+  // TODO: Handle other relevant webhook events like 'user.updated'
+  // if (eventType === 'user.updated') {
+  //    const userData = eventData as UserJSON;
+  //    // ... logic to update user details in your DB ...
+  // }
 
 
   // If the event type is not handled, return a success response (Clerk expects this)
-  return new NextResponse('Event received, but not handled', { status: 200 });
+  console.log(`Webhook event type ${eventType} received but not explicitly handled.`);
+  return new NextResponse('Event received', { status: 200 });
 }

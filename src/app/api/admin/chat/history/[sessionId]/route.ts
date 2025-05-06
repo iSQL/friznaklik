@@ -25,21 +25,43 @@ async function isAdminUser(userId: string): Promise<boolean> {
 
 // Handles GET requests to /api/admin/chat/history/:sessionId
 // Fetches the full message history for a specific chat session.
+// Uses URL parsing to get the sessionId
 export async function GET(
-  request: Request,
-  { params }: { params: { sessionId: string } } // Destructure params to get sessionId
+  request: Request
+  // Removed the second argument: { params }: { params: { sessionId: string } }
 ) {
-  const sessionId = params.sessionId; // Get sessionId from the route parameter
-  console.log(`GET /api/admin/chat/history/${sessionId}: Request received`);
 
   // 1. Authentication & Authorization
   const { userId } = await auth(); // Use await for auth()
-  console.log(`GET /api/admin/chat/history/${sessionId}: Clerk userId:`, userId);
 
   if (!userId) {
-    console.log(`GET /api/admin/chat/history/${sessionId}: User not authenticated, returning 401`);
+    // Logged out before extracting sessionId
+    console.log(`GET /api/admin/chat/history/[sessionId]: User not authenticated, returning 401`);
     return new NextResponse('Unauthorized', { status: 401 });
   }
+
+  // Extract sessionId from the URL path
+  let sessionId: string | undefined;
+  try {
+      const url = new URL(request.url);
+      // Example URL: /api/admin/chat/history/some-session-id
+      // Split by '/' -> ['', 'api', 'admin', 'chat', 'history', 'some-session-id']
+      // The ID should be the last element
+      sessionId = url.pathname.split('/').pop(); // Use pop() to get the last segment
+  } catch (urlError) {
+       console.error('GET /api/admin/chat/history/[sessionId]: Error parsing request URL:', urlError);
+       return new NextResponse('Internal Server Error', { status: 500 });
+  }
+
+  // 2. Validate sessionId
+  if (!sessionId) {
+      console.log(`GET /api/admin/chat/history/[sessionId]: Missing or could not parse sessionId from URL`);
+      return new NextResponse('Bad Request: Invalid Session ID in URL', { status: 400 });
+  }
+
+  console.log(`GET /api/admin/chat/history/${sessionId}: Request received for ID`);
+  console.log(`GET /api/admin/chat/history/${sessionId}: Clerk userId:`, userId);
+
 
   const isAdmin = await isAdminUser(userId);
   if (!isAdmin) {
@@ -49,11 +71,6 @@ export async function GET(
 
   console.log(`GET /api/admin/chat/history/${sessionId}: User is admin. Proceeding to fetch history.`);
 
-  // 2. Validate sessionId
-  if (!sessionId) {
-      console.log(`GET /api/admin/chat/history/${sessionId}: Missing sessionId parameter`);
-      return new NextResponse('Bad Request: Missing sessionId', { status: 400 });
-  }
 
   // 3. Data Fetching
   try {

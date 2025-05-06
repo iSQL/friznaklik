@@ -5,47 +5,71 @@ import { NextResponse } from 'next/server'; // Import NextResponse for sending r
 import prisma from '@/lib/prisma'; // Import your Prisma client utility
 
 // Helper function to check if the authenticated user is an admin
-// (Copied from other admin route handlers - consider moving to shared utility later)
+// TODO: Consider moving this to a shared utility file
 async function isAdminUser(userId: string): Promise<boolean> {
-  const dbUser = await prisma.user.findUnique({
-    where: { clerkId: userId },
-    select: { role: true },
-  });
-  return dbUser?.role === 'admin';
+  if (!userId) return false;
+  try {
+    const dbUser = await prisma.user.findUnique({
+      where: { clerkId: userId },
+      select: { role: true },
+    });
+    return dbUser?.role === 'admin';
+  } catch (error) {
+    console.error('[isAdminUser] Error fetching user role:', error);
+    return false;
+  }
 }
 
-// Handles GET requests to /api/admin/services/:id
-// This will fetch a single service by its ID.
-export async function GET(request: Request, { params }: { params: { id: string } }) {
-  // Check authentication status using Clerk
-  const { userId } = await auth(); // Added await here
+// Helper function to parse serviceId from URL
+function getServiceIdFromUrl(requestUrl: string): string | undefined {
+     try {
+        const url = new URL(requestUrl);
+        // Example URL: /api/admin/services/some-service-id
+        // The ID should be the last segment
+        return url.pathname.split('/').pop();
+    } catch (urlError) {
+        console.error('Error parsing request URL:', urlError);
+        return undefined;
+    }
+}
 
+
+// Handles GET requests to /api/admin/services/:id
+// Fetches a single service by its ID.
+// Uses URL parsing for serviceId
+export async function GET(request: Request) {
+  // 1. Authentication & Authorization
+  const { userId } = await auth();
   if (!userId) {
     return new NextResponse('Unauthorized', { status: 401 });
   }
 
-  // Check if the authenticated user is an admin
-  const isAdmin = await isAdminUser(userId);
+  // 2. Extract serviceId from URL
+  const serviceId = getServiceIdFromUrl(request.url);
+  if (!serviceId) {
+      return new NextResponse('Bad Request: Invalid Service ID in URL', { status: 400 });
+  }
+  console.log(`GET /api/admin/services/${serviceId}: Request received`);
 
+  // 3. Admin Check
+  const isAdmin = await isAdminUser(userId);
   if (!isAdmin) {
+    console.log(`GET /api/admin/services/${serviceId}: User is not admin`);
     return new NextResponse('Forbidden', { status: 403 });
   }
+  console.log(`GET /api/admin/services/${serviceId}: User is admin`);
 
-  // Get the service ID from the dynamic route parameters
-  const serviceId = params.id;
-
+  // 4. Data Fetching
   try {
-    // Find the service by its ID using Prisma
     const service = await prisma.service.findUnique({
       where: { id: serviceId },
     });
 
-    // If the service is not found, return a 404 Not Found response.
     if (!service) {
+      console.log(`GET /api/admin/services/${serviceId}: Service not found`);
       return new NextResponse('Service not found', { status: 404 });
     }
 
-    // Return the service as a JSON response with a 200 status code.
     return NextResponse.json(service, { status: 200 });
   } catch (error) {
     console.error(`Error fetching service with ID ${serviceId}:`, error);
@@ -54,36 +78,42 @@ export async function GET(request: Request, { params }: { params: { id: string }
 }
 
 // Handles PUT requests to /api/admin/services/:id
-// This will update a single service by its ID.
-export async function PUT(request: Request, { params }: { params: { id: string } }) {
-  // Check authentication status using Clerk
-  const { userId } = await auth(); // Added await here
-
+// Updates a single service by its ID.
+// Uses URL parsing for serviceId
+export async function PUT(request: Request) {
+  // 1. Authentication & Authorization
+  const { userId } = await auth();
   if (!userId) {
     return new NextResponse('Unauthorized', { status: 401 });
   }
 
-  // Check if the authenticated user is an admin
-  const isAdmin = await isAdminUser(userId);
+  // 2. Extract serviceId from URL
+  const serviceId = getServiceIdFromUrl(request.url);
+   if (!serviceId) {
+      return new NextResponse('Bad Request: Invalid Service ID in URL', { status: 400 });
+  }
+  console.log(`PUT /api/admin/services/${serviceId}: Request received`);
 
+
+  // 3. Admin Check
+  const isAdmin = await isAdminUser(userId);
   if (!isAdmin) {
+     console.log(`PUT /api/admin/services/${serviceId}: User is not admin`);
     return new NextResponse('Forbidden', { status: 403 });
   }
+   console.log(`PUT /api/admin/services/${serviceId}: User is admin`);
 
-  // Get the service ID from the dynamic route parameters
-  const serviceId = params.id;
-
+  // 4. Process Request Body & Update Data
   try {
-    // Parse the request body to get the updated service data
     const body = await request.json();
     const { name, description, duration, price } = body;
 
     // Basic validation
      if (!name || typeof duration !== 'number' || typeof price !== 'number') {
-      return new NextResponse('Invalid request body', { status: 400 });
+        console.log(`PUT /api/admin/services/${serviceId}: Invalid request body`);
+        return new NextResponse('Invalid request body', { status: 400 });
     }
 
-    // Update the service in the database using Prisma
     const updatedService = await prisma.service.update({
       where: { id: serviceId },
       data: {
@@ -93,94 +123,71 @@ export async function PUT(request: Request, { params }: { params: { id: string }
         price,
       },
     });
-
-    // Return the updated service as a JSON response with a 200 status code.
+    console.log(`PUT /api/admin/services/${serviceId}: Service updated successfully`);
     return NextResponse.json(updatedService, { status: 200 });
+
   } catch (error) {
     console.error(`Error updating service with ID ${serviceId}:`, error);
-    // Handle case where service is not found during update
      if (error instanceof Error && error.message.includes('Record to update not found')) {
-       return new NextResponse('Service not found', { status: 404 });
+         console.log(`PUT /api/admin/services/${serviceId}: Service not found for update`);
+         return new NextResponse('Service not found', { status: 404 });
      }
     return new NextResponse('Internal Server Error', { status: 500 });
   }
 }
 
 // Handles DELETE requests to /api/admin/services/:id
-// This will delete a single service by its ID.
-export async function DELETE(request: Request, { params }: { params: { id: string } }) {
-  console.log(`DELETE /api/admin/services/${params.id}: Request received`); // Debug log
-  // Log incoming request headers for DELETE
-  console.log('DELETE /api/admin/services/[id]: Request Headers:', Object.fromEntries(request.headers.entries())); // Debug log
-  console.log('DELETE /api/admin/services/[id]: Cookie Header:', request.headers.get('cookie')); // Debug log
+// Deletes a single service by its ID.
+// Uses URL parsing for serviceId
+export async function DELETE(request: Request) {
+   // 1. Authentication & Authorization
+   const { userId } = await auth();
+   if (!userId) {
+     return new NextResponse('Unauthorized', { status: 401 });
+   }
+
+   // 2. Extract serviceId from URL
+   const serviceId = getServiceIdFromUrl(request.url);
+   if (!serviceId) {
+       return new NextResponse('Bad Request: Invalid Service ID in URL', { status: 400 });
+   }
+   console.log(`DELETE /api/admin/services/${serviceId}: Request received`);
 
 
-  // Check authentication status using Clerk
-  const { userId } = await auth(); // Added await here
-  console.log('DELETE /api/admin/services/[id]: Clerk userId:', userId); // Debug log
+   // 3. Admin Check
+   const isAdmin = await isAdminUser(userId);
+   if (!isAdmin) {
+      console.log(`DELETE /api/admin/services/${serviceId}: User is not admin`);
+     return new NextResponse('Forbidden', { status: 403 });
+   }
+    console.log(`DELETE /api/admin/services/${serviceId}: User is admin`);
 
+   // 4. Check for Related Appointments & Delete Service
+   try {
+     console.log(`DELETE /api/admin/services/${serviceId}: Checking for related appointments...`);
+     const relatedAppointmentsCount = await prisma.appointment.count({
+         where: { serviceId: serviceId },
+     });
+     console.log(`DELETE /api/admin/services/${serviceId}: Found ${relatedAppointmentsCount} related appointments.`);
 
-  if (!userId) {
-    console.log('DELETE /api/admin/services/[id]: User not authenticated, returning 401'); // Debug log
-    return new NextResponse('Unauthorized', { status: 401 });
-  }
-
-  // Check if the authenticated user is an admin
-  const isAdmin = await isAdminUser(userId);
-   console.log('DELETE /api/admin/services/[id]: isAdmin:', isAdmin); // Debug log
-
-
-  if (!isAdmin) {
-     console.log('DELETE /api/admin/services/[id]: User is not admin, returning 403'); // Debug log
-    return new NextResponse('Forbidden', { status: 403 });
-  }
-
-  // Get the service ID from the dynamic route parameters
-  const serviceId = params.id;
-   console.log(`DELETE /api/admin/services/${serviceId}: User is admin, attempting to delete...`); // Debug log
-
-
-  try {
-    // --- Check for related appointments before deleting the service ---
-    console.log(`DELETE /api/admin/services/${serviceId}: Checking for related appointments...`); // Debug log
-    const relatedAppointmentsCount = await prisma.appointment.count({
-        where: { serviceId: serviceId },
-    });
-
-    console.log(`DELETE /api/admin/services/${serviceId}: Found ${relatedAppointmentsCount} related appointments.`); // Debug log
-
-    if (relatedAppointmentsCount > 0) {
-        // If related appointments exist, prevent deletion and return a conflict response
-        console.log(`DELETE /api/admin/services/${serviceId}: Cannot delete service due to related appointments.`); // Debug log
-        return new NextResponse('Cannot delete service: Related appointments exist. Please delete appointments first.', { status: 409 }); // 409 Conflict
-    }
-    // --- End of check ---
-
-
-     console.log(`DELETE /api/admin/services/${serviceId}: No related appointments found, calling prisma.service.delete...`); // Debug log before Prisma call
-    // Delete the service from the database using Prisma
-    const deletedService = await prisma.service.delete({
-      where: { id: serviceId },
-    });
-
-    console.log(`DELETE /api/admin/services/${serviceId}: Service deleted successfully.`); // Debug log after Prisma call
-
-    // TODO: Trigger notification (e.g., email) to the user about the approval
-
-    // Return the deleted service as a JSON response with a 200 status code.
-    // Returning the deleted item is common practice, but you could also return a success status.
-    return NextResponse.json(deletedService, { status: 200 });
-
-  } catch (error: any) { // Catch error as 'any' to access message property
-    console.error(`Error deleting service with ID ${serviceId}:`, error); // Debug log the error object
-    console.error(`Error message: ${error.message}`); // Log the error message
-
-     // Handle case where service is not found during delete (if it wasn't caught by related appointments check)
-     if (error.message && error.message.includes('Record to delete not found')) { // Check error message property
-       console.log(`DELETE /api/admin/services/${serviceId}: Service not found for deletion.`); // Debug log
-       return new NextResponse('Service not found', { status: 404 });
+     if (relatedAppointmentsCount > 0) {
+         console.log(`DELETE /api/admin/services/${serviceId}: Cannot delete service due to related appointments.`);
+         return new NextResponse('Cannot delete service: Related appointments exist. Please delete appointments first.', { status: 409 }); // 409 Conflict
      }
-     console.log(`DELETE /api/admin/services/${serviceId}: Unexpected internal server error during deletion.`); // Debug log
-    return new NextResponse('Internal Server Error', { status: 500 });
-  }
+
+     console.log(`DELETE /api/admin/services/${serviceId}: No related appointments found, calling prisma.service.delete...`);
+     const deletedService = await prisma.service.delete({
+       where: { id: serviceId },
+     });
+     console.log(`DELETE /api/admin/services/${serviceId}: Service deleted successfully.`);
+     return NextResponse.json(deletedService, { status: 200 });
+
+   } catch (error) {
+     console.error(`Error deleting service with ID ${serviceId}:`, error);
+     if (error instanceof Error && error.message.includes('Record to delete not found')) {
+        console.log(`DELETE /api/admin/services/${serviceId}: Service not found for deletion.`);
+        return new NextResponse('Service not found', { status: 404 });
+      }
+     return new NextResponse('Internal Server Error', { status: 500 });
+   }
 }
