@@ -8,23 +8,6 @@ variables:
   dockerfilePath: '$(Build.SourcesDirectory)/Dockerfile'
   tag: '$(Build.BuildId)'
 
-  # ----- Application Secrets (Store these as Secret Variables in Azure DevOps) -----
-  # These are examples based on your docker-compose.yml and README.md
-  # In Azure DevOps UI: Pipelines -> Library -> + Variable group (link it)
-  # Or: Pipelines -> Edit your pipeline -> Variables -> Pipeline variables -> + (mark as secret)
-  # POSTGRES_USER_SECRET: set in Azure DevOps
-  # POSTGRES_PASSWORD_SECRET: set in Azure DevOps
-  # POSTGRES_DB_SECRET: set in Azure DevOps
-  # NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY_SECRET: set in Azure DevOps
-  # CLERK_SECRET_KEY_SECRET: set in Azure DevOps
-  # NEXT_PUBLIC_CLERK_DOMAIN_SECRET: set in Azure DevOps
-  # NEXT_PUBLIC_SITE_URL_RUNTIME: 'http://your-production-domain.com' # Or load from secret
-  # GOOGLE_API_KEY_SECRET: set in Azure DevOps
-  # CLERK_WEBHOOK_SECRET_SECRET: set in Azure DevOps
-  # DOCKERHUB_USERNAME_SECRET: Your Docker Hub username (can be plain text if same as above, or secret if different)
-  # DOCKERHUB_PAT_SECRET: Your Docker Hub Personal Access Token (store as secret)
-
-
 stages:
 - stage: BuildAndPushToDockerHub
   displayName: 'Build and Push Docker Image to Docker Hub'
@@ -34,12 +17,6 @@ stages:
     pool:
       name: 'Default' # <- CHANGE THIS to the name of the pool your agent is in
     steps:
-    # Login to Docker Hub (needed if not using the Docker@2 task's built-in connection for push, or for other Docker commands)
-    # The Docker@2 task with a service connection handles login for its push command.
-    # If you needed to run `docker login` manually, it would look like this:
-    # - script: echo "$(DOCKERHUB_PAT_SECRET)" | docker login -u "$(DOCKERHUB_USERNAME_SECRET)" --password-stdin
-    #   displayName: 'Login to Docker Hub'
-
     - task: Docker@2
       displayName: 'Build and Push image to Docker Hub'
       inputs:
@@ -53,5 +30,6 @@ stages:
         buildContext: '$(Build.SourcesDirectory)'
         # Pass build arguments to Dockerfile if needed for NEXT_PUBLIC_ variables
         arguments: |
-          --build-arg NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=$(NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY_SECRET) \
-          --build-arg NEXT_PUBLIC_SITE_URL=$(NEXT_PUBLIC_SITE_URL_RUNTIME)
+          --build-arg NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="$(NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY_SECRET)" \
+          --build-arg NEXT_PUBLIC_SITE_URL="$(NEXT_PUBLIC_SITE_URL_RUNTIME)" \
+          --build-arg GOOGLE_API_KEY="$(GOOGLE_API_KEY_SECRET)""
