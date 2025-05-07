@@ -5,6 +5,7 @@ import { NextResponse } from 'next/server'; // Import NextResponse for sending r
 import prisma from '@/lib/prisma'; // Import your Prisma client utility
 
 // Helper function to check if the authenticated user is an admin
+// TODO: Consider moving this to a shared utility file (e.g., /lib/authUtils.ts)
 async function isAdminUser(userId: string): Promise<boolean> {
   // Added null check for safety
   if (!userId) return false;
@@ -17,28 +18,29 @@ async function isAdminUser(userId: string): Promise<boolean> {
 
 // Handles PUT requests to /api/admin/appointments/:id/approve
 export async function PUT(
-  request: Request // Keep request parameter
+  request: Request, // The request object
+  { params }: { params: { id: string } } // Destructure 'id' as appointmentId from params
 ) {
-  // Check authentication status using Clerk *first*
-  const { userId } = await auth();
+  // 1. Authentication
+  const { userId } = await auth(); // Admin must be logged in
 
   if (!userId) {
-    console.log('PUT /api/admin/appointments/approve: User not authenticated, returning 401');
+    console.log('PUT /api/admin/appointments/[id]/approve: User not authenticated, returning 401');
     return new NextResponse('Unauthorized', { status: 401 });
   }
 
-  // Extract appointmentId from the URL
-  const url = new URL(request.url);
-  const appointmentId = url.pathname.split('/').at(-2); // Extract the dynamic ID from the URL
+  // 2. Get appointmentId from params
+  const appointmentId = params.id;
 
   if (!appointmentId) {
-    console.log('PUT /api/admin/appointments/approve: Missing appointment ID, returning 400');
-    return new NextResponse('Bad Request', { status: 400 });
+    // This case should ideally not be hit if the route is matched correctly by Next.js.
+    console.log('PUT /api/admin/appointments/[id]/approve: Appointment ID is missing from params, returning 400');
+    return new NextResponse('Bad Request: Invalid Appointment ID in URL', { status: 400 });
   }
 
   console.log(`PUT /api/admin/appointments/${appointmentId}/approve: Request received for ID`);
 
-  // Check if the authenticated user is an admin
+  // 3. Authorization (Admin Check)
   const isAdmin = await isAdminUser(userId);
 
   if (!isAdmin) {
@@ -48,10 +50,14 @@ export async function PUT(
 
   console.log(`PUT /api/admin/appointments/${appointmentId}/approve: User is admin, attempting to approve...`);
 
+  // 4. Data Update Logic
   try {
     // Update the appointment status to 'approved' in the database
     const updatedAppointment = await prisma.appointment.update({
-      where: { id: appointmentId, status: 'pending' }, // Only update if status is pending
+      where: { 
+        id: appointmentId, 
+        status: 'pending' // Only update if status is pending
+      },
       data: {
         status: 'approved',
       },
@@ -59,12 +65,16 @@ export async function PUT(
 
     console.log(`Appointment ${appointmentId} approved successfully.`);
 
+    // TODO: Optional: Trigger notification (e.g., email) to the user about the approval
+
     // Return the updated appointment details with a 200 status code.
     return NextResponse.json(updatedAppointment, { status: 200 });
   } catch (error) {
     console.error(`Error approving appointment with ID ${appointmentId}:`, error);
     // Handle case where appointment is not found or not pending
-    if (error instanceof Error && error.message.includes('Record to update not found')) {
+    // Prisma's `update` throws P2025 if the record to update (matching the where clause) is not found.
+    if (error instanceof Error && (error as any).code === 'P2025') {
+      console.log(`PUT /api/admin/appointments/${appointmentId}/approve: Appointment not found or not in 'pending' state.`);
       return new NextResponse('Appointment not found or not pending', { status: 404 });
     }
     return new NextResponse('Internal Server Error', { status: 500 });

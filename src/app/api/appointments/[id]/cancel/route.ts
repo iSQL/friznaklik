@@ -6,35 +6,27 @@ import prisma from '@/lib/prisma'; // Import your Prisma client utility
 
 // Handles PUT requests to /api/appointments/:id/cancel
 // This allows a user to cancel their specific appointment.
-// Uses URL parsing to get the appointment ID
 export async function PUT(
-    request: Request // Only the request parameter is needed now
+    request: Request, // The request object
+    { params }: { params: { id: string } } // Destructure 'id' from params
 ) {
-
   // 1. Authentication
   const { userId } = await auth(); // User must be logged in to cancel their appointment
   if (!userId) {
-    console.log('PUT /api/appointments/cancel: User not authenticated, returning 401');
+    console.log('PUT /api/appointments/[id]/cancel: User not authenticated, returning 401');
     return new NextResponse('Unauthorized', { status: 401 });
   }
-  console.log('PUT /api/appointments/cancel: Clerk userId:', userId);
+  console.log('PUT /api/appointments/[id]/cancel: Clerk userId:', userId);
 
-  // 2. Extract appointmentId from URL
-  let appointmentId: string | undefined;
-  try {
-      const url = new URL(request.url);
-      // Example URL: /api/appointments/some-id/cancel
-      // Split by '/' -> ['', 'api', 'appointments', 'some-id', 'cancel']
-      // The ID should be the second to last element
-      appointmentId = url.pathname.split('/').at(-2);
-  } catch (urlError) {
-       console.error('PUT /api/appointments/cancel: Error parsing request URL:', urlError);
-       return new NextResponse('Internal Server Error', { status: 500 });
-  }
+  // 2. Get appointmentId from params
+  const appointmentId = params.id; // Directly use the id from params
 
   if (!appointmentId) {
-    console.log('PUT /api/appointments/cancel: Missing or could not parse appointment ID from URL, returning 400');
-    return new NextResponse('Bad Request: Invalid Appointment ID in URL', { status: 400 });
+    // This case should ideally not be hit if the route is matched correctly by Next.js,
+    // as `params.id` would be populated from the URL segment.
+    // However, adding a check for robustness.
+    console.log('PUT /api/appointments/[id]/cancel: Appointment ID is missing from params, returning 400');
+    return new NextResponse('Bad Request: Appointment ID is missing', { status: 400 });
   }
   console.log(`PUT /api/appointments/${appointmentId}/cancel: Request received for ID`);
 
@@ -77,14 +69,14 @@ export async function PUT(
     // Return the updated appointment details with a 200 status code.
     return NextResponse.json(updatedAppointment, { status: 200 });
 
-  } catch (error) { // Changed from error: any
+  } catch (error) { 
     console.error(`Error cancelling appointment with ID ${appointmentId}:`, error);
 
      // Handle case where appointment is not found, doesn't belong to user, or is not in a cancellable status
-     // Use instanceof check for better type safety
-     if (error instanceof Error && error.message.includes('Record to update not found')) {
-       console.log(`PUT /api/appointments/${appointmentId}/cancel: Appointment not found, does not belong to user, or is not cancellable.`);
-       return new NextResponse('Appointment not found, does not belong to you, or cannot be cancelled.', { status: 404 }); // Use 404 or 403
+     // Prisma's `update` throws an error (P2025 by default) if the record to update is not found based on the `where` clause.
+     if (error instanceof Error && (error as any).code === 'P2025') { // Check for Prisma's specific error code for "Record to update not found"
+       console.log(`PUT /api/appointments/${appointmentId}/cancel: Appointment not found, does not belong to user, or is not in a cancellable status.`);
+       return new NextResponse('Appointment not found, does not belong to you, or cannot be cancelled.', { status: 404 });
      }
      console.log(`PUT /api/appointments/${appointmentId}/cancel: Unexpected internal server error during cancellation.`);
     return new NextResponse('Internal Server Error', { status: 500 });
