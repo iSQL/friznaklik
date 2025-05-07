@@ -1,0 +1,63 @@
+trigger:
+- main # Or your primary branch
+
+variables:
+  # ----- General Settings -----
+  vmImageName: 'ubuntu-latest' # Using a Microsoft-hosted Ubuntu agent
+
+  # ----- Docker Hub Settings (Update these) -----
+  # Create a 'Docker Registry' service connection in Azure DevOps for Docker Hub
+  # Use your Docker Hub username and a Personal Access Token (PAT) as the password.
+  dockerHubServiceConnection: 'SCDocker' # Name of your Docker Hub service connection
+  dockerHubUsername: 'maremilojkovic' # Your Docker Hub username (lowercase)
+  imageName: 'friznaklik' # The name of your image on Docker Hub
+  dockerfilePath: '$(Build.SourcesDirectory)/Dockerfile'
+  tag: '$(Build.BuildId)'
+
+  # ----- Application Secrets (Store these as Secret Variables in Azure DevOps) -----
+  # These are examples based on your docker-compose.yml and README.md
+  # In Azure DevOps UI: Pipelines -> Library -> + Variable group (link it)
+  # Or: Pipelines -> Edit your pipeline -> Variables -> Pipeline variables -> + (mark as secret)
+  # POSTGRES_USER_SECRET: set in Azure DevOps
+  # POSTGRES_PASSWORD_SECRET: set in Azure DevOps
+  # POSTGRES_DB_SECRET: set in Azure DevOps
+  # NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY_SECRET: set in Azure DevOps
+  # CLERK_SECRET_KEY_SECRET: set in Azure DevOps
+  # NEXT_PUBLIC_CLERK_DOMAIN_SECRET: set in Azure DevOps
+  # NEXT_PUBLIC_SITE_URL_RUNTIME: 'http://your-production-domain.com' # Or load from secret
+  # GOOGLE_API_KEY_SECRET: set in Azure DevOps
+  # CLERK_WEBHOOK_SECRET_SECRET: set in Azure DevOps
+  # DOCKERHUB_USERNAME_SECRET: Your Docker Hub username (can be plain text if same as above, or secret if different)
+  # DOCKERHUB_PAT_SECRET: Your Docker Hub Personal Access Token (store as secret)
+
+
+stages:
+- stage: BuildAndPushToDockerHub
+  displayName: 'Build and Push Docker Image to Docker Hub'
+  jobs:
+  - job: Build
+    displayName: 'Build and Push Docker Image'
+    pool:
+      vmImage: $(vmImageName)
+    steps:
+    # Login to Docker Hub (needed if not using the Docker@2 task's built-in connection for push, or for other Docker commands)
+    # The Docker@2 task with a service connection handles login for its push command.
+    # If you needed to run `docker login` manually, it would look like this:
+    # - script: echo "$(DOCKERHUB_PAT_SECRET)" | docker login -u "$(DOCKERHUB_USERNAME_SECRET)" --password-stdin
+    #   displayName: 'Login to Docker Hub'
+
+    - task: Docker@2
+      displayName: 'Build and Push image to Docker Hub'
+      inputs:
+        command: 'buildAndPush'
+        containerRegistry: '$(dockerHubServiceConnection)' # Uses your Docker Hub service connection
+        repository: '$(dockerHubUsername)/$(imageName)' # Correct format for Docker Hub: username/repository
+        dockerfile: '$(dockerfilePath)'
+        tags: |
+          $(tag)
+          latest
+        buildContext: '$(Build.SourcesDirectory)'
+        # Pass build arguments to Dockerfile if needed for NEXT_PUBLIC_ variables
+        arguments: |
+          --build-arg NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=$(NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY_SECRET) \
+          --build-arg NEXT_PUBLIC_SITE_URL=$(NEXT_PUBLIC_SITE_URL_RUNTIME)
