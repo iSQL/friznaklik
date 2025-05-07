@@ -3,25 +3,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import prisma from '@/lib/prisma';
-
-// Helper function to check if the authenticated user is an admin
-// TODO: Consider moving this to a shared utility file (e.g., /lib/authUtils.ts)
-async function isAdminUser(userId: string): Promise<boolean> {
-  console.log('[isAdminUser] Checking role for userId:', userId);
-  if (!userId) return false;
-
-  try {
-    const dbUser = await prisma.user.findUnique({
-      where: { clerkId: userId },
-      select: { role: true },
-    });
-    console.log('[isAdminUser] DB user found:', dbUser);
-    return dbUser?.role === 'admin';
-  } catch (error) {
-    console.error('[isAdminUser] Error fetching user role:', error);
-    return false;
-  }
-}
+import { isAdminUser } from '@/lib/authUtils'; // Import the centralized isAdminUser function
 
 // Handles GET requests to /api/admin/chat/history/:sessionId
 // Fetches the full message history for a specific chat session.

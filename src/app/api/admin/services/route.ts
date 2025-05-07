@@ -5,23 +5,7 @@ console.log('--- Loading /api/admin/services/route.ts ---'); // Debug log at the
 import { auth } from '@clerk/nextjs/server'; // Import auth helper for server-side authentication
 import { NextResponse } from 'next/server'; // Import NextResponse for sending responses
 import prisma from '@/lib/prisma'; // Import your Prisma client utility
-
-// Helper function to check if the authenticated user is an admin
-// This is a crucial security check for admin-only routes.
-async function isAdminUser(userId: string): Promise<boolean> {
-  console.log('isAdminUser: Checking role for userId:', userId); // Debug log - Shows the Clerk User ID being checked
-
-  // Fetch the user from the database using their Clerk userId
-  const dbUser = await prisma.user.findUnique({
-    where: { clerkId: userId },
-    select: { role: true }, // Only fetch the role field for efficiency
-  });
-
-  console.log('isAdminUser: Database user found:', dbUser); // Debug log - Shows the user object found (or null)
-
-  // Return true if the user exists and their role is 'admin'
-  return dbUser?.role === 'admin';
-}
+import { isAdminUser } from '@/lib/authUtils'; // Import the centralized isAdminUser function
 
 // Handles GET requests to /api/admin/services
 // This will fetch all services from the database.
@@ -34,7 +18,7 @@ export async function GET(request: Request) {
 
 
   // Check authentication status using Clerk
-  const { userId } = await auth(); // Added await here
+  const { userId } = await auth(); 
   console.log('GET /api/admin/services: Clerk userId:', userId); // Debug log - Shows the Clerk User ID from authentication
 
 
@@ -76,7 +60,7 @@ export async function GET(request: Request) {
 // This will create a new service in the database.
 export async function POST(request: Request) {
    // Check authentication status using Clerk
-  const { userId } = await auth(); // Added await here
+  const { userId } = await auth(); 
 
   // If no user ID is found, the user is not authenticated.
   if (!userId) {
@@ -93,7 +77,6 @@ export async function POST(request: Request) {
 
   try {
     // Parse the request body to get the service data
-    // This is similar to deserializing a JSON body in a .NET API controller.
     const body = await request.json();
     const { name, description, duration, price } = body;
 
@@ -121,6 +104,3 @@ export async function POST(request: Request) {
     return new NextResponse('Internal Server Error', { status: 500 });
   }
 }
-
-// Note: PUT and DELETE requests for a specific service will be handled
-// in a separate file using dynamic routing: src/app/api/admin/services/[id]/route.ts

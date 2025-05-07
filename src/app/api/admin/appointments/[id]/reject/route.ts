@@ -3,18 +3,7 @@
 import { auth } from '@clerk/nextjs/server'; // Import auth helper for server-side authentication
 import { NextResponse } from 'next/server'; // Import NextResponse for sending responses
 import prisma from '@/lib/prisma'; // Import your Prisma client utility
-
-// Helper function to check if the authenticated user is an admin
-// TODO: Consider moving this to a shared utility file (e.g., /lib/authUtils.ts)
-async function isAdminUser(userId: string): Promise<boolean> {
-  // Added null check for safety
-  if (!userId) return false;
-  const dbUser = await prisma.user.findUnique({
-    where: { clerkId: userId },
-    select: { role: true },
-  });
-  return dbUser?.role === 'admin';
-}
+import { isAdminUser } from '@/lib/authUtils'; // Import the centralized isAdminUser function
 
 // Handles PUT requests to /api/admin/appointments/:id/reject
 export async function PUT(
