@@ -6,30 +6,40 @@ import prisma from '@/lib/prisma'; // Import your Prisma client utility
 import { isAdminUser } from '@/lib/authUtils'; // Import the centralized isAdminUser function
 
 // Handles PUT requests to /api/admin/appointments/:id/reject
+// Uses URL parsing to get the appointment ID
 export async function PUT(
-    request: Request, // The request object
-    { params }: { params: { id: string } } // Destructure 'id' as appointmentId from params
+    request: Request // Only the request parameter is needed now
 ) {
-  // 1. Authentication
+  // Check authentication status using Clerk *first*
   const { userId } = await auth(); // Admin must be logged in
 
   if (!userId) {
-    console.log('PUT /api/admin/appointments/[id]/reject: User not authenticated, returning 401');
+    console.log('PUT /api/admin/appointments/reject: User not authenticated, returning 401');
     return new NextResponse('Unauthorized', { status: 401 });
   }
 
-  // 2. Get appointmentId from params
-  const appointmentId = params.id;
+  // Extract appointmentId from the URL path
+  let appointmentId: string | undefined;
+  try {
+      const url = new URL(request.url);
+      // Example URL: /api/admin/appointments/some-id/reject
+      // Split by '/' -> ['', 'api', 'admin', 'appointments', 'some-id', 'reject']
+      // The ID should be the second to last element
+      appointmentId = url.pathname.split('/').at(-2);
+  } catch (urlError) {
+       console.error('PUT /api/admin/appointments/reject: Error parsing request URL:', urlError);
+       return new NextResponse('Internal Server Error', { status: 500 });
+  }
+
 
   if (!appointmentId) {
-    // This case should ideally not be hit if the route is matched correctly by Next.js.
-    console.log('PUT /api/admin/appointments/[id]/reject: Appointment ID is missing from params, returning 400');
+    console.log('PUT /api/admin/appointments/reject: Missing or could not parse appointment ID from URL, returning 400');
     return new NextResponse('Bad Request: Invalid Appointment ID in URL', { status: 400 });
   }
 
   console.log(`PUT /api/admin/appointments/${appointmentId}/reject: Request received for ID`);
 
-  // 3. Authorization (Admin Check)
+  // Check if the authenticated user is an admin
   const isAdmin = await isAdminUser(userId);
 
   if (!isAdmin) {
@@ -40,20 +50,15 @@ export async function PUT(
    console.log(`PUT /api/admin/appointments/${appointmentId}/reject: User is admin, attempting to reject...`);
 
 
-  // 4. Data Update Logic
   try {
     // Update the appointment status to 'rejected' in the database
     const updatedAppointment = await prisma.appointment.update({
-      where: { 
-        id: appointmentId, 
-        status: 'pending' // Only update if status is pending
-      },
+      where: { id: appointmentId, status: 'pending' }, // Only update if status is pending
       data: {
         status: 'rejected',
         // TODO: Optionally add admin user ID or rejection reason notes here
-        // Example if you were to pass notes in the request body:
-        // const body = await request.json(); 
-        // adminNotes: body.adminNotes || null, 
+        // const body = await request.json(); // If you need data from body
+        // adminNotes: body.adminNotes || null,
       },
     });
 
@@ -67,9 +72,7 @@ export async function PUT(
   } catch (error) {
     console.error(`Error rejecting appointment with ID ${appointmentId}:`, error);
      // Handle case where appointment is not found or not pending
-     // Prisma's `update` throws P2025 if the record to update (matching the where clause) is not found.
-     if (error instanceof Error && (error as any).code === 'P2025') {
-       console.log(`PUT /api/admin/appointments/${appointmentId}/reject: Appointment not found or not in 'pending' state.`);
+     if (error instanceof Error && error.message.includes('Record to update not found')) {
        return new NextResponse('Appointment not found or not pending', { status: 404 });
      }
     return new NextResponse('Internal Server Error', { status: 500 });

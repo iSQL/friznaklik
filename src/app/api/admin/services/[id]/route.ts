@@ -7,23 +7,30 @@ import { isAdminUser } from '@/lib/authUtils'; // Import the centralized isAdmin
 
 // Handles GET requests to /api/admin/services/:id
 // Fetches a single service by its ID.
-export async function GET(
-    request: Request,
-    { params }: { params: { id: string } } // Destructure 'id' as serviceId from params
-) {
-  // 1. Authentication
+// Uses URL parsing for serviceId
+export async function GET(request: Request) {
+  // 1. Authentication & Authorization
   const { userId } = await auth();
   if (!userId) {
-    console.log('GET /api/admin/services/[id]: User not authenticated');
     return new NextResponse('Unauthorized', { status: 401 });
   }
-
-  // 2. Get serviceId from params
-  const serviceId = params.id;
+  
+// Helper function to parse serviceId from URL
+function getServiceIdFromUrl(requestUrl: string): string | undefined {
+  try {
+     const url = new URL(requestUrl);
+     // Example URL: /api/admin/services/some-service-id
+     // The ID should be the last segment
+     return url.pathname.split('/').pop();
+ } catch (urlError) {
+     console.error('Error parsing request URL:', urlError);
+     return undefined;
+ }
+}
+  // 2. Extract serviceId from URL
+  const serviceId = getServiceIdFromUrl(request.url);
   if (!serviceId) {
-    // This case should ideally not be hit if the route is matched correctly.
-    console.log('GET /api/admin/services/[id]: Service ID is missing from params');
-    return new NextResponse('Bad Request: Service ID is missing', { status: 400 });
+      return new NextResponse('Bad Request: Invalid Service ID in URL', { status: 400 });
   }
   console.log(`GET /api/admin/services/${serviceId}: Request received`);
 
@@ -55,22 +62,18 @@ export async function GET(
 
 // Handles PUT requests to /api/admin/services/:id
 // Updates a single service by its ID.
-export async function PUT(
-    request: Request,
-    { params }: { params: { id: string } } // Destructure 'id' as serviceId from params
-) {
-  // 1. Authentication
+// Uses URL parsing for serviceId
+export async function PUT(request: Request) {
+  // 1. Authentication & Authorization
   const { userId } = await auth();
   if (!userId) {
-    console.log('PUT /api/admin/services/[id]: User not authenticated');
     return new NextResponse('Unauthorized', { status: 401 });
   }
 
-  // 2. Get serviceId from params
-  const serviceId = params.id;
-  if (!serviceId) {
-    console.log('PUT /api/admin/services/[id]: Service ID is missing from params');
-    return new NextResponse('Bad Request: Service ID is missing', { status: 400 });
+  // 2. Extract serviceId from URL
+  const serviceId = getServiceIdFromUrl(request.url);
+   if (!serviceId) {
+      return new NextResponse('Bad Request: Invalid Service ID in URL', { status: 400 });
   }
   console.log(`PUT /api/admin/services/${serviceId}: Request received`);
 
@@ -108,8 +111,7 @@ export async function PUT(
 
   } catch (error) {
     console.error(`Error updating service with ID ${serviceId}:`, error);
-     // Check for Prisma's specific error code for "Record to update not found"
-     if (error instanceof Error && (error as any).code === 'P2025') {
+     if (error instanceof Error && error.message.includes('Record to update not found')) {
          console.log(`PUT /api/admin/services/${serviceId}: Service not found for update`);
          return new NextResponse('Service not found', { status: 404 });
      }
@@ -119,22 +121,18 @@ export async function PUT(
 
 // Handles DELETE requests to /api/admin/services/:id
 // Deletes a single service by its ID.
-export async function DELETE(
-    request: Request, // Request object is passed by Next.js, keep it even if not directly used for params
-    { params }: { params: { id: string } } // Destructure 'id' as serviceId from params
-) {
-   // 1. Authentication
+// Uses URL parsing for serviceId
+export async function DELETE(request: Request) {
+   // 1. Authentication & Authorization
    const { userId } = await auth();
    if (!userId) {
-     console.log('DELETE /api/admin/services/[id]: User not authenticated');
      return new NextResponse('Unauthorized', { status: 401 });
    }
 
-   // 2. Get serviceId from params
-   const serviceId = params.id;
+   // 2. Extract serviceId from URL
+   const serviceId = getServiceIdFromUrl(request.url);
    if (!serviceId) {
-       console.log('DELETE /api/admin/services/[id]: Service ID is missing from params');
-       return new NextResponse('Bad Request: Service ID is missing', { status: 400 });
+       return new NextResponse('Bad Request: Invalid Service ID in URL', { status: 400 });
    }
    console.log(`DELETE /api/admin/services/${serviceId}: Request received`);
 
@@ -169,8 +167,7 @@ export async function DELETE(
 
    } catch (error) {
      console.error(`Error deleting service with ID ${serviceId}:`, error);
-     // Check for Prisma's specific error code for "Record to delete not found"
-     if (error instanceof Error && (error as any).code === 'P2025') {
+     if (error instanceof Error && error.message.includes('Record to delete not found')) {
         console.log(`DELETE /api/admin/services/${serviceId}: Service not found for deletion.`);
         return new NextResponse('Service not found', { status: 404 });
       }

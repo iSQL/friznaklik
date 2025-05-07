@@ -7,32 +7,44 @@ import { isAdminUser } from '@/lib/authUtils'; // Import the centralized isAdmin
 
 // Handles GET requests to /api/admin/chat/history/:sessionId
 // Fetches the full message history for a specific chat session.
+// Uses URL parsing to get the sessionId
 export async function GET(
-  request: Request,
-  { params }: { params: { sessionId: string } } // Destructure 'sessionId' from params
+  request: Request
+  // Removed the second argument: { params }: { params: { sessionId: string } }
 ) {
 
-  // 1. Authentication
-  const { userId } = await auth(); 
+  // 1. Authentication & Authorization
+  const { userId } = await auth(); // Use await for auth()
 
   if (!userId) {
+    // Logged out before extracting sessionId
     console.log(`GET /api/admin/chat/history/[sessionId]: User not authenticated, returning 401`);
     return new NextResponse('Unauthorized', { status: 401 });
   }
 
-  // 2. Get sessionId from params
-  const sessionId = params.sessionId;
+  // Extract sessionId from the URL path
+  let sessionId: string | undefined;
+  try {
+      const url = new URL(request.url);
+      // Example URL: /api/admin/chat/history/some-session-id
+      // Split by '/' -> ['', 'api', 'admin', 'chat', 'history', 'some-session-id']
+      // The ID should be the last element
+      sessionId = url.pathname.split('/').pop(); // Use pop() to get the last segment
+  } catch (urlError) {
+       console.error('GET /api/admin/chat/history/[sessionId]: Error parsing request URL:', urlError);
+       return new NextResponse('Internal Server Error', { status: 500 });
+  }
 
+  // 2. Validate sessionId
   if (!sessionId) {
-    // This case should ideally not be hit if the route is matched correctly by Next.js.
-    console.log(`GET /api/admin/chat/history/[sessionId]: Session ID is missing from params`);
-    return new NextResponse('Bad Request: Invalid Session ID in URL', { status: 400 });
+      console.log(`GET /api/admin/chat/history/[sessionId]: Missing or could not parse sessionId from URL`);
+      return new NextResponse('Bad Request: Invalid Session ID in URL', { status: 400 });
   }
 
   console.log(`GET /api/admin/chat/history/${sessionId}: Request received for ID`);
   console.log(`GET /api/admin/chat/history/${sessionId}: Clerk userId:`, userId);
 
-  // 3. Authorization (Admin Check)
+
   const isAdmin = await isAdminUser(userId);
   if (!isAdmin) {
     console.log(`GET /api/admin/chat/history/${sessionId}: User is not admin, returning 403`);
@@ -42,7 +54,7 @@ export async function GET(
   console.log(`GET /api/admin/chat/history/${sessionId}: User is admin. Proceeding to fetch history.`);
 
 
-  // 4. Data Fetching
+  // 3. Data Fetching
   try {
     const chatSessionWithHistory = await prisma.chatSession.findUnique({
       where: {
@@ -75,7 +87,7 @@ export async function GET(
 
     console.log(`GET /api/admin/chat/history/${sessionId}: Fetched session with ${chatSessionWithHistory.messages.length} messages.`);
 
-    // 5. Response
+    // 4. Response
     // Return the full session object including the user and messages array
     return NextResponse.json(chatSessionWithHistory, { status: 200 });
 

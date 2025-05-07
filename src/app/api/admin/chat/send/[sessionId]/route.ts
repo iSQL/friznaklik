@@ -7,32 +7,44 @@ import { isAdminUser } from '@/lib/authUtils'; // Import the centralized isAdmin
 
 // Handles POST requests to /api/admin/chat/send/:sessionId
 // Allows an admin to send a message to a specific chat session.
+// Uses URL parsing to get the sessionId
 export async function POST(
-  request: Request,
-  { params }: { params: { sessionId: string } } // Destructure 'sessionId' from params
+  request: Request
+  // Removed second argument: { params }: { params: { sessionId: string } }
 ) {
 
-  // 1. Authentication
-  const { userId } = await auth(); 
+  // 1. Authentication & Authorization
+  const { userId } = await auth(); // Use await for auth()
 
   if (!userId) {
+    // Logged out before extracting sessionId
     console.log(`POST /api/admin/chat/send/[sessionId]: User not authenticated, returning 401`);
     return new NextResponse('Unauthorized', { status: 401 });
   }
 
-  // 2. Get sessionId from params
-  const sessionId = params.sessionId; 
+  // Extract sessionId from the URL path
+  let sessionId: string | undefined;
+  try {
+      const url = new URL(request.url);
+      // Example URL: /api/admin/chat/send/some-session-id
+      // Split by '/' -> ['', 'api', 'admin', 'chat', 'send', 'some-session-id']
+      // The ID should be the last element
+      sessionId = url.pathname.split('/').pop(); // Use pop() to get the last segment
+  } catch (urlError) {
+       console.error('POST /api/admin/chat/send/[sessionId]: Error parsing request URL:', urlError);
+       return new NextResponse('Internal Server Error', { status: 500 });
+  }
 
+   // 2. Validate sessionId
   if (!sessionId) {
-    // This case should ideally not be hit if the route is matched correctly by Next.js.
-    console.log(`POST /api/admin/chat/send/[sessionId]: Session ID is missing from params`);
-    return new NextResponse('Bad Request: Invalid Session ID in URL', { status: 400 });
+      console.log(`POST /api/admin/chat/send/[sessionId]: Missing or could not parse sessionId from URL`);
+      return new NextResponse('Bad Request: Invalid Session ID in URL', { status: 400 });
   }
 
   console.log(`POST /api/admin/chat/send/${sessionId}: Request received for ID`);
   console.log(`POST /api/admin/chat/send/${sessionId}: Clerk userId:`, userId);
 
-  // 3. Authorization (Admin Check)
+
   const isAdmin = await isAdminUser(userId);
   if (!isAdmin) {
     console.log(`POST /api/admin/chat/send/${sessionId}: User is not admin, returning 403`);
@@ -42,11 +54,12 @@ export async function POST(
   console.log(`POST /api/admin/chat/send/${sessionId}: User is admin. Proceeding to send message.`);
 
 
-  // 4. Parse Request Body & Validate Message
+  // 3. Parse Request Body & Validate Message
   let messageText: string;
   try {
       const body = await request.json();
-      messageText = (body as { message?: string }).message ?? ''; 
+      // Add type assertion if necessary, or define an interface for the body
+      messageText = (body as { message?: string }).message ?? ''; // Use optional chaining and nullish coalescing
 
       if (!messageText || typeof messageText !== 'string' || messageText.trim() === '') {
           console.log(`POST /api/admin/chat/send/${sessionId}: Invalid or empty message in request body`);
@@ -58,7 +71,7 @@ export async function POST(
       return new NextResponse('Bad Request: Invalid JSON body.', { status: 400 });
   }
 
-  // 5. Data Creation (Save Admin Message)
+  // 4. Data Creation (Save Admin Message)
   try {
       // First, verify the chat session exists
       const chatSessionExists = await prisma.chatSession.findUnique({
@@ -85,16 +98,12 @@ export async function POST(
 
       console.log(`POST /api/admin/chat/send/${sessionId}: Admin message saved successfully:`, newAdminMessage);
 
-      // 6. Response
+      // 5. Response
       // Return the newly created message object
       return NextResponse.json(newAdminMessage, { status: 201 }); // 201 Created
 
   } catch (error) {
       console.error(`POST /api/admin/chat/send/${sessionId}: Error saving admin message:`, error);
-      // Check if it's a Prisma error (e.g., foreign key constraint if session ID was invalid despite earlier check)
-      if (error instanceof Error && (error as any).code?.startsWith('P')) { // Basic check for Prisma error codes
-        console.error(`POST /api/admin/chat/send/${sessionId}: Prisma error:`, (error as any).code, (error as any).meta);
-      }
       return new NextResponse('Internal Server Error', { status: 500 });
   }
 }
