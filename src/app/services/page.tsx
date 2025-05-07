@@ -1,10 +1,9 @@
 // src/app/services/page.tsx
 
 import Link from 'next/link'; // For linking to booking page or service details
-import { headers } from 'next/headers'; // Import headers to forward cookies
+// No longer need to import headers
 
 // Define the expected structure of a Service object
-// This should match the structure returned by your API and your Prisma model
 interface Service {
   id: string;
   name: string;
@@ -16,37 +15,26 @@ interface Service {
 }
 
 // Function to fetch services from the API
+// No longer needs to handle headers/cookies as the API route is public
 async function getServices(): Promise<Service[]> {
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
   const apiUrl = `${siteUrl}/api/services`;
 
   console.log(`Fetching services from: ${apiUrl}`);
 
-  // Prepare headers for the fetch request
-  const requestHeaders = new Headers(await headers()); // Get headers from the incoming request
-  const fetchHeaders: HeadersInit = {};
-  const cookieHeader = requestHeaders.get('Cookie');
-  if (cookieHeader) {
-    fetchHeaders['Cookie'] = cookieHeader; // Forward the cookie
-    console.log('Forwarding cookie to /api/services');
-  } else {
-    console.log('No cookie found in incoming request to forward.');
-  }
-
-
   try {
+    // Fetch without custom headers
     const res = await fetch(apiUrl, {
-      headers: fetchHeaders, // Include the forwarded headers
-      cache: 'no-store', // Fetch fresh data on each request
+      // Consider using Next.js caching strategies if appropriate
+      // cache: 'force-cache', // Example: Cache aggressively
+      // next: { revalidate: 3600 } // Example: Revalidate every hour
+      cache: 'no-store', // Keep fetching fresh data for now, adjust as needed
     });
 
     if (!res.ok) {
       const errorText = await res.text();
       console.error(`Failed to fetch services: ${res.status} ${res.statusText}`, errorText);
-      // Provide a more specific error message if it's a 401 or 403
-      if (res.status === 401 || res.status === 403) {
-        throw new Error(`Authentication failed when fetching services. Status: ${res.status}. Ensure you are logged in or the API route has correct permissions.`);
-      }
+      // Throw a generic error as authentication shouldn't be the issue anymore
       throw new Error(`Failed to fetch services. Status: ${res.status}`);
     }
 
@@ -55,6 +43,7 @@ async function getServices(): Promise<Service[]> {
     return services;
   } catch (error) {
     console.error('Error in getServices:', error);
+    // Re-throw the error to be caught by the page component
     throw error;
   }
 }
@@ -63,12 +52,6 @@ async function getServices(): Promise<Service[]> {
 export default async function ServicesPage() {
   let services: Service[] = [];
   let fetchError: string | null = null;
-
-  // Note: If services are public, authentication might not be needed.
-  // However, if the API route /api/services is protected by Clerk middleware
-  // (e.g. in middleware.ts), then forwarding the cookie is necessary even for Server Components.
-  // If services are truly public and the API route shouldn't be protected,
-  // adjust your middleware.ts to exclude /api/services from auth checks.
 
   try {
     services = await getServices();
