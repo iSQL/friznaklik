@@ -37,6 +37,7 @@ WORKDIR /app
 # Declare arguments that can be passed during the build
 ARG NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
 ARG NEXT_PUBLIC_SITE_URL
+ARG GOOGLE_API_KEY
 
 # Copy dependencies and prisma client from the 'deps' stage
 COPY --from=deps /app/node_modules ./node_modules
@@ -48,6 +49,7 @@ COPY . .
 # Make the build arguments available as environment variables for the build command
 ENV NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=$NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
 ENV NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL
+ENV GOOGLE_API_KEY=$GOOGLE_API_KEY
 
 # Build the Next.js application
 # The output will be in .next/standalone thanks to `output: 'standalone'` in next.config.ts
