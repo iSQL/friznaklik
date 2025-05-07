@@ -1,13 +1,7 @@
 trigger:
-- main # Or your primary branch
+- none # Or your primary branch
 
 variables:
-  # ----- General Settings -----
-  vmImageName: 'ubuntu-latest' # Using a Microsoft-hosted Ubuntu agent
-
-  # ----- Docker Hub Settings (Update these) -----
-  # Create a 'Docker Registry' service connection in Azure DevOps for Docker Hub
-  # Use your Docker Hub username and a Personal Access Token (PAT) as the password.
   dockerHubServiceConnection: 'SCDocker' # Name of your Docker Hub service connection
   dockerHubUsername: 'maremilojkovic' # Your Docker Hub username (lowercase)
   imageName: 'friznaklik' # The name of your image on Docker Hub
@@ -38,7 +32,7 @@ stages:
   - job: Build
     displayName: 'Build and Push Docker Image'
     pool:
-      vmImage: $(vmImageName)
+      name: 'Default' # <- CHANGE THIS to the name of the pool your agent is in
     steps:
     # Login to Docker Hub (needed if not using the Docker@2 task's built-in connection for push, or for other Docker commands)
     # The Docker@2 task with a service connection handles login for its push command.
