@@ -8,13 +8,6 @@ import { isAdminUser } from '@/lib/authUtils'; // Import the centralized isAdmin
 // Handles GET requests to /api/admin/services/:id
 // Fetches a single service by its ID.
 // Uses URL parsing for serviceId
-export async function GET(request: Request) {
-  // 1. Authentication & Authorization
-  const { userId } = await auth();
-  if (!userId) {
-    return new NextResponse('Unauthorized', { status: 401 });
-  }
-  
 // Helper function to parse serviceId from URL
 function getServiceIdFromUrl(requestUrl: string): string | undefined {
   try {
@@ -27,6 +20,14 @@ function getServiceIdFromUrl(requestUrl: string): string | undefined {
      return undefined;
  }
 }
+
+export async function GET(request: Request) {
+  // 1. Authentication & Authorization
+  const { userId } = await auth();
+  if (!userId) {
+    return new NextResponse('Unauthorized', { status: 401 });
+  }
+
   // 2. Extract serviceId from URL
   const serviceId = getServiceIdFromUrl(request.url);
   if (!serviceId) {
