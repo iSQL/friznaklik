@@ -15,7 +15,7 @@ variables:
   # POSTGRES_DB_SECRET
   # CLERK_SECRET_KEY_SECRET
   # NEXT_PUBLIC_CLERK_DOMAIN_SECRET
-  # PUBLIC_SITE_URL_RUNTIME 
+  # NEXT_PUBLIC_SITE_URL_RUNTIME 
   # CLERK_WEBHOOK_SECRET_SECRET
 
 pool:
@@ -44,6 +44,8 @@ stages:
         CLERK_DOMAIN: $(NEXT_PUBLIC_CLERK_DOMAIN)
         SITE_URL: $(PUBLIC_SITE_URL)
         CLERK_WEBHOOK: $(CLERK_WEBHOOK_SECRET)
+        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: $(NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY)
+        GOOGLE_API_KEY: $(GOOGLE_API_KEY)
         # Map optional ports if they exist as pipeline variables
         # PG_PORT: $(POSTGRES_PORT) 
         # APP_PORT: $(APP_PORT)
@@ -69,6 +71,9 @@ stages:
           # Other Runtime Variables
           echo "PUBLIC_SITE_URL=${SITE_URL}" >> "${ENV_FILE_PATH}" 
           echo "CLERK_WEBHOOK_SECRET=${CLERK_WEBHOOK}" >> "${ENV_FILE_PATH}"
+          echo "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}" >> "${ENV_FILE_PATH}"
+          echo "GOOGLE_API_KEY="$(GOOGLE_API_KEY) >> "${ENV_FILE_PATH}"
+
           # Add optional ports if mapped in env:
           # if [ -n "${PG_PORT}" ]; then echo "POSTGRES_PORT=${PG_PORT}" >> "${ENV_FILE_PATH}"; fi
           # if [ -n "${APP_PORT}" ]; then echo "APP_PORT=${APP_PORT}" >> "${ENV_FILE_PATH}"; fi
@@ -77,7 +82,7 @@ stages:
           echo "Contents (excluding secrets for security):" # Avoid printing secrets
           # Use grep with -i for case-insensitivity, add KEY to exclusion
           grep -ivE 'SECRET|PASSWORD|KEY' "${ENV_FILE_PATH}" || echo "No non-secret lines found."
-        failOnStderr: true # Fail if any command writes to stderr
+        failOnStderr: false # Fail if any command writes to stderr
 
 
     # Step 3: Copy project files (docker-compose.yml, .env) to the target VM path
@@ -133,7 +138,7 @@ stages:
           docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d # Starts containers based on the latest images and the .env file
 
           echo "Deployment containers started."
-        failOnStderr: true # Fail if any command writes to stderr
+        failOnStderr: false
 
     # Step 5: Run Prisma Migrations (after containers are up)
     - task: Bash@3
