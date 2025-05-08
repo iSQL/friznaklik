@@ -38,22 +38,22 @@ const serviceIdSchema: Schema = { type: SchemaType.STRING, description: "Jedinst
 const slotSchema: Schema = { type: SchemaType.STRING, description: "Specifičan termin u HH:mm formatu (npr. '10:00'), dobijen iz dostupnih termina." }; 
 
 // --- Define ALL Tools (Using Standard Format, with Serbian descriptions) ---
-const listServicesDeclaration: FunctionDeclaration = { /* ... keep existing declaration ... */ 
+const listServicesDeclaration: FunctionDeclaration = { 
   name: "listAvailableServices",
-  description: "Navodi sve dostupne frizerske usluge, uključujući naziv, opis, trajanje i cenu. Koristite ovu funkciju kada korisnik eksplicitno traži da vidi ili navede sve dostupne usluge.", // sr: Lists all available haircut services... Use this function when...
+  description: "Navodi sve dostupne frizerske usluge, uključujući naziv, opis, trajanje i cenu. Koristite ovu funkciju kada korisnik eksplicitno traži da vidi ili navede sve dostupne usluge.", 
 };
-const checkAvailabilityDeclaration: FunctionDeclaration = { /* ... keep existing declaration ... */ 
+const checkAvailabilityDeclaration: FunctionDeclaration = { 
   name: "checkAppointmentAvailability",
-  description: "Proverava dostupne termine za određenu uslugu na određeni datum. Koristite ovo pre pokušaja zakazivanja termina.", // sr: Checks for available appointment time slots... Use this before attempting to book...
+  description: "Proverava dostupne termine za određenu uslugu na određeni datum. Koristite ovo pre pokušaja zakazivanja termina.", 
   parameters: {
     type: SchemaType.OBJECT,
     properties: { serviceName: serviceNameSchema, date: dateSchema },
     required: ["serviceName", "date"],
   },
 };
-const bookAppointmentDeclaration: FunctionDeclaration = { /* ... keep existing declaration ... */ 
+const bookAppointmentDeclaration: FunctionDeclaration = { 
   name: "bookAppointment",
-  description: "Zakazuje termin za korisnika. Zahteva naziv usluge, datum i specifičan termin.", // sr: Books an appointment for a user. Requires the service name, date, and the specific time slot.
+  description: "Zakazuje termin za korisnika. Zahteva naziv usluge, datum i specifičan termin. **MORA** se pozvati nakon što je dostupnost proverena i korisnik je potvrdio da želi da zakaže.", // Added emphasis
   parameters: {
     type: SchemaType.OBJECT,
     properties: {
@@ -80,14 +80,12 @@ export async function POST(request: Request) {
   console.log('POST /api/chat: Request received');
 
   // --- Initialize AI Client *inside* the handler ---
-  const aiApiKey = process.env.GOOGLE_API_KEY; // Use the environment variable directly
+  const aiApiKey = process.env.GOOGLE_API_KEY; // Or use your config: import { getVariable } from '@/config/variables'; const aiApiKey = getVariable('GOOGLE_API_KEY');
   let genAI: GoogleGenerativeAI | null = null;
-  let model: any | null = null; // Use 'any' or a more specific type if available from the SDK for the model instance
+  let model: any | null = null; 
 
   if (!aiApiKey) {
-      // Log the error but allow the function to potentially continue if AI isn't strictly needed for all paths
       console.error('POST /api/chat: GOOGLE_API_KEY environment variable is not set.');
-      // Return error immediately if AI is essential for this endpoint
       return new NextResponse('AI configuration error: Missing API Key', { status: 500 });
   } else {
       try {
@@ -100,7 +98,6 @@ export async function POST(request: Request) {
       }
   }
 
-  // Ensure model is initialized before proceeding (redundant check if we return error above, but safe)
   if (!model) {
       console.error('POST /api/chat: AI model client not initialized, returning 500');
       return new NextResponse('AI model failed to initialize', { status: 500 });
@@ -184,14 +181,21 @@ export async function POST(request: Request) {
     let aiResponseText = 'Žao mi je, došlo je do problema prilikom obrade vašeg zahteva.'; 
     let toolCalls: any[] | undefined;
 
-    // --- Generate Dynamic System Instruction ---
+    // --- Generate Refined Dynamic System Instruction in Serbian ---
     const currentDate = format(new Date(), 'yyyy-MM-dd'); 
     const dynamicSystemInstruction = `Vi ste ljubazan i koristan asistent za zakazivanje frizerskih termina u našem salonu. Započnite razgovor pozdravom.
 Današnji datum je ${currentDate}.
 Vaše mogućnosti, koristeći dostupne alate, su:
 1.  Navesti sve dostupne usluge (alat 'listAvailableServices').
-2.  Proveriti dostupne termine za određenu uslugu i datum (alat 'checkAppointmentAvailability').
-3.  Zakazati termin za određenu uslugu, datum i vreme (alat 'bookAppointment').
+2.  Proveriti dostupne termine za određenu uslugu i datum (alat 'checkAppointmentAvailability'). **Uvek koristite ovaj alat PRE zakazivanja.**
+3.  Zakazati termin za određenu uslugu, datum i vreme (alat 'bookAppointment'). **Ovaj alat se MORA pozvati NAKON što je dostupnost proverena sa 'checkAppointmentAvailability' i korisnik je potvrdio da želi da zakaže taj termin.**
+
+Važan proces zakazivanja:
+a) Kada korisnik želi da zakaže, PRVO pozovite 'checkAppointmentAvailability' sa uslugom i datumom.
+b) Predstavite dostupne termine korisniku. Ako je traženi termin dostupan, pitajte korisnika da potvrdi zakazivanje.
+c) Ako korisnik potvrdi ("da", "ok", "može", itd.), ONDA i SAMO ONDA pozovite alat 'bookAppointment' sa tačnim nazivom usluge, datumom i potvrđenim vremenom (slot).
+d) Tek nakon što dobijete USPEŠAN odgovor od alata 'bookAppointment' (output.success === true), potvrdite korisniku da je termin uspešno zakazan.
+e) Ako alat 'bookAppointment' vrati grešku (error field nije null), obavestite korisnika da zakazivanje nije uspelo i navedite razlog greške. Nemojte potvrđivati zakazivanje u slučaju greške.
 
 Proaktivno ponudite ove opcije korisniku. Zaključite datume kao što je 'sutra' na osnovu današnjeg datuma (${currentDate}). Budite jasni oko informacija koje su vam potrebne (kao što su naziv usluge, datum, vreme).`; 
     console.log("POST /api/chat: Dynamic System Instruction (Serbian):", dynamicSystemInstruction);
@@ -239,18 +243,12 @@ Proaktivno ponudite ove opcije korisniku. Zaključite datume kao što je 'sutra'
 
                 try {
                     // --- Tool Logic (listAvailableServices, checkAppointmentAvailability, bookAppointment) ---
-                    // ... (Keep existing tool execution logic, including internal fetch calls) ...
+                    // ... (Keep existing tool execution logic) ...
                     // --- Tool: listAvailableServices ---
                     if (functionName === 'listAvailableServices') {
                         console.log('[listServices] Fetching all services...');
                         const allServices = await prisma.service.findMany({
-                            select: {
-                                id: true,
-                                name: true,
-                                description: true,
-                                duration: true,
-                                price: true,
-                            }
+                            select: { id: true, name: true, description: true, duration: true, price: true }
                         });
                         toolResponsePayload.output = { services: allServices };
                         console.log(`[listServices] Found ${allServices.length} services.`);
@@ -263,21 +261,16 @@ Proaktivno ponudite ove opcije korisniku. Zaključite datume kao što je 'sutra'
                         console.log(`[checkAvailability] Normalized input name: "${normalizedInputName}"`);
                         if (!dateString || !/^\d{4}-\d{2}-\d{2}$/.test(dateString) || !isValid(parseISO(dateString))) {
                             toolResponsePayload.error = `Nevažeći format datuma: '${dateString}'. Molimo koristite YYYY-MM-DD.`;
-                            console.log(`[checkAvailability] Invalid date format.`);
                         } else {
                             const allDbServices = await prisma.service.findMany({ select: { id: true, name: true } });
                             const matchingServices = allDbServices.filter(dbService => normalizeSerbianText(dbService.name) === normalizedInputName);
-                            console.log(`[checkAvailability] Found ${matchingServices.length} services matching normalized name "${normalizedInputName}":`, matchingServices);
                             if (matchingServices.length === 0) {
                                 toolResponsePayload.error = `Žao mi je, nisam mogao/la pronaći uslugu pod nazivom "${serviceName}" (ili sličnim). Možete me pitati da navedem sve usluge kako biste videli tačne nazive.`;
-                                console.log(`[checkAvailability] Tool execution failed - Service not found by normalized name.`);
                             } else if (matchingServices.length > 1) {
                                 const originalNames = matchingServices.map(s => s.name).join(', ');
                                 toolResponsePayload.error = `Pronašao/la sam više usluga koje odgovaraju "${serviceName}" (nakon normalizacije): ${originalNames}. Molimo Vas da budete precizniji ili kontaktirate podršku.`;
-                                console.log(`[checkAvailability] Tool execution failed - Ambiguous normalized service name.`);
                             } else {
                                 const service = matchingServices[0];
-                                console.log(`[checkAvailability] Unique service found via normalization: ID=${service.id}, Original Name=${service.name}. Proceeding.`);
                                 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
                                 const availabilityApiUrl = `${SITE_URL}/api/appointments/available?serviceId=${service.id}&date=${dateString}`;
                                 console.log(`[checkAvailability] Calling internal availability API: ${availabilityApiUrl}`);
@@ -285,11 +278,9 @@ Proaktivno ponudite ove opcije korisniku. Zaključite datume kao što je 'sutra'
                                 if (!availabilityRes.ok) {
                                     const errorText = await availabilityRes.text();
                                     toolResponsePayload.error = `Neuspešna provera dostupnosti preko internog API-ja za ${service.name} (ID: ${service.id}) na ${dateString}. Status: ${availabilityRes.status} - ${errorText || '(Nema teksta greške)'}`;
-                                    console.error(`[checkAvailability] Internal availability API call failed: ${availabilityRes.status}. URL: ${availabilityApiUrl}`);
                                 } else {
                                     const availableSlots = await availabilityRes.json();
                                     toolResponsePayload.output = { serviceId: service.id, serviceName: service.name, date: dateString, availableSlots: availableSlots };
-                                    console.log(`[checkAvailability] Internal availability API call successful. Slots:`, availableSlots);
                                 }
                             }
                         }
@@ -299,25 +290,19 @@ Proaktivno ponudite ove opcije korisniku. Zaključite datume kao što je 'sutra'
                          const { serviceName, date: dateString, slot } = functionArgs;
                          console.log(`[bookAppointment] Received serviceName: "${serviceName}", date: "${dateString}", slot: "${slot}"`);
                          const normalizedInputName = normalizeSerbianText(serviceName);
-                         console.log(`[bookAppointment] Normalized input name: "${normalizedInputName}"`);
                          if (!serviceName || !dateString || !slot || !/^\d{4}-\d{2}-\d{2}$/.test(dateString) || !/^\d{2}:\d{2}$/.test(slot)) {
                             toolResponsePayload.error = `Zakazivanje neuspešno: Nedostaje ili je nevažeći naziv usluge, datum (YYYY-MM-DD), ili termin (HH:mm).`;
-                            console.log(`[bookAppointment] Invalid input parameters.`);
                          } else {
                              const allDbServices = await prisma.service.findMany({ select: { id: true, name: true } });
                              const matchingServices = allDbServices.filter(dbService => normalizeSerbianText(dbService.name) === normalizedInputName);
-                             console.log(`[bookAppointment] Found ${matchingServices.length} services matching normalized name "${normalizedInputName}" for booking:`, matchingServices);
                              if (matchingServices.length === 0) {
                                 toolResponsePayload.error = `Zakazivanje neuspešno: Žao mi je, nisam mogao/la pronaći uslugu pod nazivom "${serviceName}" (ili sličnim) za zakazivanje. Molimo proverite naziv ili me pitajte da navedem usluge.`;
-                                console.log(`[bookAppointment] Tool execution failed - Service not found by normalized name.`);
                             } else if (matchingServices.length > 1) {
                                 const originalNames = matchingServices.map(s => s.name).join(', ');
                                 toolResponsePayload.error = `Zakazivanje neuspešno: Pronađeno je više usluga koje odgovaraju "${serviceName}" (nakon normalizacije): ${originalNames}. Molimo Vas da budete precizniji.`;
-                                console.log(`[bookAppointment] Tool execution failed - Ambiguous normalized service name.`);
                             } else {
                                 const serviceToBook = matchingServices[0]; 
                                 const serviceId = serviceToBook.id;
-                                console.log(`[bookAppointment] Unique service found via normalization for booking: ID=${serviceId}, Original Name=${serviceToBook.name}. Proceeding.`);
                                 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
                                 const bookingApiUrl = `${SITE_URL}/api/appointments`;
                                 console.log(`[bookAppointment] Calling internal booking API: ${bookingApiUrl}`);
@@ -328,11 +313,11 @@ Proaktivno ponudite ove opcije korisniku. Zaključite datume kao što je 'sutra'
                                 });
                                 if (!bookingRes.ok) {
                                     const errorText = await bookingRes.text();
-                                    toolResponsePayload.error = `Zakazivanje neuspešno preko internog API-ja: ${bookingRes.status} - ${errorText || '(Nema teksta greške)'}`;
-                                    console.error(`[bookAppointment] Internal booking API call failed: ${bookingRes.status}. URL: ${bookingApiUrl}`);
+                                    toolResponsePayload.error = `Zakazivanje neuspešno preko internog API-ja: ${bookingRes.status} - ${errorText || '(Nema teksta greške)'}`; // Critical: Ensure this error is passed back
+                                    console.error(`[bookAppointment] Internal booking API call failed: ${bookingRes.status}. URL: ${bookingApiUrl}. Response: ${errorText}`);
                                 } else {
                                     const bookingResult = await bookingRes.json();
-                                    toolResponsePayload.output = { success: true, appointmentDetails: bookingResult };
+                                    toolResponsePayload.output = { success: true, appointmentDetails: bookingResult }; // Indicate success
                                     console.log(`[bookAppointment] Internal booking API call successful.`);
                                 }
                             }
@@ -341,15 +326,13 @@ Proaktivno ponudite ove opcije korisniku. Zaključite datume kao što je 'sutra'
                     // --- Unknown Tool ---
                     else {
                         toolResponsePayload.error = `Nepoznat alat zatražen: ${functionName}`;
-                        console.error(`POST /api/chat: Unknown tool requested by AI: ${functionName}`);
                     }
                 } catch (toolError: any) {
                     toolResponsePayload.error = `Greška pri izvršavanju alata ${functionName}: ${toolError.message || 'Nepoznata greška'}`;
-                    console.error(`POST /api/chat: Error during tool execution for ${functionName}:`, toolError);
                 }
 
                 return {
-                    toolCallId: toolCall.id,
+                    // toolCallId: toolCall.id, // Note: Gemini API might expect functionResponse directly without toolCallId wrapper - adjust if needed based on SDK docs/errors
                     functionResponse: {
                         name: functionName,
                         response: toolResponsePayload,
@@ -360,7 +343,8 @@ Proaktivno ponudite ove opcije korisniku. Zaključite datume kao što je 'sutra'
             // --- Send Tool Results back to AI ---
             const toolResults = await Promise.all(toolResultPromises);
             console.log('POST /api/chat: Tool results being sent back to AI:', JSON.stringify(toolResults, null, 2));
-            const toolResultResponse = await chat.sendMessage(JSON.stringify(toolResults));
+             // Send the array of function responses back
+            const toolResultResponse = await chat.sendMessage(JSON.stringify(toolResults)); 
             const finalResponse = toolResultResponse.response;
             aiResponseText = finalResponse.text(); 
             console.log('POST /api/chat: Received final AI response after tool use:', aiResponseText);

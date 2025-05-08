@@ -15,7 +15,7 @@ import 'react-datepicker/dist/react-datepicker.css';
 import { format } from 'date-fns';
 
 // Define the base URL for your API.
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
+const SITE_URL = process.env.PUBLIC_SITE_URL || 'http://localhost:3000';
 
 // New component to handle search param logic, because useSearchParams needs to be under Suspense
 function BookingForm() {

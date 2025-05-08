@@ -15,7 +15,7 @@ variables:
   # POSTGRES_DB_SECRET
   # CLERK_SECRET_KEY_SECRET
   # NEXT_PUBLIC_CLERK_DOMAIN_SECRET
-  # NEXT_PUBLIC_SITE_URL_RUNTIME 
+  # PUBLIC_SITE_URL_RUNTIME 
   # CLERK_WEBHOOK_SECRET_SECRET
 
 pool:
@@ -42,7 +42,7 @@ stages:
         PG_DB: $(POSTGRES_DB)
         CLERK_SECRET: $(CLERK_SECRET_KEY)
         CLERK_DOMAIN: $(NEXT_PUBLIC_CLERK_DOMAIN)
-        SITE_URL: $(NEXT_PUBLIC_SITE_URL)
+        SITE_URL: $(PUBLIC_SITE_URL)
         CLERK_WEBHOOK: $(CLERK_WEBHOOK_SECRET)
         # Map optional ports if they exist as pipeline variables
         # PG_PORT: $(POSTGRES_PORT) 
@@ -67,7 +67,7 @@ stages:
           echo "CLERK_SECRET_KEY=${CLERK_SECRET}" >> "${ENV_FILE_PATH}"
           echo "NEXT_PUBLIC_CLERK_DOMAIN=${CLERK_DOMAIN}" >> "${ENV_FILE_PATH}" 
           # Other Runtime Variables
-          echo "NEXT_PUBLIC_SITE_URL=${SITE_URL}" >> "${ENV_FILE_PATH}" 
+          echo "PUBLIC_SITE_URL=${SITE_URL}" >> "${ENV_FILE_PATH}" 
           echo "CLERK_WEBHOOK_SECRET=${CLERK_WEBHOOK}" >> "${ENV_FILE_PATH}"
           # Add optional ports if mapped in env:
           # if [ -n "${PG_PORT}" ]; then echo "POSTGRES_PORT=${PG_PORT}" >> "${ENV_FILE_PATH}"; fi

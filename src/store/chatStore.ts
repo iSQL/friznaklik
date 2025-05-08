@@ -30,7 +30,7 @@ interface ChatState {
 }
 
 // Define the base URL for your API.
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
+const SITE_URL = process.env.PUBLIC_SITE_URL || 'http://localhost:3000';
 
 
 // Create the Zustand store

@@ -10,10 +10,10 @@ type AppointmentWithService = Appointment & {
   service: Service;
 };
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL; 
+const SITE_URL = process.env.PUBLIC_SITE_URL; 
 
 if (!SITE_URL) {
-  console.error('DashboardPage: NEXT_PUBLIC_SITE_URL is not set in environment variables.');
+  console.error('DashboardPage: PUBLIC_SITE_URL is not set in environment variables.');
   // Consider a more robust error handling or default for development
 }
 
