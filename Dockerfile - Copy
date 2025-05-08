@@ -35,6 +35,7 @@ WORKDIR /app
 
 # --- Add Build Arguments ---
 # Declare arguments that can be passed during the build
+ARG NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
 ARG NEXT_PUBLIC_SITE_URL
 
 # Copy dependencies and prisma client from the 'deps' stage
@@ -44,7 +45,8 @@ COPY --from=deps /app/prisma ./prisma
 COPY . .
 
 # --- Set Environment Variables for Build ---
-# Make the build arguments available as environment variables for the build command //TODO: refactor site url usage to not use env var
+# Make the build arguments available as environment variables for the build command
+ENV NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
 ENV NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL}
 
 # Build the Next.js application
@@ -53,14 +55,14 @@ ENV NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL}
 RUN pnpm build
 
 # ---- Runner Stage ----
-# Use the Node.js 23 Alpine image for the final stage as well, todo: consider 23-slim if needed for compatibility
+# Use the Node.js 23 Alpine image for the final stage as well
 FROM node:23-alpine AS runner
 WORKDIR /app
 
 # Set environment variable for Node.js to production
 ENV NODE_ENV=production
 # Optionally, set the NEXT_TELEMETRY_DISABLED flag
-ENV NEXT_TELEMETRY_DISABLED=1
+ENV NEXT_TELEMETRY_DISABLED 1
 
 # Create a non-root user for security
 RUN addgroup --system --gid 1001 nodejs

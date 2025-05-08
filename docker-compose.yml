@@ -1,44 +1,27 @@
-# docker-compose.yml
+# docker-compose.yml (Base Configuration)
+# Defines common services and networks/volumes
+
+version: '3.8' # Specify compose file version (optional but good practice)
+
 services:
   db:
-    image: postgres:15-alpine # Or your preferred PostgreSQL version
+    image: postgres:15-alpine 
     container_name: friznaklik_db
     restart: always
     environment:
-      # --- Use environment variables from a .env file ---
+      # These will be read from the .env file
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - postgres_data:/var/lib/postgresql/data # Persist database data
     ports:
-      - "${POSTGRES_PORT:-5432}:5432" # Expose port if needed externally
-
-  app:
-    build:
-      context: . # Build from the Dockerfile in the current directory
-      args:
-        # Pass public variables needed at build time from .env file
-        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
-        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL}
-    container_name: friznaklik_app
-    restart: always
-    ports:
-      - "${APP_PORT:-3000}:3000"
-    depends_on:
-      - db # Ensure the database starts before the app
-    environment:
-      # --- Runtime Environment Variables (loaded from .env) ---
-      # Database URL uses the service name 'db' as the host and variables from .env
-      DATABASE_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?schema=public"
-      # Clerk Runtime Variables
-      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY} # Still needed at runtime
-      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY}
-      NEXT_PUBLIC_CLERK_DOMAIN: ${NEXT_PUBLIC_CLERK_DOMAIN}
-      # Other Runtime Variables
-      NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL} # Still needed at runtime
-      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
-      CLERK_WEBHOOK_SECRET: ${CLERK_WEBHOOK_SECRET} # Needed if using webhooks
+      - "${POSTGRES_PORT:-5432}:5432" 
+    healthcheck: # Optional: Add healthcheck for DB readiness
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   postgres_data: # Define the named volume for data persistence

@@ -1,44 +1,28 @@
 // src/app/api/chat/route.ts
 
-import { NextResponse } from 'next/server'; // Import NextResponse for sending responses
-import { auth } from '@clerk/nextjs/server'; // Import auth helper for server-side authentication
-import prisma from '@/lib/prisma'; // Import Prisma client utility
+import { NextResponse } from 'next/server'; 
+import { auth } from '@clerk/nextjs/server'; 
+import prisma from '@/lib/prisma'; 
+import { appConfig } from '@/config/appConfig'; // Adjust path if needed
 
-// Import the SDK for Google AI (Gemini)
+
+// Import the necessary types from the SDK
 import {
   GoogleGenerativeAI,
   HarmBlockThreshold,
   HarmCategory,
   SchemaType,
-  Schema, // Ensure Schema is imported
-  FunctionDeclarationsTool, // Import FunctionDeclarationsTool
-  FunctionDeclaration, // Import FunctionDeclaration type
+  Schema, 
+  FunctionDeclarationsTool, 
+  FunctionDeclaration, 
 } from '@google/generative-ai';
 
-
-// Import date-fns for parsing dates from AI and getting current date
-import { parseISO, format, isValid, addDays, startOfDay } from 'date-fns'; // format is used for current date
-
-// Import headers helper for forwarding cookies - Needed for internal server-side fetches
+import { parseISO, format, isValid, addDays, startOfDay } from 'date-fns'; 
 import { headers } from 'next/headers';
-
-
-// Get your Google AI API key from environment variables
-const aiApiKey = process.env.GOOGLE_API_KEY;
-
-
-// Ensure the API key is set
-if (!aiApiKey) {
-  console.error('GOOGLE_API_KEY environment variable is not set.');
-  // Handle missing API key appropriately
-}
-
-// Initialize the Google AI model client
-const genAI = aiApiKey ? new GoogleGenerativeAI(aiApiKey) : null;
-const model = genAI ? genAI.getGenerativeModel({ model: 'gemini-2.0-flash'}) : null;
 
 // --- Helper Function for Serbian Diacritic Normalization ---
 function normalizeSerbianText(text: string): string {
+    // ... (keep existing normalization function)
     if (!text) return '';
     return text
         .toLowerCase()
@@ -50,20 +34,17 @@ function normalizeSerbianText(text: string): string {
 }
 
 // --- Define Schemas for Tool Parameters (with Serbian descriptions) ---
-const serviceNameSchema: Schema = { type: SchemaType.STRING, description: "Tačan naziv frizerske usluge (npr. 'Šišanje', 'Pranje kose'). Neosetljivo na velika/mala slova i dijakritičke znake (npr. 'Sisanje' je isto kao 'Šišanje')." }; // sr: Exact name... Case-insensitive and diacritic-insensitive...
-const dateSchema: Schema = { type: SchemaType.STRING, description: "Željeni datum za termin u formatu<y_bin_46>-MM-DD (npr. '2024-12-31'). AI može zaključiti ovo iz relativnih izraza kao što je 'sutra' na osnovu trenutnog datuma datog u instrukcijama." }; // sr: Desired date...<y_bin_46>-MM-DD... AI can infer...
-const serviceIdSchema: Schema = { type: SchemaType.STRING, description: "Jedinstveni ID frizerske usluge." }; // sr: Unique ID of the haircut service.
-const slotSchema: Schema = { type: SchemaType.STRING, description: "Specifičan termin u HH:mm formatu (npr. '10:00'), dobijen iz dostupnih termina." }; // sr: Specific time slot... HH:mm format... obtained from available slots.
-
+const serviceNameSchema: Schema = { type: SchemaType.STRING, description: "Tačan naziv frizerske usluge (npr. 'Šišanje', 'Pranje kose'). Neosetljivo na velika/mala slova i dijakritičke znake (npr. 'Sisanje' je isto kao 'Šišanje')." }; 
+const dateSchema: Schema = { type: SchemaType.STRING, description: "Željeni datum za termin u formatu YYYY-MM-DD (npr. '2024-12-31'). AI može zaključiti ovo iz relativnih izraza kao što je 'sutra' na osnovu trenutnog datuma datog u instrukcijama." }; 
+const serviceIdSchema: Schema = { type: SchemaType.STRING, description: "Jedinstveni ID frizerske usluge." }; 
+const slotSchema: Schema = { type: SchemaType.STRING, description: "Specifičan termin u HH:mm formatu (npr. '10:00'), dobijen iz dostupnih termina." }; 
 
 // --- Define ALL Tools (Using Standard Format, with Serbian descriptions) ---
-// Define the individual function declarations first
-const listServicesDeclaration: FunctionDeclaration = {
+const listServicesDeclaration: FunctionDeclaration = { /* ... keep existing declaration ... */ 
   name: "listAvailableServices",
   description: "Navodi sve dostupne frizerske usluge, uključujući naziv, opis, trajanje i cenu. Koristite ovu funkciju kada korisnik eksplicitno traži da vidi ili navede sve dostupne usluge.", // sr: Lists all available haircut services... Use this function when...
 };
-
-const checkAvailabilityDeclaration: FunctionDeclaration = {
+const checkAvailabilityDeclaration: FunctionDeclaration = { /* ... keep existing declaration ... */ 
   name: "checkAppointmentAvailability",
   description: "Proverava dostupne termine za određenu uslugu na određeni datum. Koristite ovo pre pokušaja zakazivanja termina.", // sr: Checks for available appointment time slots... Use this before attempting to book...
   parameters: {
@@ -72,8 +53,7 @@ const checkAvailabilityDeclaration: FunctionDeclaration = {
     required: ["serviceName", "date"],
   },
 };
-
-const bookAppointmentDeclaration: FunctionDeclaration = {
+const bookAppointmentDeclaration: FunctionDeclaration = { /* ... keep existing declaration ... */ 
   name: "bookAppointment",
   description: "Zakazuje termin za korisnika. Zahteva naziv usluge, datum i specifičan termin.", // sr: Books an appointment for a user. Requires the service name, date, and the specific time slot.
   parameters: {
@@ -86,32 +66,48 @@ const bookAppointmentDeclaration: FunctionDeclaration = {
     required: ["serviceName", "date", "slot"],
   },
 };
-
-// Array containing the function declarations
 const allFunctionDeclarations: FunctionDeclaration[] = [
     listServicesDeclaration,
     checkAvailabilityDeclaration,
     bookAppointmentDeclaration,
 ];
-
-// Standard tools structure using FunctionDeclarationsTool[]
 const tools: FunctionDeclarationsTool[] = [
   { functionDeclarations: allFunctionDeclarations },
 ];
 
-
-// --- Define System Instruction (Refined and in Serbian) ---
-// Note: This will be dynamically generated within the POST handler
-
+// --- System Instruction will be generated dynamically inside POST ---
 
 // Handles POST requests to /api/chat
 export async function POST(request: Request) {
   console.log('POST /api/chat: Request received');
 
-  if (!model) {
-      console.error('POST /api/chat: AI model client not initialized (API key missing?), returning 500');
-      return new NextResponse('AI model configuration error', { status: 500 });
+  // --- Initialize AI Client *inside* the handler ---
+  const aiApiKey = appConfig.googleApiKey;
+  let genAI: GoogleGenerativeAI | null = null;
+  let model: any | null = null; // Use 'any' or a more specific type if available from the SDK for the model instance
+
+  if (!aiApiKey) {
+      // Log the error but allow the function to potentially continue if AI isn't strictly needed for all paths
+      console.error('POST /api/chat: GOOGLE_API_KEY environment variable is not set.');
+      // Return error immediately if AI is essential for this endpoint
+      return new NextResponse('AI configuration error: Missing API Key', { status: 500 });
+  } else {
+      try {
+          genAI = new GoogleGenerativeAI(aiApiKey);
+          model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' }); // Changed model name
+          console.log('POST /api/chat: Google AI Client and Model initialized successfully.');
+      } catch (initError: any) {
+          console.error('POST /api/chat: Error initializing Google AI Client:', initError);
+          return new NextResponse(`AI initialization error: ${initError.message}`, { status: 500 });
+      }
   }
+
+  // Ensure model is initialized before proceeding (redundant check if we return error above, but safe)
+  if (!model) {
+      console.error('POST /api/chat: AI model client not initialized, returning 500');
+      return new NextResponse('AI model failed to initialize', { status: 500 });
+  }
+  // --- End AI Client Initialization ---
 
   const { userId } = await auth();
   console.log('POST /api/chat: Clerk userId:', userId);
@@ -123,23 +119,21 @@ export async function POST(request: Request) {
 
 
   try {
+    // --- Database User Check ---
     const dbUser = await prisma.user.findUnique({
         where: { clerkId: userId },
         select: { id: true },
     });
-
     if (!dbUser) {
         console.error('POST /api/chat: Database user not found for clerkId:', userId);
         return new NextResponse('User not found in database', { status: 404 });
     }
     console.log(`POST /api/chat: Database userId: ${dbUser.id}`);
 
-    // Find or create chat session
-    let chatSession = await prisma.chatSession.findFirst({ // Renamed variable for clarity
+    // --- Find or Create Chat Session ---
+    let chatSession = await prisma.chatSession.findFirst({ 
         where: { userId: dbUser.id },
-        // No need to include messages here initially
     });
-
     if (!chatSession) {
         console.log(`POST /api/chat: No chat session found for user ${dbUser.id}, creating new session.`);
         chatSession = await prisma.chatSession.create({ data: { userId: dbUser.id } });
@@ -147,9 +141,9 @@ export async function POST(request: Request) {
     } else {
         console.log(`POST /api/chat: Found chat session ${chatSession.id}.`);
     }
-    const currentSessionId = chatSession.id; // Store session ID
+    const currentSessionId = chatSession.id;
 
-    // Parse and validate user message
+    // --- Parse and Validate User Message ---
     const body = await request.json();
     const userMessageObject = body;
     console.log('POST /api/chat: User message object:', userMessageObject);
@@ -160,10 +154,10 @@ export async function POST(request: Request) {
 
     // --- Save User Message ---
     console.log('POST /api/chat: Saving user message to database...');
-    const savedUserMessage = await prisma.chatMessage.create({ // Store saved message
+    await prisma.chatMessage.create({ 
         data: {
             id: userMessageObject.id,
-            sessionId: currentSessionId, // Use stored session ID
+            sessionId: currentSessionId, 
             sender: 'user',
             message: userMessageObject.text,
             timestamp: new Date(userMessageObject.timestamp),
@@ -172,35 +166,28 @@ export async function POST(request: Request) {
     console.log('POST /api/chat: User message saved.');
 
     // --- Prepare History for AI (Limit to last 10 messages) ---
-    // Fetch the recent messages *after* saving the new user message
      const recentDbMessages = await prisma.chatMessage.findMany({
         where: { sessionId: currentSessionId },
-        orderBy: { timestamp: 'desc' }, // Get newest first
-        take: 10 // Limit to 10
+        orderBy: { timestamp: 'desc' }, 
+        take: 10 
      });
-     // Reverse the array to get chronological order for the AI history
      const orderedRecentMessages = recentDbMessages.reverse();
-
-    let history = orderedRecentMessages.map(msg => ({
-        role: msg.sender === 'user' ? 'user' : 'model', // Map 'ai'/'admin' to 'model' for AI
+     let history = orderedRecentMessages.map(msg => ({
+        role: msg.sender === 'user' ? 'user' : 'model', 
         parts: [{ text: msg.message }],
-    }));
-
-    // *** FIX: Ensure history starts with 'user' role ***
-    if (history.length > 0 && history[0].role !== 'user') {
+     }));
+     if (history.length > 0 && history[0].role !== 'user') {
         console.log('[History Fix] First message role is not "user", removing it.');
-        history.shift(); // Remove the first element (which must be 'model')
-    }
-    // Note: The current user message is already included in orderedRecentMessages if it's within the last 10
-    console.log(`POST /api/chat: Conversation history sent to AI: ${history.length} messages (limited, starts with user)`);
-
+        history.shift(); 
+     }
+     console.log(`POST /api/chat: Conversation history sent to AI: ${history.length} messages (limited, starts with user)`);
 
     // --- Interact with AI Model ---
-    let aiResponseText = 'Žao mi je, došlo je do problema prilikom obrade vašeg zahteva.'; // sr: Sorry, I encountered an issue...
+    let aiResponseText = 'Žao mi je, došlo je do problema prilikom obrade vašeg zahteva.'; 
     let toolCalls: any[] | undefined;
 
-    // *** Generate Refined Dynamic System Instruction in Serbian ***
-    const currentDate = format(new Date(), 'yyyy-MM-dd'); // Get current date in<y_bin_46>-MM-DD format
+    // --- Generate Dynamic System Instruction ---
+    const currentDate = format(new Date(), 'yyyy-MM-dd'); 
     const dynamicSystemInstruction = `Vi ste ljubazan i koristan asistent za zakazivanje frizerskih termina u našem salonu. Započnite razgovor pozdravom.
 Današnji datum je ${currentDate}.
 Vaše mogućnosti, koristeći dostupne alate, su:
@@ -208,23 +195,19 @@ Vaše mogućnosti, koristeći dostupne alate, su:
 2.  Proveriti dostupne termine za određenu uslugu i datum (alat 'checkAppointmentAvailability').
 3.  Zakazati termin za određenu uslugu, datum i vreme (alat 'bookAppointment').
 
-Proaktivno ponudite ove opcije korisniku. Zaključite datume kao što je 'sutra' na osnovu današnjeg datuma (${currentDate}). Budite jasni oko informacija koje su vam potrebne (kao što su naziv usluge, datum, vreme).`; // sr: You are a friendly and helpful assistant... Today's date is... Your capabilities... Proactively offer... Infer dates... Be clear...
+Proaktivno ponudite ove opcije korisniku. Zaključite datume kao što je 'sutra' na osnovu današnjeg datuma (${currentDate}). Budite jasni oko informacija koje su vam potrebne (kao što su naziv usluge, datum, vreme).`; 
     console.log("POST /api/chat: Dynamic System Instruction (Serbian):", dynamicSystemInstruction);
-
-
-    // Log the tools object being passed
     console.log('POST /api/chat: Tools being passed (standard format):', JSON.stringify(tools, null, 2));
 
+    // --- Start AI Chat ---
     const chat = model.startChat({
-        // Use Dynamic System Instruction
         systemInstruction: {
-            role: "system", // Using 'system' role, adjust if SDK requires differently
+            role: "system", 
             parts: [{ text: dynamicSystemInstruction }],
         },
-        history: history, // Pass the potentially modified history
-        // Use the standard tools format
+        history: history, 
         tools: tools,
-        safetySettings: [ // Configure safety settings
+        safetySettings: [ 
              { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
              { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
              { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
@@ -233,35 +216,32 @@ Proaktivno ponudite ove opcije korisniku. Zaključite datume kao što je 'sutra'
     });
 
     try {
-        // *** Send the user's *current* message text, not the whole history object ***
-        // The history is set in startChat
         const result = await chat.sendMessage(userMessageObject.text);
-
         const response = result.response;
-        toolCalls = response.functionCalls(); // Check for function calls
+        toolCalls = response.functionCalls(); 
 
         if (toolCalls && toolCalls.length > 0) {
             console.log('POST /api/chat: AI requested tool calls:', toolCalls);
 
-            // --- Get headers from the incoming request for forwarding ---
+            // --- Get headers for forwarding ---
             const incomingRequestHeaders = new Headers(await headers());
             const cookieHeader = incomingRequestHeaders.get('Cookie');
             const fetchHeaders: HeadersInit = { 'Content-Type': 'application/json' };
              if (cookieHeader) {
-                 fetchHeaders['Cookie'] = cookieHeader; // Add cookie if present
+                 fetchHeaders['Cookie'] = cookieHeader; 
              }
              console.log(`[Header Forwarding] Cookie header ${cookieHeader ? 'found' : 'not found'}. Forwarding headers:`, fetchHeaders);
-
 
             // --- Execute Tool Calls ---
             const toolResultPromises = toolCalls.map(async (toolCall) => {
                 const functionName = toolCall.name;
                 const functionArgs = toolCall.args;
                 console.log(`POST /api/chat: Executing tool: ${functionName} with args:`, functionArgs);
-
                 let toolResponsePayload: any = { output: null, error: null };
 
                 try {
+                    // --- Tool Logic (listAvailableServices, checkAppointmentAvailability, bookAppointment) ---
+                    // ... (Keep existing tool execution logic, including internal fetch calls) ...
                     // --- Tool: listAvailableServices ---
                     if (functionName === 'listAvailableServices') {
                         console.log('[listServices] Fetching all services...');
@@ -281,59 +261,36 @@ Proaktivno ponudite ove opcije korisniku. Zaključite datume kao što je 'sutra'
                     else if (functionName === 'checkAppointmentAvailability') {
                         const { serviceName, date: dateString } = functionArgs;
                         console.log(`[checkAvailability] Received serviceName: "${serviceName}", date: "${dateString}"`);
-
-                        // *** Normalize the input service name ***
                         const normalizedInputName = normalizeSerbianText(serviceName);
                         console.log(`[checkAvailability] Normalized input name: "${normalizedInputName}"`);
-
-                        // Validate date
                         if (!dateString || !/^\d{4}-\d{2}-\d{2}$/.test(dateString) || !isValid(parseISO(dateString))) {
-                            toolResponsePayload.error = `Nevažeći format datuma: '${dateString}'. Molimo koristite<y_bin_46>-MM-DD.`;
+                            toolResponsePayload.error = `Nevažeći format datuma: '${dateString}'. Molimo koristite YYYY-MM-DD.`;
                             console.log(`[checkAvailability] Invalid date format.`);
                         } else {
-                            // Fetch ALL services (less efficient, but avoids schema changes)
-                            console.log(`[checkAvailability] Fetching all services for normalization check...`);
-                            const allDbServices = await prisma.service.findMany({
-                                select: { id: true, name: true }
-                            });
-
-                            // *** Filter services based on normalized names ***
-                            const matchingServices = allDbServices.filter(dbService =>
-                                normalizeSerbianText(dbService.name) === normalizedInputName
-                            );
+                            const allDbServices = await prisma.service.findMany({ select: { id: true, name: true } });
+                            const matchingServices = allDbServices.filter(dbService => normalizeSerbianText(dbService.name) === normalizedInputName);
                             console.log(`[checkAvailability] Found ${matchingServices.length} services matching normalized name "${normalizedInputName}":`, matchingServices);
-
                             if (matchingServices.length === 0) {
                                 toolResponsePayload.error = `Žao mi je, nisam mogao/la pronaći uslugu pod nazivom "${serviceName}" (ili sličnim). Možete me pitati da navedem sve usluge kako biste videli tačne nazive.`;
                                 console.log(`[checkAvailability] Tool execution failed - Service not found by normalized name.`);
                             } else if (matchingServices.length > 1) {
-                                // This could happen if "Sisanje" and "Šišanje" were both entered as separate services
                                 const originalNames = matchingServices.map(s => s.name).join(', ');
                                 toolResponsePayload.error = `Pronašao/la sam više usluga koje odgovaraju "${serviceName}" (nakon normalizacije): ${originalNames}. Molimo Vas da budete precizniji ili kontaktirate podršku.`;
                                 console.log(`[checkAvailability] Tool execution failed - Ambiguous normalized service name.`);
                             } else {
-                                // Exactly one service found
-                                const service = matchingServices[0]; // Use the matched service
+                                const service = matchingServices[0];
                                 console.log(`[checkAvailability] Unique service found via normalization: ID=${service.id}, Original Name=${service.name}. Proceeding.`);
                                 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
                                 const availabilityApiUrl = `${SITE_URL}/api/appointments/available?serviceId=${service.id}&date=${dateString}`;
                                 console.log(`[checkAvailability] Calling internal availability API: ${availabilityApiUrl}`);
-
-                                // Use fetchHeaders with forwarded Cookie
                                 const availabilityRes = await fetch(availabilityApiUrl, { headers: fetchHeaders });
-
                                 if (!availabilityRes.ok) {
                                     const errorText = await availabilityRes.text();
                                     toolResponsePayload.error = `Neuspešna provera dostupnosti preko internog API-ja za ${service.name} (ID: ${service.id}) na ${dateString}. Status: ${availabilityRes.status} - ${errorText || '(Nema teksta greške)'}`;
                                     console.error(`[checkAvailability] Internal availability API call failed: ${availabilityRes.status}. URL: ${availabilityApiUrl}`);
                                 } else {
                                     const availableSlots = await availabilityRes.json();
-                                    toolResponsePayload.output = {
-                                        serviceId: service.id,
-                                        serviceName: service.name, // Return original name
-                                        date: dateString,
-                                        availableSlots: availableSlots
-                                    };
+                                    toolResponsePayload.output = { serviceId: service.id, serviceName: service.name, date: dateString, availableSlots: availableSlots };
                                     console.log(`[checkAvailability] Internal availability API call successful. Slots:`, availableSlots);
                                 }
                             }
@@ -343,30 +300,16 @@ Proaktivno ponudite ove opcije korisniku. Zaključite datume kao što je 'sutra'
                     else if (functionName === 'bookAppointment') {
                          const { serviceName, date: dateString, slot } = functionArgs;
                          console.log(`[bookAppointment] Received serviceName: "${serviceName}", date: "${dateString}", slot: "${slot}"`);
-
-                         // *** Normalize the input service name ***
                          const normalizedInputName = normalizeSerbianText(serviceName);
                          console.log(`[bookAppointment] Normalized input name: "${normalizedInputName}"`);
-
-                         // Validate inputs
                          if (!serviceName || !dateString || !slot || !/^\d{4}-\d{2}-\d{2}$/.test(dateString) || !/^\d{2}:\d{2}$/.test(slot)) {
                             toolResponsePayload.error = `Zakazivanje neuspešno: Nedostaje ili je nevažeći naziv usluge, datum (YYYY-MM-DD), ili termin (HH:mm).`;
                             console.log(`[bookAppointment] Invalid input parameters.`);
                          } else {
-                            // Fetch ALL services for normalization check
-                            console.log(`[bookAppointment] Fetching all services for normalization check...`);
-                             const allDbServices = await prisma.service.findMany({
-                                select: { id: true, name: true }
-                            });
-
-                            // *** Filter services based on normalized names ***
-                            const matchingServices = allDbServices.filter(dbService =>
-                                normalizeSerbianText(dbService.name) === normalizedInputName
-                            );
-                            console.log(`[bookAppointment] Found ${matchingServices.length} services matching normalized name "${normalizedInputName}" for booking:`, matchingServices);
-
-
-                            if (matchingServices.length === 0) {
+                             const allDbServices = await prisma.service.findMany({ select: { id: true, name: true } });
+                             const matchingServices = allDbServices.filter(dbService => normalizeSerbianText(dbService.name) === normalizedInputName);
+                             console.log(`[bookAppointment] Found ${matchingServices.length} services matching normalized name "${normalizedInputName}" for booking:`, matchingServices);
+                             if (matchingServices.length === 0) {
                                 toolResponsePayload.error = `Zakazivanje neuspešno: Žao mi je, nisam mogao/la pronaći uslugu pod nazivom "${serviceName}" (ili sličnim) za zakazivanje. Molimo proverite naziv ili me pitajte da navedem usluge.`;
                                 console.log(`[bookAppointment] Tool execution failed - Service not found by normalized name.`);
                             } else if (matchingServices.length > 1) {
@@ -374,23 +317,17 @@ Proaktivno ponudite ove opcije korisniku. Zaključite datume kao što je 'sutra'
                                 toolResponsePayload.error = `Zakazivanje neuspešno: Pronađeno je više usluga koje odgovaraju "${serviceName}" (nakon normalizacije): ${originalNames}. Molimo Vas da budete precizniji.`;
                                 console.log(`[bookAppointment] Tool execution failed - Ambiguous normalized service name.`);
                             } else {
-                                // Exactly one service found
-                                const serviceToBook = matchingServices[0]; // Use the matched service
+                                const serviceToBook = matchingServices[0]; 
                                 const serviceId = serviceToBook.id;
                                 console.log(`[bookAppointment] Unique service found via normalization for booking: ID=${serviceId}, Original Name=${serviceToBook.name}. Proceeding.`);
-
-                                // Call internal booking API
                                 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
                                 const bookingApiUrl = `${SITE_URL}/api/appointments`;
                                 console.log(`[bookAppointment] Calling internal booking API: ${bookingApiUrl}`);
-
-                                // Use fetchHeaders with forwarded Cookie
                                 const bookingRes = await fetch(bookingApiUrl, {
                                     method: 'POST',
-                                    headers: fetchHeaders, // Use prepared headers
+                                    headers: fetchHeaders, 
                                     body: JSON.stringify({ serviceId: serviceId, date: dateString, slot }),
                                 });
-
                                 if (!bookingRes.ok) {
                                     const errorText = await bookingRes.text();
                                     toolResponsePayload.error = `Zakazivanje neuspešno preko internog API-ja: ${bookingRes.status} - ${errorText || '(Nema teksta greške)'}`;
@@ -413,7 +350,6 @@ Proaktivno ponudite ove opcije korisniku. Zaključite datume kao što je 'sutra'
                     console.error(`POST /api/chat: Error during tool execution for ${functionName}:`, toolError);
                 }
 
-                // Return structured result for the AI
                 return {
                     toolCallId: toolCall.id,
                     functionResponse: {
@@ -421,22 +357,18 @@ Proaktivno ponudite ove opcije korisniku. Zaključite datume kao što je 'sutra'
                         response: toolResponsePayload,
                     },
                 };
-            }); // End map
-
-            // Wait for all tools to finish
-            const toolResults = await Promise.all(toolResultPromises);
-            console.log('POST /api/chat: Tool results being sent back to AI:', JSON.stringify(toolResults, null, 2));
+            }); 
 
             // --- Send Tool Results back to AI ---
-             const toolResultResponse = await chat.sendMessage(JSON.stringify(toolResults));
-
-
+            const toolResults = await Promise.all(toolResultPromises);
+            console.log('POST /api/chat: Tool results being sent back to AI:', JSON.stringify(toolResults, null, 2));
+            const toolResultResponse = await chat.sendMessage(JSON.stringify(toolResults));
             const finalResponse = toolResultResponse.response;
-            aiResponseText = finalResponse.text(); // Get final AI text
+            aiResponseText = finalResponse.text(); 
             console.log('POST /api/chat: Received final AI response after tool use:', aiResponseText);
 
         } else {
-             // No tool call requested, get text response directly
+             // No tool call requested
              aiResponseText = response.text();
              console.log('POST /api/chat: Received AI text response (no tool call):', aiResponseText);
         }
@@ -458,9 +390,8 @@ Proaktivno ponudite ove opcije korisniku. Zaključite datume kao što je 'sutra'
     // --- Save AI Response & Prune History ---
     console.log('POST /api/chat: Saving AI message and pruning history...');
     try {
-        // Use a transaction to save the AI message and delete old messages atomically
         await prisma.$transaction(async (tx) => {
-            // Save the AI message
+            // Save AI message
             await tx.chatMessage.create({
                 data: {
                     id: aiResponseMessage.id,
@@ -472,53 +403,36 @@ Proaktivno ponudite ove opcije korisniku. Zaključite datume kao što je 'sutra'
             });
             console.log('[DB Pruning] AI message saved.');
 
-            // Count total messages in the session
-            const messageCount = await tx.chatMessage.count({
-                where: { sessionId: currentSessionId },
-            });
+            // Prune history logic
+            const messageCount = await tx.chatMessage.count({ where: { sessionId: currentSessionId } });
             console.log(`[DB Pruning] Total messages in session ${currentSessionId}: ${messageCount}`);
-
-            const historyLimit = 20; // Define the limit
-
-            // If count exceeds the limit, delete the oldest ones
+            const historyLimit = 20; 
             if (messageCount > historyLimit) {
                 const messagesToDeleteCount = messageCount - historyLimit;
                 console.log(`[DB Pruning] Message count exceeds limit (${historyLimit}). Need to delete ${messagesToDeleteCount} oldest messages.`);
-
-                // Find the IDs of the oldest messages to delete
                 const messagesToDelete = await tx.chatMessage.findMany({
                     where: { sessionId: currentSessionId },
-                    orderBy: { timestamp: 'asc' }, // Oldest first
+                    orderBy: { timestamp: 'asc' }, 
                     take: messagesToDeleteCount,
-                    select: { id: true }, // Only select IDs
+                    select: { id: true }, 
                 });
-
                 const idsToDelete = messagesToDelete.map(msg => msg.id);
                 console.log('[DB Pruning] IDs to delete:', idsToDelete);
-
-                // Delete the oldest messages
                 if (idsToDelete.length > 0) {
                     const deleteResult = await tx.chatMessage.deleteMany({
-                        where: {
-                            id: { in: idsToDelete },
-                            sessionId: currentSessionId, // Ensure we only delete from the correct session
-                        },
+                        where: { id: { in: idsToDelete }, sessionId: currentSessionId },
                     });
                     console.log(`[DB Pruning] Deleted ${deleteResult.count} messages.`);
                 } else {
-                     console.log('[DB Pruning] No message IDs found to delete (this should not happen if count > limit).');
+                     console.log('[DB Pruning] No message IDs found to delete.');
                 }
             } else {
                  console.log(`[DB Pruning] Message count (${messageCount}) is within the limit (${historyLimit}). No deletion needed.`);
             }
-        }); // End transaction
+        }); 
          console.log('[DB Pruning] Transaction completed successfully.');
-
     } catch (pruneError) {
-         // Log error during pruning but don't block returning the AI response
          console.error('Error during database history pruning:', pruneError);
-         // Optionally, you could add logic here to handle the error,
-         // but typically you'd still want the user to get the AI response.
     }
 
     // Return AI response to frontend

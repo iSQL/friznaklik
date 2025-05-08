@@ -5,12 +5,14 @@ import { redirect } from 'next/navigation';
 import UserAppointmentList from '@/components/user/UserAppointmentList'; // Assuming this path is correct
 import { Appointment, Service } from '@prisma/client';
 import { headers } from 'next/headers';
+import { appConfig } from '@/config/appConfig'; // Adjust path if needed
 
 type AppointmentWithService = Appointment & {
   service: Service;
 };
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL;
+//const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL;
+const SITE_URL = appConfig.siteURL; // Use the siteURL from your appConfig
 
 if (!SITE_URL) {
   console.error('DashboardPage: NEXT_PUBLIC_SITE_URL is not set in environment variables.');

@@ -2,9 +2,9 @@ trigger:
 - none # Or your primary branch
 
 variables:
-  dockerHubServiceConnection: 'SCDocker' # Name of your Docker Hub service connection
-  dockerHubUsername: 'maremilojkovic' # Your Docker Hub username (lowercase)
-  imageName: 'friznaklik' # The name of your image on Docker Hub
+  dockerHubServiceConnection: 'SCDocker' 
+  dockerHubUsername: 'maremilojkovic' 
+  imageName: 'friznaklik' 
   dockerfilePath: '$(Build.SourcesDirectory)/Dockerfile'
   tag: '$(Build.BuildId)'
 
@@ -12,24 +12,40 @@ stages:
 - stage: BuildAndPushToDockerHub
   displayName: 'Build and Push Docker Image to Docker Hub'
   jobs:
-  - job: Build
+  - job: BuildAndPush
     displayName: 'Build and Push Docker Image'
     pool:
-      name: 'Default' # <- CHANGE THIS to the name of the pool your agent is in
+      name: 'Default' # Ensure this is your correct agent pool
     steps:
+    # --- START DEBUG STEP ---
+    - script: |
+        echo "Build.SourcesDirectory value is: $(Build.SourcesDirectory)"
+        echo "Listing contents of Build.SourcesDirectory:"
+        ls -la "$(Build.SourcesDirectory)" 
+      displayName: 'Debug Print Build Context Path'
+    # --- END DEBUG STEP ---
+
     - task: Docker@2
-      displayName: 'Build and Push image to Docker Hub'
+      displayName: 'Build image' 
       inputs:
-        command: 'buildAndPush'
-        containerRegistry: '$(dockerHubServiceConnection)' # Uses your Docker Hub service connection
-        repository: '$(dockerHubUsername)/$(imageName)' # Correct format for Docker Hub: username/repository
+        command: 'build' 
+        containerRegistry: '$(dockerHubServiceConnection)' 
+        repository: '$(dockerHubUsername)/$(imageName)' 
         dockerfile: '$(dockerfilePath)'
-        tags: |
+        tags: | # Tags to apply to the built image locally
           $(tag)
           latest
-        buildContext: '$(Build.SourcesDirectory)'
-        # Pass build arguments to Dockerfile if needed for NEXT_PUBLIC_ variables
-        arguments: |
-          --build-arg NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="$(NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY_SECRET)" \
-          --build-arg NEXT_PUBLIC_SITE_URL="$(NEXT_PUBLIC_SITE_URL_RUNTIME)" \
-          --build-arg GOOGLE_API_KEY="$(GOOGLE_API_KEY_SECRET)""
+        buildContext: '$(Build.SourcesDirectory)' # This should be the path argument Docker needs
+        # --- Re-added arguments on a single line ---
+        arguments: '--build-arg ARG1=Value1 --build-arg NEXT_PUBLIC_SITE_URL=$(NEXT_PUBLIC_SITE_URL)'
+
+    - task: Docker@2
+      displayName: 'Push image to Docker Hub' 
+      inputs:
+        command: 'push' 
+        containerRegistry: '$(dockerHubServiceConnection)' 
+        repository: '$(dockerHubUsername)/$(imageName)' 
+        tags: | # Specify which tags to push
+          $(tag)
+          latest
+        # No need for dockerfile, buildContext, or arguments for push

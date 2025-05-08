@@ -1,0 +1,28 @@
+# docker-compose.prod.yml (Production/Pre-built Configuration)
+# Uses the pre-built 'app' image from Docker Hub
+
+version: '3.8'
+
+services:
+  app:
+    # Use the image from Docker Hub
+    image: maremilojkovic/friznaklik:latest 
+    container_name: friznaklik_app_prod # Use a distinct name for prod
+    restart: always 
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    depends_on:
+      db: # Ensure DB is ready before app starts
+        condition: service_healthy # Use healthcheck from base compose file
+    environment:
+      # Runtime Environment Variables (loaded from .env)
+      DATABASE_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?schema=public"
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY} # Still needed at runtime
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY}
+      NEXT_PUBLIC_CLERK_DOMAIN: ${NEXT_PUBLIC_CLERK_DOMAIN}
+      NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL} # Still needed at runtime
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY} # Needed at runtime
+      CLERK_WEBHOOK_SECRET: ${CLERK_WEBHOOK_SECRET} 
+      NODE_ENV: production # Explicitly set for prod
+
+# No need to redefine volumes here, they are inherited from the base file
