@@ -1,8 +1,5 @@
 # docker-compose.prod.yml (Production/Pre-built Configuration)
 # Uses the pre-built 'app' image from Docker Hub
-
-version: '3.8'
-
 services:
   app:
     # Use the image from Docker Hub

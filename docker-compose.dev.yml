@@ -1,8 +1,5 @@
 # docker-compose.dev.yml (Development Configuration)
 # Builds the 'app' service locally
-
-version: '3.8'
-
 services:
   app:
     # Build the image using the Dockerfile in the current directory
@@ -12,8 +9,8 @@ services:
         # Pass build-time args needed by your Dockerfile
         # Ensure these are defined in your .env file for local builds
         NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
-        PUBLIC_SITE_URL: ${PUBLIC_SITE_URL}
-        GOOGLE_API_KEY: ${GOOGLE_API_KEY} # If needed by build process
+        #PUBLIC_SITE_URL: ${PUBLIC_SITE_URL}
+        #GOOGLE_API_KEY: ${GOOGLE_API_KEY} # If needed by build process
     container_name: friznaklik_app_dev # Use a distinct name for dev
     restart: unless-stopped # Changed from always for dev
     ports:
