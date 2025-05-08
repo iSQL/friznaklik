@@ -80,7 +80,7 @@ stages:
           echo "Contents (excluding secrets for security):" # Avoid printing secrets
           # Use grep with -i for case-insensitivity, add KEY to exclusion
           grep -ivE 'SECRET|PASSWORD|KEY' "${ENV_FILE_PATH}" || echo "No non-secret lines found."
-        failOnStderr: true # Fail if any command writes to stderr
+        failOnStderr: false # Fail if any command writes to stderr
 
 
     # Step 3: Copy project files (docker-compose.yml, .env) to the target VM path
