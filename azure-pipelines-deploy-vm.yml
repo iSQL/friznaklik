@@ -136,7 +136,7 @@ stages:
           docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d # Starts containers based on the latest images and the .env file
 
           echo "Deployment containers started."
-        failOnStderr: true # Fail if any command writes to stderr
+        failOnStderr: false
 
     # Step 5: Run Prisma Migrations (after containers are up)
     - task: Bash@3
