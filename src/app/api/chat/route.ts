@@ -3,8 +3,6 @@
 import { NextResponse } from 'next/server'; 
 import { auth } from '@clerk/nextjs/server'; 
 import prisma from '@/lib/prisma'; 
-import { appConfig } from '@/config/appConfig'; // Adjust path if needed
-
 
 // Import the necessary types from the SDK
 import {
@@ -82,7 +80,7 @@ export async function POST(request: Request) {
   console.log('POST /api/chat: Request received');
 
   // --- Initialize AI Client *inside* the handler ---
-  const aiApiKey = appConfig.googleApiKey;
+  const aiApiKey = process.env.GOOGLE_API_KEY; // Use the environment variable directly
   let genAI: GoogleGenerativeAI | null = null;
   let model: any | null = null; // Use 'any' or a more specific type if available from the SDK for the model instance
 
