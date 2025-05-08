@@ -154,7 +154,8 @@ stages:
 
           echo "Running Prisma migrations inside the app container..."
           # Use docker-compose exec to run the command inside the 'app' service container
-          docker-compose exec -T app pnpm exec prisma migrate deploy 
+          #docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T app pnpm exec prisma migrate deploy
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T app npx prisma migrate deploy #Use npx until dockerfile is updated with working pnpm 
           # The -T flag disables pseudo-tty allocation, often needed for non-interactive exec commands
 
           echo "Prisma migrations applied."
