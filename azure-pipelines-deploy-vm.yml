@@ -42,8 +42,10 @@ stages:
         PG_DB: $(POSTGRES_DB)
         CLERK_SECRET: $(CLERK_SECRET_KEY)
         CLERK_DOMAIN: $(NEXT_PUBLIC_CLERK_DOMAIN)
-        SITE_URL: $(NEXT_PUBLIC_SITE_URL)
+        SITE_URL: $(PUBLIC_SITE_URL)
         CLERK_WEBHOOK: $(CLERK_WEBHOOK_SECRET)
+        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: $(NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY)
+        GOOGLE_API_KEY: $(GOOGLE_API_KEY)
         # Map optional ports if they exist as pipeline variables
         # PG_PORT: $(POSTGRES_PORT) 
         # APP_PORT: $(APP_PORT)
@@ -70,7 +72,7 @@ stages:
           echo "PUBLIC_SITE_URL=${SITE_URL}" >> "${ENV_FILE_PATH}" 
           echo "CLERK_WEBHOOK_SECRET=${CLERK_WEBHOOK}" >> "${ENV_FILE_PATH}"
           echo "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}" >> "${ENV_FILE_PATH}"
-          echo "GOOGLE_API_KEY=${GOOGLE_API_KEY}" >> "${ENV_FILE_PATH}"
+          echo "GOOGLE_API_KEY="$(GOOGLE_API_KEY) >> "${ENV_FILE_PATH}"
 
           # Add optional ports if mapped in env:
           # if [ -n "${PG_PORT}" ]; then echo "POSTGRES_PORT=${PG_PORT}" >> "${ENV_FILE_PATH}"; fi
