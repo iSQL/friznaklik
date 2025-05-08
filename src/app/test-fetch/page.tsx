@@ -4,7 +4,7 @@ console.log('--- Loading /test-fetch/page.tsx ---'); // Debug log at the top of 
 // This is a simple Server Component Page for testing server-side fetches.
 
 // Use PUBLIC_SITE_URL for the base URL, as configured in your .env
-const SITE_URL = process.env.PUBLIC_SITE_URL || 'http://localhost:3000';
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
 
 export default async function TestFetchPage() {
   const apiUrl = `http://localhost:3000/api/test`; // Construct the URL for the test API route

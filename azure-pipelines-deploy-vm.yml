@@ -69,7 +69,7 @@ stages:
           echo "CLERK_SECRET_KEY=${CLERK_SECRET}" >> "${ENV_FILE_PATH}"
           echo "NEXT_PUBLIC_CLERK_DOMAIN=${CLERK_DOMAIN}" >> "${ENV_FILE_PATH}" 
           # Other Runtime Variables
-          echo "PUBLIC_SITE_URL=${SITE_URL}" >> "${ENV_FILE_PATH}" 
+          echo "NEXT_PUBLIC_SITE_URL=${SITE_URL}" >> "${ENV_FILE_PATH}" 
           echo "CLERK_WEBHOOK_SECRET=${CLERK_WEBHOOK}" >> "${ENV_FILE_PATH}"
           echo "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}" >> "${ENV_FILE_PATH}"
           echo "GOOGLE_API_KEY="$(GOOGLE_API_KEY) >> "${ENV_FILE_PATH}"

@@ -1,8 +1,6 @@
 # docker-compose.yml (Base Configuration)
 # Defines common services and networks/volumes
 
-version: '3.8' # Specify compose file version (optional but good practice)
-
 services:
   db:
     image: postgres:15-alpine 

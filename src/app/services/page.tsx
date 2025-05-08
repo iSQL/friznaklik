@@ -17,7 +17,7 @@ interface Service {
 // Function to fetch services from the API
 // No longer needs to handle headers/cookies as the API route is public
 async function getServices(): Promise<Service[]> {
-  const siteUrl = process.env.PUBLIC_SITE_URL || 'http://localhost:3000';
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
   const apiUrl = `${siteUrl}/api/services`;
 
   console.log(`Fetching services from: ${apiUrl}`);

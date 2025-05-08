@@ -17,7 +17,7 @@ services:
       NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY} # Still needed at runtime
       CLERK_SECRET_KEY: ${CLERK_SECRET_KEY}
       NEXT_PUBLIC_CLERK_DOMAIN: ${NEXT_PUBLIC_CLERK_DOMAIN}
-      PUBLIC_SITE_URL: ${PUBLIC_SITE_URL} # Still needed at runtime
+      NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL} # Still needed at runtime
       GOOGLE_API_KEY: ${GOOGLE_API_KEY} # Needed at runtime
       CLERK_WEBHOOK_SECRET: ${CLERK_WEBHOOK_SECRET} 
       NODE_ENV: production # Explicitly set for prod

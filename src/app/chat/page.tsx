@@ -15,7 +15,7 @@ interface ChatMessage {
 }
 
 // Define the base URL for your API.
-const SITE_URL = process.env.PUBLIC_SITE_URL || 'http://localhost:3000';
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
 
 
 // This Client Component page serves as the main container for the AI chat interface.
