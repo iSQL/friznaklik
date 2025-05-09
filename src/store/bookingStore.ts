@@ -1,8 +1,6 @@
 // src/store/bookingStore.ts
 
 import { create } from 'zustand'; // Import the create function from Zustand
-import { Service } from '@prisma/client'; // Import the Service type from Prisma
-
 // Define the shape of the state in the booking store
 interface BookingState {
   selectedServiceId: string | null; // ID of the selected service

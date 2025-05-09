@@ -37,7 +37,7 @@ class ErrorBoundary extends Component<Props, State> {
           <div>
             <h3 className="font-bold">Something went wrong!</h3>
             <div className="text-xs">
-              We've encountered an unexpected issue. Please try refreshing the page.
+              We&apos;ve encountered an unexpected issue. Please try refreshing the page.
               {/* In development, you might show this.state.error?.message */}
             </div>
           </div>

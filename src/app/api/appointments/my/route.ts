@@ -6,7 +6,7 @@ import prisma from '@/lib/prisma'; // Import your Prisma client utility
 
 // Handles GET requests to /api/appointments/my
 // This will fetch appointments for the currently logged-in user.
-export async function GET(request: Request) {
+export async function GET() {
   console.log('GET /api/appointments/my: Request received'); // Debug log
 
   // Check authentication status using Clerk

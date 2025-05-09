@@ -7,7 +7,7 @@ import { isAdminUser } from '@/lib/authUtils'; // Import the centralized isAdmin
 
 // Handles GET requests to /api/admin/chat/sessions
 // Fetches a list of all chat sessions for the admin panel.
-export async function GET(request: Request) {
+export async function GET() {
   console.log('GET /api/admin/chat/sessions: Request received');
 
   // 1. Authentication & Authorization

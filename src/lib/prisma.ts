@@ -7,6 +7,7 @@ import { PrismaClient } from '@prisma/client'; // <-- Standard import path
 // Declare a global variable for the PrismaClient instance in development
 // This is a standard practice to prevent multiple instances in development hot-reloading
 declare global {
+  // eslint-disable-next-line no-var
   var prisma: PrismaClient | undefined;
 }
 

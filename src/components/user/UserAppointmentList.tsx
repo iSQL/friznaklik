@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { Appointment, Service } from '@prisma/client';
+import { Appointment, Service } from '@prisma/client'; // Assuming Prisma types
 import { parseISO } from 'date-fns'; // For parsing date strings
 import AppointmentItem from '@/app/dashboard/AppointmentItem'; // Adjust path if necessary
 
@@ -27,8 +27,10 @@ interface UserAppointmentListProps {
 }
 
 // Define available appointment statuses for filtering
-const appointmentStatuses = ['all', 'pending', 'approved', 'cancelled', 'rejected'] as const;
-type AppointmentStatusFilter = typeof appointmentStatuses[number];
+// Renamed from _appointmentStatuses and will be used to generate filter options
+const APPOINTMENT_STATUS_OPTIONS = ['all', 'pending', 'approved', 'cancelled', 'rejected'] as const;
+export type AppointmentStatusFilter = typeof APPOINTMENT_STATUS_OPTIONS[number];
+
 
 export default function UserAppointmentList({ appointments: initialAppointments }: UserAppointmentListProps) {
   const [activeFilter, setActiveFilter] = useState<AppointmentStatusFilter>('all');
@@ -83,15 +85,26 @@ export default function UserAppointmentList({ appointments: initialAppointments 
     });
   }, [appointments, activeFilter]);
 
-  // Define options for the filter buttons
-  const filterOptions: { value: AppointmentStatusFilter; label: string }[] = [
-    { value: 'all', label: 'All' },
-    { value: 'pending', label: 'Pending' },
-    { value: 'approved', label: 'Upcoming' }, // "Approved" often means upcoming
-    { value: 'cancelled', label: 'Cancelled' },
-    { value: 'rejected', label: 'Rejected' },
-    // Consider adding 'completed' if it's a relevant status in your application
-  ];
+  // Define options for the filter buttons by mapping over APPOINTMENT_STATUS_OPTIONS
+  const filterOptions = useMemo(() => {
+    return APPOINTMENT_STATUS_OPTIONS.map(statusValue => {
+      let label = statusValue.charAt(0).toUpperCase() + statusValue.slice(1); // Default label (e.g., "Pending")
+      
+      // Customize labels for specific statuses if needed
+      if (statusValue === 'approved') {
+        label = 'Upcoming'; // "Approved" often means upcoming
+      } else if (statusValue === 'all') {
+        label = 'All';
+      }
+      // Add more custom labels here if necessary
+      // else if (statusValue === 'someOtherStatus') {
+      //   label = 'Custom Label';
+      // }
+
+      return { value: statusValue, label: label };
+    });
+  }, []); // APPOINTMENT_STATUS_OPTIONS is a constant, so dependency array is empty or can include it if it were dynamic.
+
 
   return (
     <div className="mt-6">

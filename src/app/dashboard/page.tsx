@@ -4,7 +4,7 @@ import { currentUser } from "@clerk/nextjs/server";
 import { redirect } from 'next/navigation';
 import UserAppointmentList from '@/components/user/UserAppointmentList'; 
 import prisma from '@/lib/prisma'; 
-import { Appointment, Service, User as PrismaUser, Prisma } from '@prisma/client'; // Import Prisma for specific error types
+import { Appointment, Service } from '@prisma/client'; // Import Prisma for specific error types
 import { parseISO } from "date-fns"; 
 import { formatErrorMessage } from '@/lib/errorUtils'; // Import the error utility
 

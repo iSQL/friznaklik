@@ -1,17 +1,8 @@
 // src/components/chat/ChatWindow.tsx
 'use client'; // Required for hooks
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, {useEffect, useRef } from 'react';
 import { useChatStore } from '@/store/chatStore'; // Import the Zustand chat store
-
-// Define the type for a single message (should match the type in chatStore.ts)
-// Ensure this matches exactly what your store provides
-interface ChatMessage {
-  text: string;
-  sender: 'user' | 'ai' | 'admin';
-  timestamp: Date; // Assuming timestamps are Date objects in the store
-  id: string;
-}
 
 export default function ChatWindow() {
     // Get state and actions from the Zustand store

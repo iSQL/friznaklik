@@ -22,7 +22,6 @@ export default function ChatMessage({ message }: ChatMessageProps) {
   // Determine styling based on the sender
   const isUser = message.sender === 'user';
   const isAI = message.sender === 'ai';
-  const isAdmin = message.sender === 'admin';
 
   // Tailwind classes for message alignment and background color
   const messageClasses = isUser

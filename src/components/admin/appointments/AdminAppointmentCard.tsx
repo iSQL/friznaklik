@@ -5,10 +5,17 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { format, differenceInMinutes, parseISO } from 'date-fns';
 import type { AppointmentWithDetails } from '@/app/admin/appointments/page'; // Adjusted import path
-import { formatErrorMessage } from '@/lib/errorUtils'; // Import the error utility
+import { formatErrorMessage } from '@/lib/errorUtils'; // Import the error utility and its type
 
 interface AdminAppointmentCardProps {
   appointment: AppointmentWithDetails;
+}
+
+// Interface for the structured error data from API responses
+interface ApiErrorData {
+  message: string;
+  status: number;
+  details?: string | object; // Details can be a string or a parsed JSON object from the backend
 }
 
 export default function AdminAppointmentCard({ appointment }: AdminAppointmentCardProps) {
@@ -19,6 +26,7 @@ export default function AdminAppointmentCard({ appointment }: AdminAppointmentCa
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // Calculate current duration for display
+  // Ensure dates are parsed correctly if they are strings
   const currentStartTime = typeof appointment.startTime === 'string' ? parseISO(appointment.startTime) : appointment.startTime;
   const currentEndTime = typeof appointment.endTime === 'string' ? parseISO(appointment.endTime) : appointment.endTime;
   const currentDuration = differenceInMinutes(currentEndTime, currentStartTime);
@@ -49,18 +57,21 @@ export default function AdminAppointmentCard({ appointment }: AdminAppointmentCa
       });
 
       if (!response.ok) {
-        let errorData: any = { 
-            message: `Failed to update duration (Status: ${response.status})`, 
-            status: response.status 
+        // Use the new interface for errorData
+        const errorData: ApiErrorData = { // Type applied here
+          message: `Failed to update duration (Status: ${response.status})`,
+          status: response.status
         };
         try {
           const parsedError = await response.json();
+          // parsedError could be { message: string } or { error: string, details?: any }
           errorData.message = parsedError.message || parsedError.error || errorData.message;
-          errorData.details = parsedError.details;
+          errorData.details = parsedError.details; // Capture details if provided
         } catch (e) {
-          errorData.details = await response.text();
+          console.error('Update duration error - failed to parse JSON:', e);
+          errorData.details = await response.text(); // Fallback to text if JSON parsing fails
         }
-        throw errorData; // Throw the structured error
+        throw errorData;
       }
 
       setSuccessMessage('Duration updated successfully!');
@@ -68,79 +79,80 @@ export default function AdminAppointmentCard({ appointment }: AdminAppointmentCa
       router.refresh(); // Re-fetch server-side data to reflect changes
     } catch (err: unknown) { // Catch unknown
       // Use the centralized error formatter
+      // Ensure formatErrorMessage can handle ApiErrorData or similar structures
       const userFriendlyError = formatErrorMessage(err, `updating duration for appointment ID ${appointment.id}`);
       setError(userFriendlyError);
-      // console.error is handled by formatErrorMessage
     } finally {
       setIsUpdating(false);
     }
   };
-  
+
   // Function to handle appointment status updates (approve/reject)
   const handleUpdateStatus = async (newStatus: 'approved' | 'rejected') => {
-    setIsUpdating(true); 
+    setIsUpdating(true);
     setError(null);
     setSuccessMessage(null);
 
-    const endpoint = newStatus === 'approved' 
+    const endpoint = newStatus === 'approved'
       ? `/api/admin/appointments/${appointment.id}/approve`
       : `/api/admin/appointments/${appointment.id}/reject`;
 
     try {
-        const response = await fetch(endpoint, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-        });
+      const response = await fetch(endpoint, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+      });
 
-        if (!response.ok) {
-            let errorData: any = { 
-                message: `Failed to ${newStatus} appointment (Status: ${response.status})`, 
-                status: response.status 
-            };
-            try {
-              const parsedError = await response.json();
-              errorData.message = parsedError.message || parsedError.error || errorData.message;
-              errorData.details = parsedError.details;
-            } catch (e) {
-              errorData.details = await response.text();
-            }
-            throw errorData; // Throw the structured error
+      if (!response.ok) {
+        // Use the new interface for errorData
+        const errorData: ApiErrorData = { // Type applied here
+          message: `Failed to ${newStatus} appointment (Status: ${response.status})`,
+          status: response.status
+        };
+        try {
+          const parsedError = await response.json();
+          errorData.message = parsedError.message || parsedError.error || errorData.message;
+          errorData.details = parsedError.details;
+        } catch (e) {
+          console.error(`Update status (${newStatus}) error - failed to parse JSON:`, e);
+          errorData.details = await response.text(); // Fallback to text if JSON parsing fails
         }
-        
-        setSuccessMessage(`Appointment ${newStatus} successfully!`);
-        router.refresh(); // Refresh data to reflect the status change
+        throw errorData; // Throw the structured error
+      }
+
+      setSuccessMessage(`Appointment ${newStatus} successfully!`);
+      router.refresh(); // Refresh data to reflect the status change
     } catch (err: unknown) { // Catch unknown
-        // Use the centralized error formatter
-        const userFriendlyError = formatErrorMessage(err, `${newStatus} appointment ID ${appointment.id}`);
-        setError(userFriendlyError);
-        // console.error is handled by formatErrorMessage
+      // Use the centralized error formatter
+      const userFriendlyError = formatErrorMessage(err, `${newStatus} appointment ID ${appointment.id}`);
+      setError(userFriendlyError);
     } finally {
-        setIsUpdating(false);
+      setIsUpdating(false);
     }
-};
+  };
 
 
   return (
     <div className="card bg-base-100 shadow-xl w-full">
       <div className="card-body">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-3">
-            <div>
-                <h2 className="card-title text-xl mb-1">
-                {appointment.service.name} - <span className="font-normal text-lg">{appointment.user.name || appointment.user.email}</span>
-                </h2>
-                <p className="text-sm text-base-content/70">
-                User Email: {appointment.user.email}
-                </p>
-            </div>
-            <span className={`badge badge-lg mt-2 sm:mt-0 ${
-                appointment.status === 'pending' ? 'badge-warning' :
-                appointment.status === 'approved' ? 'badge-success' :
-                appointment.status === 'rejected' ? 'badge-error' :
-                appointment.status === 'cancelled' ? 'badge-neutral' : 
-                'badge-ghost'
-            }`}>
-                {appointment.status.charAt(0).toUpperCase() + appointment.status.slice(1)}
-            </span>
+          <div>
+            <h2 className="card-title text-xl mb-1">
+              {appointment.service.name} - <span className="font-normal text-lg">{appointment.user.name || appointment.user.email}</span>
+            </h2>
+            <p className="text-sm text-base-content/70">
+              User Email: {appointment.user.email}
+            </p>
+          </div>
+          <span className={`badge badge-lg mt-2 sm:mt-0 ${
+            appointment.status === 'pending' ? 'badge-warning' :
+            appointment.status === 'approved' ? 'badge-success' :
+            appointment.status === 'rejected' ? 'badge-error' :
+            appointment.status === 'cancelled' ? 'badge-neutral' :
+            'badge-ghost'
+          }`}>
+            {appointment.status.charAt(0).toUpperCase() + appointment.status.slice(1)}
+          </span>
         </div>
 
 
@@ -174,31 +186,33 @@ export default function AdminAppointmentCard({ appointment }: AdminAppointmentCa
               className={`btn btn-secondary btn-sm sm:btn-md ${isUpdating ? 'btn-disabled' : ''}`}
               disabled={isUpdating || !newDuration}
             >
+              {/* Simplified spinner logic: Show spinner if isUpdating AND no success/error message is active for this specific action */}
               {isUpdating && successMessage === null && error === null ? <span className="loading loading-spinner loading-xs"></span> : 'Update Duration'}
             </button>
           </div>
+          {/* Display error or success messages */}
           {error && <p className="text-error text-xs mt-2">{error}</p>}
           {successMessage && <p className="text-success text-xs mt-2">{successMessage}</p>}
         </div>
         
         {/* Action Buttons for Pending Appointments */}
         {appointment.status === 'pending' && (
-            <div className="card-actions justify-end mt-6 pt-4 border-t border-base-300">
-                <button 
-                    onClick={() => handleUpdateStatus('approved')} 
-                    className={`btn btn-success btn-sm ${isUpdating ? 'btn-disabled' : ''}`}
-                    disabled={isUpdating}
-                >
-                    {isUpdating && successMessage === null && error === null ? <span className="loading loading-spinner loading-xs"></span> : 'Approve'}
-                </button>
-                <button 
-                    onClick={() => handleUpdateStatus('rejected')} 
-                    className={`btn btn-error btn-sm ${isUpdating ? 'btn-disabled' : ''}`}
-                    disabled={isUpdating}
-                >
-                    {isUpdating && successMessage === null && error === null ? <span className="loading loading-spinner loading-xs"></span> : 'Reject'}
-                </button>
-            </div>
+          <div className="card-actions justify-end mt-6 pt-4 border-t border-base-300">
+            <button 
+              onClick={() => handleUpdateStatus('approved')} 
+              className={`btn btn-success btn-sm ${isUpdating ? 'btn-disabled' : ''}`}
+              disabled={isUpdating}
+            >
+              {isUpdating && successMessage === null && error === null ? <span className="loading loading-spinner loading-xs"></span> : 'Approve'}
+            </button>
+            <button 
+              onClick={() => handleUpdateStatus('rejected')} 
+              className={`btn btn-error btn-sm ${isUpdating ? 'btn-disabled' : ''}`}
+              disabled={isUpdating}
+            >
+              {isUpdating && successMessage === null && error === null ? <span className="loading loading-spinner loading-xs"></span> : 'Reject'}
+            </button>
+          </div>
         )}
 
       </div>

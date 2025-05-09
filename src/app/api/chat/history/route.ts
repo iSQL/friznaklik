@@ -4,19 +4,9 @@ import { auth } from '@clerk/nextjs/server'; // Import auth helper for server-si
 import { NextResponse } from 'next/server'; // Import NextResponse for sending responses
 import prisma from '@/lib/prisma'; // Import your Prisma client utility
 
-// Define the type for a single message as stored in the database (matches ChatMessage interface)
-interface DbChatMessage {
-  id: string;
-  sessionId: string;
-  sender: 'user' | 'ai' | 'admin';
-  message: string; // Renamed from 'text' in frontend to match schema 'message'
-  timestamp: Date;
-  isReadByAdmin: boolean;
-}
-
 // Handles GET requests to /api/chat/history
 // This will fetch the chat history for the currently logged-in user.
-export async function GET(request: Request) {
+export async function GET() {
   console.log('GET /api/chat/history: Request received'); // Debug log
 
   // Check authentication status using Clerk

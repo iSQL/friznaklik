@@ -1,6 +1,6 @@
 // src/app/admin/layout.tsx
 
-import { auth, currentUser } from '@clerk/nextjs/server';
+import { auth } from '@clerk/nextjs/server';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import prisma from '@/lib/prisma'; // Import the Prisma client utility

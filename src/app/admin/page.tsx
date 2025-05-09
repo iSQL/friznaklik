@@ -7,7 +7,6 @@ import {
     ClipboardList, // Icon for Total Services
     CalendarClock, // Icon for Pending Appointments
     MessageSquare, // Icon for Chat Sessions
-    LayoutDashboard, // Icon for main dashboard link (optional)
     Settings, // Icon for Services link
     CalendarCheck, // Icon for Appointments link
 } from 'lucide-react'; // Using lucide-react for icons

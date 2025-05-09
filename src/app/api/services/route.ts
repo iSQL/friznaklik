@@ -5,7 +5,7 @@ import prisma from '@/lib/prisma'; // Import your Prisma client utility
 
 // Handles GET requests to /api/services
 // This will fetch all services from the database and make them publicly available.
-export async function GET(request: Request) {
+export async function GET() {
   console.log('GET /api/services: Request received'); // Debug log
 
   try {
