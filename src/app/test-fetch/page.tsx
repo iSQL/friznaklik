@@ -7,7 +7,7 @@ console.log('--- Loading /test-fetch/page.tsx ---'); // Debug log at the top of 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
 
 export default async function TestFetchPage() {
-  const apiUrl = `http://localhost:3000/api/test`; // Construct the URL for the test API route
+  const apiUrl = `${SITE_URL}/api/test`; // Construct the URL for the test API route
 
   console.log('TestFetchPage: Attempting to fetch from URL:', apiUrl); // Debug log
 
