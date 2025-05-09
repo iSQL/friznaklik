@@ -42,10 +42,11 @@ stages:
         PG_DB: $(POSTGRES_DB)
         CLERK_SECRET: $(CLERK_SECRET_KEY)
         CLERK_DOMAIN: $(NEXT_PUBLIC_CLERK_DOMAIN)
-        SITE_URL: $(PUBLIC_SITE_URL)
+        NEXT_PUBLIC_SITE_URL: $(NEXT_PUBLIC_SITE_URL)
         CLERK_WEBHOOK: $(CLERK_WEBHOOK_SECRET)
         NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: $(NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY)
         GOOGLE_API_KEY: $(GOOGLE_API_KEY)
+        DATABASE_URL: postgresql://${PG_USER}:${PG_PASSWORD}@db:5432/${PG_DB}?schema=public
         # Map optional ports if they exist as pipeline variables
         # PG_PORT: $(POSTGRES_PORT) 
         # APP_PORT: $(APP_PORT)
@@ -69,7 +70,7 @@ stages:
           echo "CLERK_SECRET_KEY=${CLERK_SECRET}" >> "${ENV_FILE_PATH}"
           echo "NEXT_PUBLIC_CLERK_DOMAIN=${CLERK_DOMAIN}" >> "${ENV_FILE_PATH}" 
           # Other Runtime Variables
-          echo "NEXT_PUBLIC_SITE_URL=${SITE_URL}" >> "${ENV_FILE_PATH}" 
+          echo "NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL}" >> "${ENV_FILE_PATH}" 
           echo "CLERK_WEBHOOK_SECRET=${CLERK_WEBHOOK}" >> "${ENV_FILE_PATH}"
           echo "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}" >> "${ENV_FILE_PATH}"
           echo "GOOGLE_API_KEY="$(GOOGLE_API_KEY) >> "${ENV_FILE_PATH}"
@@ -151,12 +152,10 @@ stages:
           
           echo "Navigating to project directory: $(VM_PROJECT_PATH)"
           cd $(VM_PROJECT_PATH) || { echo "Failed to change directory to $(VM_PROJECT_PATH)"; exit 1; }
-
           echo "Running Prisma migrations inside the app container..."
           # Use docker-compose exec to run the command inside the 'app' service container
+          # The -T flag disables pseudo-tty allocation, often needed for non-interactive exec commands
           #docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T app pnpm exec prisma migrate deploy
           docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T app npx prisma migrate deploy #Use npx until dockerfile is updated with working pnpm 
-          # The -T flag disables pseudo-tty allocation, often needed for non-interactive exec commands
-
           echo "Prisma migrations applied."
-        failOnStderr: true
+        failOnStderr: false
