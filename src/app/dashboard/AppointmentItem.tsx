@@ -5,6 +5,7 @@ import { useState, useRef } from 'react'; // Added useRef for modal
 import { useRouter } from 'next/navigation';
 import { Appointment, Service } from '@prisma/client';
 import { format } from 'date-fns';
+import { formatErrorMessage } from '@/lib/errorUtils'; // Import the error utility
 
 interface AppointmentItemProps {
   appointment: Appointment & { // Or your ProcessedAppointment type
@@ -21,6 +22,7 @@ export default function AppointmentItem({ appointment }: AppointmentItemProps) {
   const modalRef = useRef<HTMLDialogElement>(null); // Ref for the modal
 
   const handleOpenCancelModal = () => {
+    setError(null); // Clear previous errors when opening modal
     if (modalRef.current) {
       modalRef.current.showModal();
     }
@@ -41,19 +43,30 @@ export default function AppointmentItem({ appointment }: AppointmentItemProps) {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || `Failed to cancel appointment (Status: ${response.status})`);
+        let errorData: any = { message: `Failed to cancel appointment (Status: ${response.status})`, status: response.status };
+        try {
+          // Try to parse JSON error from the backend
+          const parsedError = await response.json();
+          errorData.message = parsedError.message || parsedError.error || errorData.message;
+          errorData.details = parsedError.details; // Capture details if provided
+        } catch (e) {
+          // If response is not JSON, use text
+          errorData.details = await response.text();
+        }
+        throw errorData; // Throw the structured error object
       }
 
       console.log(`Appointment ${appointment.id} cancelled.`);
       if (modalRef.current) {
         modalRef.current.close(); // Close modal on success
       }
-      router.refresh();
-    } catch (err: any) {
-      console.error('Cancellation error:', err);
-      setError(err.message || 'An unexpected error occurred.');
-      // Keep modal open if error to show message, or close and show elsewhere
+      router.refresh(); // Refresh the page to update the appointment list
+    } catch (err: unknown) { // Catch unknown
+      // Use the centralized error formatter
+      const userFriendlyError = formatErrorMessage(err, `cancelling appointment for ${appointment.service.name}`);
+      setError(userFriendlyError);
+      // console.error is handled by formatErrorMessage
+      // Keep modal open if error to show message
     } finally {
       setIsCancelling(false);
     }
@@ -79,16 +92,16 @@ export default function AppointmentItem({ appointment }: AppointmentItemProps) {
     <>
       {/* DaisyUI Card */}
       <div
-        className={`card card-bordered bg-base-100 shadow-lg mb-4 ${isCancelling ? 'opacity-70' : ''}`}
+        className={`card card-bordered bg-base-100 shadow-lg mb-4 ${isCancelling && !modalRef.current?.open ? 'opacity-70' : ''}`} // Dim card only if modal is not open during cancelling
       >
         <div className="card-body p-4 sm:p-6">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
             {/* Appointment Details */}
             <div className="mb-3 sm:mb-0">
-              <h2 className="card-title text-lg mb-1"> {/* card-title for heading */}
+              <h2 className="card-title text-lg mb-1"> 
                 {appointment.service.name}
               </h2>
-              <p className="text-sm text-base-content/80"> {/* text-base-content with opacity */}
+              <p className="text-sm text-base-content/80"> 
                 {format(new Date(appointment.startTime), 'eeee, MMMM d, yyyy')} at {format(new Date(appointment.startTime), 'HH:mm')}
               </p>
               <div className="mt-2">
@@ -102,18 +115,18 @@ export default function AppointmentItem({ appointment }: AppointmentItemProps) {
             {/* Cancel Button */}
             {canCancel && (
               <button
-                onClick={handleOpenCancelModal} // Open modal instead of direct cancel
+                onClick={handleOpenCancelModal} 
                 disabled={isCancelling}
-                className="btn btn-error btn-sm mt-2 sm:mt-0 sm:ml-4" // DaisyUI button
+                className="btn btn-error btn-sm mt-2 sm:mt-0 sm:ml-4" 
               >
                 Cancel Appointment
               </button>
             )}
           </div>
-          {/* Display Error Message for cancellation */}
-          {error && !isCancelling && ( // Show error if not currently cancelling (error displayed in modal during cancel)
+          {/* Display Error Message for cancellation if modal is not open (e.g., initial load error if applicable) */}
+          {error && !modalRef.current?.open && ( 
             <div role="alert" className="alert alert-error text-xs p-2 mt-3">
-               <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current shrink-0 h-4 w-4" fill="none" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2 2m2-2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current shrink-0 h-4 w-4" fill="none" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2 2m2-2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
               <span>{error}</span>
             </div>
           )}
@@ -130,19 +143,19 @@ export default function AppointmentItem({ appointment }: AppointmentItemProps) {
           {error && ( // Show error within the modal if cancellation fails
              <div role="alert" className="alert alert-error text-xs p-2 mb-3">
                <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current shrink-0 h-4 w-4" fill="none" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2 2m2-2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-              <span>{error}</span>
-            </div>
+               <span>{error}</span>
+             </div>
           )}
           <div className="modal-action">
             <button className="btn btn-ghost" onClick={() => { setError(null); if (modalRef.current) modalRef.current.close();}}>Close</button>
             <button
-              className={`btn btn-error ${isCancelling ? 'btn-disabled' : ''}`} // DaisyUI button classes
+              className={`btn btn-error ${isCancelling ? 'btn-disabled' : ''}`} 
               onClick={handleCancel}
               disabled={isCancelling}
             >
               {isCancelling ? (
                 <>
-                  <span className="loading loading-spinner loading-xs"></span> {/* DaisyUI spinner */}
+                  <span className="loading loading-spinner loading-xs"></span> 
                   Cancelling...
                 </>
               ) : (
