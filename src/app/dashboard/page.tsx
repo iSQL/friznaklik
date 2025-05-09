@@ -1,18 +1,18 @@
-// src/app/dashboard/page.tsx (Refactored for Direct Prisma Fetch)
+// src/app/dashboard/page.tsx (Refactored for Direct Prisma Fetch & Error Utility)
 
 import { currentUser } from "@clerk/nextjs/server";
 import { redirect } from 'next/navigation';
-import UserAppointmentList from '@/components/user/UserAppointmentList'; // Assuming this path is correct
-import prisma from '@/lib/prisma'; // Import your Prisma client
-import { Appointment, Service, User as PrismaUser } from '@prisma/client'; // Renamed User to PrismaUser to avoid conflict with Clerk's User
-import { parseISO } from "date-fns"; // For date parsing if needed
+import UserAppointmentList from '@/components/user/UserAppointmentList'; 
+import prisma from '@/lib/prisma'; 
+import { Appointment, Service, User as PrismaUser, Prisma } from '@prisma/client'; // Import Prisma for specific error types
+import { parseISO } from "date-fns"; 
+import { formatErrorMessage } from '@/lib/errorUtils'; // Import the error utility
 
 // Define the type for appointments including related Service data
-// Ensure startTime and endTime are Date objects for client components
 export type AppointmentWithServiceDetails = Appointment & {
   service: Service;
-  startTime: Date; // Already a Date object from Prisma
-  endTime: Date;   // Already a Date object from Prisma
+  startTime: Date; 
+  endTime: Date;   
 };
 
 // --- This line ensures the page is dynamically rendered for each user request ---
@@ -25,14 +25,16 @@ async function getUserAppointments(clerkUserId: string): Promise<AppointmentWith
     // 1. Find the internal database user ID based on the Clerk user ID
     const dbUser = await prisma.user.findUnique({
       where: { clerkId: clerkUserId },
-      select: { id: true }, // Only fetch the database user ID
+      select: { id: true }, 
     });
 
     if (!dbUser) {
-      console.error(`DashboardPage: Database user not found for Clerk ID: ${clerkUserId}`);
-      // This could happen if the webhook for user creation hasn't processed yet or failed.
-      // Depending on requirements, you might throw an error or return an empty array.
-      return [];
+      // This specific case might not need formatErrorMessage, as it's a known "not found" scenario.
+      // However, for consistency, we could use it or throw a specific error type.
+      console.warn(`DashboardPage: Database user not found for Clerk ID: ${clerkUserId}. Returning empty array.`);
+      // If you want to treat this as an error to be displayed, throw one:
+      // throw new Error(`User profile not found in our system. Please contact support if this persists.`);
+      return []; // Or throw an error to be caught by the page
     }
 
     console.log(`DashboardPage: Database User ID found: ${dbUser.id}. Fetching appointments...`);
@@ -40,42 +42,39 @@ async function getUserAppointments(clerkUserId: string): Promise<AppointmentWith
     // 2. Fetch appointments for the found database user
     const rawAppointments = await prisma.appointment.findMany({
       where: {
-        userId: dbUser.id, // Filter appointments by the internal database user ID
+        userId: dbUser.id, 
       },
       include: {
-        service: true, // Include related Service data for display
+        service: true, 
       },
       orderBy: {
-        startTime: 'asc', // Order appointments by start time
+        startTime: 'asc', 
       },
     });
 
-    // Prisma returns Date objects for DateTime fields, so parseISO might be redundant here
-    // unless there's a specific reason to re-parse (e.g., if data was stringified elsewhere).
-    // For direct Prisma fetches, app.startTime and app.endTime should already be Date objects.
     const appointmentsWithDateObjects = rawAppointments.map(app => ({
       ...app,
       startTime: app.startTime instanceof Date ? app.startTime : parseISO(app.startTime as unknown as string),
       endTime: app.endTime instanceof Date ? app.endTime : parseISO(app.endTime as unknown as string),
     }));
 
-
     console.log(`DashboardPage: Found ${appointmentsWithDateObjects.length} user appointments directly from DB.`);
     return appointmentsWithDateObjects;
 
-  } catch (error: any) {
-    console.error('DashboardPage: Error fetching user appointments directly with Prisma:', error);
-    // Re-throw the error to be caught by the page component or an error boundary
-    throw new Error(`Failed to load appointments. Details: ${error.message}`);
+  } catch (error: unknown) { // Catch unknown
+    // Use the centralized error formatter.
+    // The error will be logged in detail by formatErrorMessage on the server.
+    // Re-throw a new error with the user-friendly message to be caught by the page component.
+    const userFriendlyMessage = formatErrorMessage(error, `fetching appointments for user ${clerkUserId}`);
+    throw new Error(userFriendlyMessage); 
   }
 }
 
 
 export default async function DashboardPage() {
-  const user = await currentUser(); // Get the authenticated Clerk user
+  const user = await currentUser(); 
 
   if (!user || !user.id) {
-    // If no user or user.id is not available (it should be), redirect to sign-in
     redirect('/sign-in');
   }
 
@@ -87,9 +86,15 @@ export default async function DashboardPage() {
   try {
     // Fetch appointments directly using the authenticated user's Clerk ID
     userAppointments = await getUserAppointments(user.id);
-  } catch (fetchError: any) {
-    console.error('DashboardPage: Error in page trying to get appointments:', fetchError);
-    error = fetchError.message || "Could not load your appointments at this time.";
+  } catch (fetchError: unknown) { // Catch unknown
+    // If getUserAppointments throws, it will already be a user-friendly message from formatErrorMessage.
+    // If it's another type of error caught here, format it.
+    if (fetchError instanceof Error) {
+        error = fetchError.message; // Assumes message is already formatted by getUserAppointments
+    } else {
+        error = formatErrorMessage(fetchError, "displaying dashboard appointments");
+    }
+    // The detailed console.error is handled within formatErrorMessage or by getUserAppointments's catch block.
   }
 
   return (
@@ -105,7 +110,7 @@ export default async function DashboardPage() {
           </svg>
           <div>
             <h3 className="font-bold">Error Loading Appointments!</h3>
-            <div className="text-xs">{error}</div>
+            <div className="text-xs">{error}</div> {/* Display the formatted error */}
           </div>
         </div>
       ) : (

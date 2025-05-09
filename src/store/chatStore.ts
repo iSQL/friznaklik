@@ -1,6 +1,7 @@
 // src/store/chatStore.ts
 
 import { create } from 'zustand'; // Import the create function from Zustand
+import { formatErrorMessage } from '@/lib/errorUtils'; // Import the error utility
 
 // Define the type for a single message
 interface ChatMessage {
@@ -17,15 +18,12 @@ interface ChatState {
   isSending: boolean;      // Indicates if a message is being sent to the AI
 
   // Actions to update the state
-  // setMessages action to load initial history
   setMessages: (messages: ChatMessage[]) => void;
-  // addMessage now takes the full ChatMessage object
   addMessage: (message: ChatMessage) => void;
-  setInputMessage: (message: string) => void; // Update the input field text
-  setIsSending: (sending: boolean) => void;   // Set the sending status
-  clearChat: () => void;                     // Clear all messages (optional)
+  setInputMessage: (message: string) => void; 
+  setIsSending: (sending: boolean) => void;   
+  clearChat: () => void;                     
 
-  // New async action to send message to backend API
   sendMessage: (messageText: string) => Promise<void>;
 }
 
@@ -41,9 +39,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   isSending: false,
 
   // Action implementations
-  // Action to set the entire messages array (for loading history)
   setMessages: (messages) => set({ messages }),
-  // Action to add a single message (now takes the full object)
   addMessage: (message) => set((state) => ({
     messages: [...state.messages, message],
   })),
@@ -53,69 +49,62 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   // Async action to send message to backend API
   sendMessage: async (messageText: string) => {
-    // Prevent sending if already sending or message is empty
     if (get().isSending || !messageText.trim()) {
       return;
     }
 
-    // Create the user message object with ID and timestamp before adding
     const userMessageObject: ChatMessage = {
         text: messageText,
         sender: 'user',
         timestamp: new Date(),
-        id: Date.now().toString() + Math.random().toString(36).substring(2, 9), // Simple unique ID
+        id: Date.now().toString() + Math.random().toString(36).substring(2, 9), 
     };
 
-    // Add user message to the chat
     get().addMessage(userMessageObject);
-    // Clear the input field
     get().setInputMessage('');
-    // Set sending status to true
     get().setIsSending(true);
 
-    // Prepare the request body - Send the entire userMessageObject
-    const requestBody = JSON.stringify(userMessageObject); // Corrected: Send the full object
-
-    console.log('chatStore: Sending fetch request with body:', requestBody); // Debug log - Log the request body
+    const requestBody = JSON.stringify(userMessageObject); 
+    console.log('chatStore: Sending fetch request with body:', requestBody); 
 
     try {
-      // Call the backend API to send the message to the AI and save it
-      // This will hit your src/app/api/chat/route.ts POST handler
       const response = await fetch(`${SITE_URL}/api/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        // Send the full user message object, including ID and timestamp
-        body: requestBody, // Use the prepared requestBody
+        body: requestBody, 
       });
 
       if (!response.ok) {
          const errorText = await response.text();
-         throw new Error(`API request failed with status ${response.status}: ${errorText}`);
+         // Throw a structured error object for formatErrorMessage
+         throw { 
+            message: `API request failed with status ${response.status}`, 
+            details: errorText,
+            status: response.status 
+          };
       }
 
-      // Assuming the API returns the AI's response including its ID and timestamp
       const aiResponseMessage: ChatMessage = await response.json();
-
-      // Add AI response to the chat
       get().addMessage({
           ...aiResponseMessage,
-          timestamp: new Date(aiResponseMessage.timestamp), // Ensure timestamp is a Date object
+          timestamp: new Date(aiResponseMessage.timestamp), 
       });
 
-
-    } catch (err: any) {
-      console.error('Error sending message:', err);
+    } catch (err: unknown) { // Catch unknown
+      // Use the centralized error formatter
+      // The detailed error will be logged to the browser console by formatErrorMessage
+      const userFriendlyError = formatErrorMessage(err, "sending chat message");
+      
       // Add an error message to the chat if the API call fails
       get().addMessage({
-          text: `Error sending message: ${err.message || 'Unknown error'}`,
+          text: userFriendlyError, // Use the formatted error message
           sender: 'ai',
-          timestamp: new Date(), // Add timestamp for the error message
-          id: Date.now().toString() + Math.random().toString(36).substring(2, 9), // Simple unique ID
+          timestamp: new Date(), 
+          id: Date.now().toString() + Math.random().toString(36).substring(2, 9), 
       });
     } finally {
-      // Set sending status back to false
       get().setIsSending(false);
     }
   },
