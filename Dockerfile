@@ -35,7 +35,7 @@ WORKDIR /app
 
 # --- Add Build Arguments ---
 # Declare arguments that can be passed during the build
-#ARG PUBLIC_SITE_URL
+ARG NEXT_PUBLIC_SITE_URL
 
 # Copy dependencies and prisma client from the 'deps' stage
 COPY --from=deps /app/node_modules ./node_modules
@@ -45,7 +45,7 @@ COPY . .
 
 # --- Set Environment Variables for Build ---
 # Make the build arguments available as environment variables for the build command //TODO: refactor site url usage to not use env var
-#ENV PUBLIC_SITE_URL=${PUBLIC_SITE_URL}
+ENV NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL}
 
 # Build the Next.js application
 # The output will be in .next/standalone thanks to `output: 'standalone'` in next.config.ts

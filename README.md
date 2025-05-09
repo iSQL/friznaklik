@@ -96,7 +96,7 @@ This is the recommended way to run the application locally, as it manages both t
     NEXT_PUBLIC_CLERK_DOMAIN=xxx.accounts.dev # <-- Replace with your actual Clerk Domain
 
     # App Configuration
-    PUBLIC_SITE_URL=http://localhost:3000 # Keep for local Docker dev, change for production
+    NEXT_PUBLIC_SITE_URL=http://localhost:3000 # Keep for local Docker dev, change for production
     # APP_PORT=3000 # Optional: uncomment and change if you need to map to a different host port
 
     # Google AI
