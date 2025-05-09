@@ -19,8 +19,12 @@ export type AppointmentWithDetails = Appointment & {
   endTime: Date;
 };
 
+export const dynamic = 'force-dynamic';
+// This tells Next.js to render this page on the server for every request,
+// rather than trying to generate it statically at build time.
+
 export default async function AdminAppointmentsPage() {
-  console.log('AdminAppointmentsPage: Fetching pending appointments directly with Prisma...');
+  console.log('AdminAppointmentsPage: Fetching pending appointments directly with Prisma (dynamic rendering)...');
 
   let pendingAppointments: AppointmentWithDetails[] = [];
   let error: string | null = null;
@@ -42,10 +46,16 @@ export default async function AdminAppointmentsPage() {
     });
 
     // Ensure startTime and endTime are Date objects before passing to client components
+    // Prisma date fields are already Date objects when fetched, but this ensures consistency
+    // if they were somehow stringified before this point (unlikely with direct Prisma fetch).
     pendingAppointments = rawAppointments.map(app => ({
       ...app,
-      startTime: typeof app.startTime === 'string' ? parseISO(app.startTime) : app.startTime,
-      endTime: typeof app.endTime === 'string' ? parseISO(app.endTime) : app.endTime,
+      // Prisma returns Date objects for DateTime fields, so parseISO might be redundant
+      // unless the data source was different (e.g., an API returning strings).
+      // For direct Prisma, app.startTime and app.endTime should already be Date objects.
+      // However, explicit conversion doesn't hurt if there's any doubt.
+      startTime: app.startTime instanceof Date ? app.startTime : parseISO(app.startTime as unknown as string),
+      endTime: app.endTime instanceof Date ? app.endTime : parseISO(app.endTime as unknown as string),
     }));
 
     console.log(`AdminAppointmentsPage: Found ${pendingAppointments.length} pending appointments.`);
@@ -56,8 +66,10 @@ export default async function AdminAppointmentsPage() {
     if (fetchError.message) {
         errorMessage += ` Details: ${fetchError.message}`;
     }
-    if (fetchError.code) {
+    // Check if it's a Prisma-specific error for more details
+    if (fetchError.code) { // Prisma errors often have a 'code' property
         console.error(`Prisma error code: ${fetchError.code}`);
+        // You could add more specific messages based on common Prisma error codes if needed
     }
     error = errorMessage;
   }

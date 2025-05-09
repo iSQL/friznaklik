@@ -2,7 +2,7 @@
 
 # ---- Base Stage ----
 # Use Node.js 23 Alpine image as requested.
-FROM node:23-alpine AS base
+FROM node:24-alpine AS base
 LABEL authors="iSQL"
 
 # Set working directory

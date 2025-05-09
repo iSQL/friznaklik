@@ -1,61 +1,53 @@
 // src/app/services/page.tsx
 
-import Link from 'next/link'; // For linking to booking page or service details
-// No longer need to import headers
+import Link from 'next/link';
+import prisma from '@/lib/prisma'; // Assuming your prisma client is at src/lib/prisma.ts
+import type { Service } from '@prisma/client'; // Import the Service type from Prisma
 
-// Define the expected structure of a Service object
-interface Service {
-  id: string;
-  name: string;
-  description: string | null;
-  duration: number; // Duration in minutes
-  price: number;
-  createdAt: string; // Assuming ISO date string
-  updatedAt: string; // Assuming ISO date string
-}
-
-// Function to fetch services from the API
-// No longer needs to handle headers/cookies as the API route is public
-async function getServices(): Promise<Service[]> {
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
-  const apiUrl = `${siteUrl}/api/services`;
-
-  console.log(`Fetching services from: ${apiUrl}`);
-
+// Fetch services directly from the database
+async function getServicesDirectly(): Promise<Service[]> {
   try {
-    // Fetch without custom headers
-    const res = await fetch(apiUrl, {
-      // Consider using Next.js caching strategies if appropriate
-      // cache: 'force-cache', // Example: Cache aggressively
-      // next: { revalidate: 3600 } // Example: Revalidate every hour
-      cache: 'no-store', // Keep fetching fresh data for now, adjust as needed
+    // This console.log will appear in your server/build logs, not the browser.
+    console.log("Fetching services directly from DB for /services page...");
+    const services = await prisma.service.findMany({
+      orderBy: { // Optional: Add ordering if desired
+        name: 'asc',
+      },
     });
-
-    if (!res.ok) {
-      const errorText = await res.text();
-      console.error(`Failed to fetch services: ${res.status} ${res.statusText}`, errorText);
-      // Throw a generic error as authentication shouldn't be the issue anymore
-      throw new Error(`Failed to fetch services. Status: ${res.status}`);
-    }
-
-    const services = await res.json();
-    console.log(`Fetched ${services.length} services.`);
+    console.log(`Fetched ${services.length} services directly from DB.`);
     return services;
   } catch (error) {
-    console.error('Error in getServices:', error);
-    // Re-throw the error to be caught by the page component
-    throw error;
+    console.error("Error fetching services directly from DB:", error);
+    // In a real app, you might want to throw the error or return an empty array
+    // depending on how you want to handle DB errors at the page level.
+    // For build purposes, returning empty or throwing might be acceptable.
+    // If the DB isn't available at build time (it shouldn't be for this pattern),
+    // this won't be an issue as this code runs at request time or during pre-rendering
+    // if the page is static and data is fetched then.
+    // For fully static pages, DATABASE_URL would need to be available at build time.
+    // For dynamically rendered server components, it's fetched at request time.
+    return []; // Or throw the error to be handled by an error.tsx boundary
   }
 }
 
-// The ServicesPage component
+// This page will be dynamically rendered by default if it uses dynamic functions
+// like cookies(), headers(), or searchParams. If it's just fetching data,
+// Next.js will try to prerender it if possible.
+// Using `cache: 'no-store'` in a fetch implies dynamic behavior.
+// For direct DB access, if you want it to be always dynamic (like revalidate: 0):
+export const dynamic = 'force-dynamic';
+// Or, for time-based revalidation (e.g., every hour):
+// export const revalidate = 3600;
+
 export default async function ServicesPage() {
   let services: Service[] = [];
   let fetchError: string | null = null;
 
   try {
-    services = await getServices();
+    services = await getServicesDirectly();
   } catch (error: any) {
+    // This catch block might be less relevant if getServicesDirectly handles its own errors
+    // or if you use an error.tsx boundary for the page.
     console.error("Error fetching services for page:", error.message);
     fetchError = error.message || "Could not load services at this time. Please try again later.";
   }
@@ -69,6 +61,7 @@ export default async function ServicesPage() {
         </p>
       </header>
 
+      {/* Error display remains the same */}
       {fetchError && (
         <div role="alert" className="alert alert-error shadow-lg max-w-2xl mx-auto">
           <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2 2m2-2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
@@ -93,7 +86,7 @@ export default async function ServicesPage() {
             <div key={service.id} className="card bg-base-100 shadow-xl hover:shadow-2xl transition-shadow duration-300 ease-in-out">
               <div className="card-body">
                 <h2 className="card-title text-2xl mb-2">{service.name}</h2>
-                <p className="text-base-content/80 mb-4 h-20 overflow-y-auto"> {/* Fixed height for description */}
+                <p className="text-base-content/80 mb-4 h-20 overflow-y-auto">
                   {service.description || "No description available."}
                 </p>
                 <div className="mb-4 space-y-1">
