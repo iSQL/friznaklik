@@ -2,6 +2,7 @@
 'use client'; // Required for hooks like useState, useEffect
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { formatErrorMessage } from '@/lib/errorUtils'; // Import the error utility
 
 // --- Types (Define interfaces for the data structures) ---
 
@@ -65,13 +66,18 @@ function ChatSessionList({ onSelectSession }: ChatSessionListProps) {
             try {
                 const response = await fetch('/api/admin/chat/sessions');
                 if (!response.ok) {
-                    throw new Error(`Failed to fetch sessions: ${response.statusText}`);
+                    // Throw an error object to be caught and formatted
+                    const errorData = { 
+                        message: `Failed to fetch sessions: ${response.statusText}`, 
+                        status: response.status 
+                    };
+                    throw errorData;
                 }
                 const data: SessionListItem[] = await response.json();
                 setSessions(data);
-            } catch (err: any) {
-                console.error("Error fetching chat sessions:", err);
-                setError(err.message || 'An unknown error occurred');
+            } catch (err: unknown) { // Catch unknown
+                // Use the centralized error formatter
+                setError(formatErrorMessage(err, "fetching chat sessions"));
             } finally {
                 setIsLoading(false);
             }
@@ -85,7 +91,7 @@ function ChatSessionList({ onSelectSession }: ChatSessionListProps) {
     }
 
     if (error) {
-        return <div className="p-4 text-center text-red-500">Error loading sessions: {error}</div>;
+        return <div className="p-4 text-center text-red-500">Error: {error}</div>;
     }
 
     if (sessions.length === 0) {
@@ -148,24 +154,24 @@ function AdminChatView({ sessionId, onBack }: AdminChatViewProps) {
 
     // Function to fetch chat history
     const fetchChatHistory = useCallback(async () => {
-        // Don't set loading to true on refetch after sending
-        // setIsLoading(true);
+        // setIsLoading(true); // Only set loading true on initial mount
         setError(null);
         try {
             const response = await fetch(`/api/admin/chat/history/${sessionId}`);
             if (!response.ok) {
-                 if (response.status === 404) {
-                    throw new Error(`Chat session not found.`);
-                 }
-                throw new Error(`Failed to fetch chat history: ${response.statusText}`);
+                const errorData = { 
+                    message: `Failed to fetch chat history: ${response.statusText}`, 
+                    status: response.status,
+                    isNotFoundError: response.status === 404 
+                };
+                throw errorData;
             }
             const data: ChatSessionWithHistory = await response.json();
             setChatData(data);
-        } catch (err: any) {
-            console.error("Error fetching chat history:", err);
-            setError(err.message || 'An unknown error occurred');
+        } catch (err: unknown) { // Catch unknown
+            setError(formatErrorMessage(err, `fetching chat history for session ${sessionId}`));
         } finally {
-            setIsLoading(false); // Set loading false only after initial load or error
+            setIsLoading(false); 
         }
     }, [sessionId]); // Dependency on sessionId
 
@@ -177,11 +183,11 @@ function AdminChatView({ sessionId, onBack }: AdminChatViewProps) {
 
     // Function to send admin message
     const handleSendMessage = async (e: React.FormEvent) => {
-        e.preventDefault(); // Prevent default form submission
+        e.preventDefault(); 
         if (!adminMessage.trim() || isSending) return;
 
         setIsSending(true);
-        setError(null); // Clear previous errors
+        setError(null); 
 
         try {
             const response = await fetch(`/api/admin/chat/send/${sessionId}`, {
@@ -193,17 +199,19 @@ function AdminChatView({ sessionId, onBack }: AdminChatViewProps) {
             });
 
             if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`Failed to send message: ${response.status} ${errorText}`);
+                const errorText = await response.text(); // Get more detailed error from API
+                const errorData = { 
+                    message: `Failed to send message: ${response.status} ${errorText}`, 
+                    status: response.status 
+                };
+                throw errorData;
             }
 
-            // Clear input and refetch history to show the new message
             setAdminMessage('');
-            await fetchChatHistory(); // Refetch after successful send
+            await fetchChatHistory(); 
 
-        } catch (err: any) {
-            console.error("Error sending admin message:", err);
-            setError(`Error sending message: ${err.message}`);
+        } catch (err: unknown) { // Catch unknown
+            setError(formatErrorMessage(err, "sending admin message"));
         } finally {
             setIsSending(false);
         }
@@ -245,11 +253,11 @@ function AdminChatView({ sessionId, onBack }: AdminChatViewProps) {
         return <div className="p-4 text-center text-gray-500">Loading chat history...</div>;
     }
 
-    if (error && !chatData) { // Show error only if chatData hasn't loaded at all
+    if (error && !chatData) { 
         return (
              <div className="p-4">
                  <button onClick={onBack} className="mb-4 px-3 py-1 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600">&larr; Back to Sessions</button>
-                 <div className="p-4 text-center text-red-500">Error loading history: {error}</div>
+                 <div className="p-4 text-center text-red-500">Error: {error}</div>
              </div>
         );
     }

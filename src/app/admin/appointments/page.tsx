@@ -1,27 +1,19 @@
 // src/app/admin/appointments/page.tsx
 
-// This is a Server Component Page. It runs on the server and is good for data fetching.
-// It lives inside the /admin route segment, so it will use the AdminLayout for protection.
-// Its purpose is to fetch pending appointments and render the Client Component list.
+import AppointmentList from '@/components/admin/appointments/AppointmentList';
+import { Appointment, Service, User } from '@prisma/client';
+import prisma from '@/lib/prisma';
+import { parseISO } from 'date-fns';
+import { formatErrorMessage } from '@/lib/errorUtils'; // Import the new utility
 
-import AppointmentList from '@/components/admin/appointments/AppointmentList'; // Client Component to display the list
-import { Appointment, Service, User } from '@prisma/client'; // Import necessary types from Prisma
-import prisma from '@/lib/prisma'; // Import your Prisma client utility
-import { parseISO } from 'date-fns'; // To ensure date fields are Date objects
-
-// Define the type for appointments including related Service and User data
-// This type is used by AppointmentList and AdminAppointmentCard as well
 export type AppointmentWithDetails = Appointment & {
   service: Service;
   user: User;
-  // Ensure startTime and endTime are Date objects for client components
   startTime: Date;
   endTime: Date;
 };
 
 export const dynamic = 'force-dynamic';
-// This tells Next.js to render this page on the server for every request,
-// rather than trying to generate it statically at build time.
 
 export default async function AdminAppointmentsPage() {
   console.log('AdminAppointmentsPage: Fetching pending appointments directly with Prisma (dynamic rendering)...');
@@ -30,48 +22,31 @@ export default async function AdminAppointmentsPage() {
   let error: string | null = null;
 
   try {
-    // Fetch pending appointments directly from the database using Prisma
-    // Include related service and user data for display
     const rawAppointments = await prisma.appointment.findMany({
       where: {
-        status: 'pending', // Fetch only appointments with status 'pending'
+        status: 'pending',
       },
       include: {
-        service: true, // Include the related Service model data
-        user: true,    // Include the related User model data
+        service: true,
+        user: true,
       },
       orderBy: {
-        startTime: 'asc', // Order pending appointments by start time
+        startTime: 'asc',
       },
     });
 
-    // Ensure startTime and endTime are Date objects before passing to client components
-    // Prisma date fields are already Date objects when fetched, but this ensures consistency
-    // if they were somehow stringified before this point (unlikely with direct Prisma fetch).
     pendingAppointments = rawAppointments.map(app => ({
       ...app,
-      // Prisma returns Date objects for DateTime fields, so parseISO might be redundant
-      // unless the data source was different (e.g., an API returning strings).
-      // For direct Prisma, app.startTime and app.endTime should already be Date objects.
-      // However, explicit conversion doesn't hurt if there's any doubt.
       startTime: app.startTime instanceof Date ? app.startTime : parseISO(app.startTime as unknown as string),
       endTime: app.endTime instanceof Date ? app.endTime : parseISO(app.endTime as unknown as string),
     }));
 
     console.log(`AdminAppointmentsPage: Found ${pendingAppointments.length} pending appointments.`);
 
-  } catch (fetchError: any) {
-    console.error('AdminAppointmentsPage: Error fetching pending appointments directly with Prisma:', fetchError);
-    let errorMessage = 'Error loading pending appointments.';
-    if (fetchError.message) {
-        errorMessage += ` Details: ${fetchError.message}`;
-    }
-    // Check if it's a Prisma-specific error for more details
-    if (fetchError.code) { // Prisma errors often have a 'code' property
-        console.error(`Prisma error code: ${fetchError.code}`);
-        // You could add more specific messages based on common Prisma error codes if needed
-    }
-    error = errorMessage;
+  } catch (fetchError: unknown) {
+    // Use the centralized error formatting function
+    error = formatErrorMessage(fetchError, "loading pending appointments");
+    // The detailed console.error is now handled within formatErrorMessage
   }
 
   return (
@@ -90,14 +65,12 @@ export default async function AdminAppointmentsPage() {
           </svg>
           <div>
             <h3 className="font-bold">Error Loading Appointments!</h3>
-            <div className="text-xs">{error}</div>
+            <div className="text-xs">{error}</div> {/* Display the formatted error message */}
           </div>
         </div>
       )}
 
       {!error && (
-        // Render the list of appointments using the AppointmentList Client Component
-        // Pass the fetched pending appointments data as a prop
         <AppointmentList appointments={pendingAppointments} />
       )}
     </div>

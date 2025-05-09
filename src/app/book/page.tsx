@@ -6,6 +6,7 @@ import { useState, useEffect, Suspense } from 'react'; // Import React hooks, ad
 import { Service } from '@prisma/client'; // Import the Service type from Prisma
 import Link from 'next/link'; // Import Link for navigation
 import { useSearchParams } from 'next/navigation'; // Import for reading URL query params
+import { formatErrorMessage } from '@/lib/errorUtils'; // Import the error utility
 
 // Import react-datepicker and its CSS
 import DatePicker from 'react-datepicker';
@@ -32,7 +33,7 @@ function BookingForm() {
     selectService,
     selectDate,
     setAvailableSlots,
-    selectSlot: setStoreSelectedSlot, // Renamed to avoid conflict with local selectedSlot if any
+    selectSlot: setStoreSelectedSlot, 
     setBookingStatus,
     setBookingError,
     resetBooking
@@ -53,20 +54,21 @@ function BookingForm() {
       setIsLoadingServices(true);
       setServicesError(null);
       try {
-        // Fetch services from your public backend API
-        // If this API route also needs authentication, you'll need to forward headers
-        // similar to how it was done in the services page.
-        // For now, assuming /api/services is public or auth is handled differently for client-side fetch.
         const response = await fetch(`${SITE_URL}/api/services`);
         if (!response.ok) {
           const errorText = await response.text();
-          throw new Error(`Failed to fetch services: ${response.status} ${errorText}`);
+          // Create a more structured error object for formatErrorMessage
+          throw { 
+            message: `Failed to fetch services: ${response.status}`, 
+            details: errorText, 
+            status: response.status 
+          };
         }
         const data: Service[] = await response.json();
         setServices(data);
-      } catch (err: any) {
-        console.error('Error fetching services:', err);
-        setServicesError(err.message || 'Failed to load services.');
+      } catch (err: unknown) { // Catch unknown
+        // Use the centralized error formatter
+        setServicesError(formatErrorMessage(err, "fetching services"));
       } finally {
         setIsLoadingServices(false);
       }
@@ -79,7 +81,6 @@ function BookingForm() {
   useEffect(() => {
     const serviceIdFromUrl = searchParams.get('serviceId');
     if (serviceIdFromUrl && services.length > 0) {
-      // Check if the serviceIdFromUrl is a valid service
       const serviceExists = services.some(s => s.id === serviceIdFromUrl);
       if (serviceExists) {
         console.log(`Pre-selecting service from URL: ${serviceIdFromUrl}`);
@@ -88,7 +89,7 @@ function BookingForm() {
         console.warn(`Service ID ${serviceIdFromUrl} from URL not found in fetched services.`);
       }
     }
-  }, [searchParams, services, selectService]); // Rerun when searchParams or services change
+  }, [searchParams, services, selectService]);
 
 
   // Fetch available slots when selectedServiceId or selectedDate changes
@@ -107,13 +108,16 @@ function BookingForm() {
 
           if (!response.ok) {
             const errorText = await response.text();
-            throw new Error(`Failed to fetch available slots: ${response.status} ${errorText}`);
+            throw { 
+              message: `Failed to fetch available slots: ${response.status}`, 
+              details: errorText,
+              status: response.status 
+            };
           }
           const data: string[] = await response.json();
           setAvailableSlots(data);
-        } catch (err: any) {
-          console.error('Error fetching available slots:', err);
-          setSlotsError(err.message || 'Failed to load available slots.');
+        } catch (err: unknown) { // Catch unknown
+          setSlotsError(formatErrorMessage(err, "fetching available slots"));
         } finally {
           setIsLoadingSlots(false);
         }
@@ -142,6 +146,8 @@ function BookingForm() {
   const handleBookingSubmit = async () => {
     if (!selectedServiceId || !selectedDate || !selectedSlot) {
       console.error("Attempted booking without all required selections.");
+      setBookingError("Please select a service, date, and time slot.");
+      setBookingStatus('error');
       return;
     }
 
@@ -163,23 +169,29 @@ function BookingForm() {
       });
 
       if (!response.ok) {
-        let errorMsg = `Booking failed with status ${response.status}`;
+        let errorPayload: any = { 
+            message: `Booking failed with status ${response.status}`, 
+            status: response.status 
+        };
         try {
           const errorData = await response.json();
-          errorMsg = errorData.message || errorMsg;
+          errorPayload.details = errorData.message || errorData.details || await response.text();
         } catch {
-          const errorText = await response.text();
-          errorMsg = errorText || errorMsg;
+          errorPayload.details = await response.text();
         }
-        throw new Error(errorMsg);
+        throw errorPayload;
       }
 
       setBookingStatus('success');
       console.log('Appointment requested successfully!');
-    } catch (err: any) {
+      // Optionally reset parts of the form after successful booking request
+      // resetBooking(); // Or just reset date/slot
+      selectDate(null); // Reset date, which will clear slots
+      setStoreSelectedSlot(null);
+
+    } catch (err: unknown) { // Catch unknown
       setBookingStatus('error');
-      setBookingError(err.message || 'An unknown error occurred during booking.');
-      console.error('Booking submission error:', err);
+      setBookingError(formatErrorMessage(err, "booking submission"));
     }
   };
 
@@ -188,38 +200,38 @@ function BookingForm() {
 
 
   return (
-    <div className="container mx-auto p-4 sm:p-6 lg:p-8"> {/* DaisyUI: container, p-4 etc. are fine */}
-      <h1 className="text-3xl font-bold mb-8 text-center text-neutral-content"> {/* DaisyUI: text-3xl, font-bold, mb-8, text-center */}
+    <div className="container mx-auto p-4 sm:p-6 lg:p-8"> 
+      <h1 className="text-3xl font-bold mb-8 text-center text-neutral-content"> 
         Book an Appointment
       </h1>
 
       {/* Step 1: Service Selection */}
-      <div className="mb-8 p-6 card bg-base-200 shadow-lg"> {/* DaisyUI: card, bg-base-200, shadow-lg */}
-        <h2 className="text-2xl font-semibold mb-4 card-title">1. Select a Service</h2> {/* DaisyUI: card-title */}
+      <div className="mb-8 p-6 card bg-base-200 shadow-lg"> 
+        <h2 className="text-2xl font-semibold mb-4 card-title">1. Select a Service</h2> 
         {isLoadingServices ? (
           <div className="flex justify-center items-center h-24">
-            <span className="loading loading-spinner loading-lg text-primary"></span> {/* DaisyUI: loading */}
+            <span className="loading loading-spinner loading-lg text-primary"></span> 
           </div>
         ) : servicesError ? (
-          <div role="alert" className="alert alert-error"> {/* DaisyUI: alert, alert-error */}
+          <div role="alert" className="alert alert-error"> 
             <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2 2m2-2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-            <span>Error loading services: {servicesError}</span>
+            <span>{servicesError}</span> {/* Display formatted error */}
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {services.map((service) => (
               <div
                 key={service.id}
-                className={`card bordered cursor-pointer transition-all duration-200 ease-in-out hover:shadow-md ${ /* DaisyUI: card, bordered */
+                className={`card bordered cursor-pointer transition-all duration-200 ease-in-out hover:shadow-md ${ 
                   selectedServiceId === service.id
-                    ? 'border-primary ring-2 ring-primary bg-primary/10' // DaisyUI: border-primary, ring-primary, bg-primary/10
-                    : 'bg-base-100 border-base-300 hover:border-primary/70' // DaisyUI: bg-base-100, border-base-300
+                    ? 'border-primary ring-2 ring-primary bg-primary/10' 
+                    : 'bg-base-100 border-base-300 hover:border-primary/70' 
                 }`}
                 onClick={() => handleServiceSelect(service.id)}
               >
-                <div className="card-body p-4"> {/* DaisyUI: card-body */}
-                  <h3 className="card-title text-lg">{service.name}</h3> {/* DaisyUI: card-title */}
-                  <p className="text-sm text-base-content/70 mb-1 line-clamp-2">{service.description || "No description"}</p> {/* DaisyUI: text-base-content/70, line-clamp */}
+                <div className="card-body p-4"> 
+                  <h3 className="card-title text-lg">{service.name}</h3> 
+                  <p className="text-sm text-base-content/70 mb-1 line-clamp-2">{service.description || "No description"}</p> 
                   <p className="font-semibold text-base-content/90">${service.price.toFixed(2)} - {service.duration} min</p>
                 </div>
               </div>
@@ -232,7 +244,7 @@ function BookingForm() {
       {selectedServiceId && (
         <div className="mb-8 p-6 card bg-base-200 shadow-lg">
           <h2 className="text-2xl font-semibold mb-4 card-title">2. Select a Date for {selectedServiceName}</h2>
-          <div className="p-4 border rounded-lg inline-block bg-base-100 border-base-300 shadow-sm"> {/* DaisyUI: bg-base-100, border-base-300 */}
+          <div className="p-4 border rounded-lg inline-block bg-base-100 border-base-300 shadow-sm"> 
             <DatePicker
               selected={selectedDate}
               onChange={handleDateSelect}
@@ -242,32 +254,31 @@ function BookingForm() {
               className="react-datepicker-override"
             />
           </div>
-          {/* Minimal styling for react-datepicker to blend with DaisyUI */}
           <style jsx global>{`
             .react-datepicker {
               font-family: inherit;
-              border-color: hsl(var(--b3)); /* DaisyUI border color */
-              background-color: hsl(var(--b1)); /* DaisyUI base-100 */
+              border-color: hsl(var(--b3)); 
+              background-color: hsl(var(--b1)); 
             }
             .react-datepicker__header {
-              background-color: hsl(var(--b2)); /* DaisyUI base-200 */
+              background-color: hsl(var(--b2)); 
               border-bottom-color: hsl(var(--b3));
             }
             .react-datepicker__day-name, .react-datepicker__day, .react-datepicker__time-name {
-              color: hsl(var(--bc)); /* DaisyUI base-content */
+              color: hsl(var(--bc)); 
             }
             .react-datepicker__current-month, .react-datepicker-time__header, .react-datepicker-year-header {
                 color: hsl(var(--bc));
             }
             .react-datepicker__day--selected, .react-datepicker__day--keyboard-selected {
-              background-color: hsl(var(--p)); /* DaisyUI primary */
-              color: hsl(var(--pc)); /* DaisyUI primary-content */
+              background-color: hsl(var(--p)); 
+              color: hsl(var(--pc)); 
             }
             .react-datepicker__day:hover {
-              background-color: hsl(var(--p)/0.1); /* DaisyUI primary with opacity */
+              background-color: hsl(var(--p)/0.1); 
             }
             .react-datepicker__navigation-icon::before {
-                border-color: hsl(var(--bc)); /* DaisyUI base-content */
+                border-color: hsl(var(--bc)); 
             }
           `}</style>
         </div>
@@ -284,7 +295,7 @@ function BookingForm() {
           ) : slotsError ? (
             <div role="alert" className="alert alert-error">
               <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2 2m2-2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-              <span>Error loading slots: {slotsError}</span>
+              <span>{slotsError}</span> {/* Display formatted error */}
             </div>
           ) : availableSlots.length === 0 ? (
             <p className="text-base-content/70">No available slots for the selected date. Please try another date.</p>
@@ -293,10 +304,10 @@ function BookingForm() {
               {availableSlots.map(slot => (
                 <button
                   key={slot}
-                  className={`btn ${ /* DaisyUI: btn */
+                  className={`btn ${ 
                     selectedSlot === slot
-                      ? 'btn-primary' // DaisyUI: btn-primary
-                      : 'btn-outline btn-ghost' // DaisyUI: btn-outline, btn-ghost
+                      ? 'btn-primary' 
+                      : 'btn-outline btn-ghost' 
                   }`}
                   onClick={() => handleSlotSelect(slot)}
                 >
@@ -319,14 +330,14 @@ function BookingForm() {
           </div>
           <button
             onClick={handleBookingSubmit}
-            className={`btn btn-success btn-lg w-full sm:w-auto ${ /* DaisyUI: btn-success, btn-lg */
-              bookingStatus === 'submitting' ? 'btn-disabled' : '' // DaisyUI: btn-disabled
+            className={`btn btn-success btn-lg w-full sm:w-auto ${ 
+              bookingStatus === 'submitting' ? 'btn-disabled' : '' 
             }`}
             disabled={bookingStatus === 'submitting'}
           >
             {bookingStatus === 'submitting' ? (
               <>
-                <span className="loading loading-spinner loading-sm"></span> {/* DaisyUI: loading */}
+                <span className="loading loading-spinner loading-sm"></span> 
                 Requesting...
               </>
             ) : (
@@ -334,7 +345,7 @@ function BookingForm() {
             )}
           </button>
           {bookingStatus === 'success' && (
-            <div role="alert" className="alert alert-success mt-4"> {/* DaisyUI: alert, alert-success */}
+            <div role="alert" className="alert alert-success mt-4"> 
                 <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                 <div>
                     <h3 className="font-bold">Success!</h3>
@@ -343,11 +354,11 @@ function BookingForm() {
             </div>
           )}
           {bookingStatus === 'error' && (
-             <div role="alert" className="alert alert-error mt-4"> {/* DaisyUI: alert, alert-error */}
+             <div role="alert" className="alert alert-error mt-4"> 
                 <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2 2m2-2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                 <div>
                     <h3 className="font-bold">Booking Failed!</h3>
-                    <div className="text-xs">{bookingError}</div>
+                    <div className="text-xs">{bookingError}</div> {/* Display formatted error */}
                 </div>
             </div>
           )}
@@ -355,7 +366,7 @@ function BookingForm() {
       )}
 
       <div className="mt-10 text-center">
-        <Link href="/" className="btn btn-ghost"> {/* DaisyUI: btn, btn-ghost */}
+        <Link href="/" className="btn btn-ghost"> 
           &larr; Back to Home
         </Link>
       </div>
@@ -394,7 +405,6 @@ function BookingPageSkeleton() {
                     ))}
                 </div>
             </div>
-             {/* Further skeleton sections can be added for date and time slots if desired */}
         </div>
     );
 }
