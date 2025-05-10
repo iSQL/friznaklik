@@ -49,3 +49,20 @@ stages:
           $(tag)
           latest
         # No need for dockerfile, buildContext, or arguments for push
+- stage: DeployOnVM
+  dependsOn: BuildAndPushToDockerHub
+  condition: and(succeeded(), eq(variables['deploytoVM'], 'true'))
+  jobs:
+    - job: Trigger
+      steps:
+        - task: Bash@3
+          env:
+            AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
+          inputs:
+            targetType: 'inline'
+            script: |
+              curl -X POST \
+                -H "Authorization: Bearer $AZURE_DEVOPS_EXT_PAT" \
+                -H "Content-Type: application/json" \
+                https://dev.azure.com/ZabariServer/FrizNaKlik/_apis/pipelines/3/runs?api-version=7.1-preview.1 \
+                -d '{}'
