@@ -35,9 +35,10 @@ export async function POST(req: Request) {
       "svix-timestamp": svix_timestamp,
       "svix-signature": svix_signature,
     }) as WebhookEvent;
-  } catch (err: any) {
-    console.error('Greška pri verifikaciji webhook-a:', err.message);
-    return new NextResponse(`Greška pri verifikaciji: ${err.message}`, {
+  } catch (err: unknown) {
+    const errorMessage = formatErrorMessage(err);
+    console.error('Greška pri verifikaciji webhook-a:', errorMessage);
+    return new NextResponse(`Greška pri verifikaciji: ${errorMessage}`, {
       status: 400,
     });
   }
@@ -114,7 +115,7 @@ export async function POST(req: Request) {
 
     return new NextResponse('Webhook uspešno obrađen.', { status: 200 });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     const errorMessage = formatErrorMessage(error, `obrade webhook događaja ${eventType}`);
     console.error(errorMessage);
     return new NextResponse('Interna greška servera prilikom obrade webhook-a.', { status: 500 });
