@@ -4,8 +4,8 @@ import "./globals.css";
 import Header from '@/components/Header';
 
 export const metadata: Metadata = {
-  title: 'Haircut Appointment App',
-  description: 'Book your next haircut appointment easily.',
+  title: 'Friz Na Klik',
+  description: 'Dobar friz kreće sa rezervacijom',
   icons: {
     icon: '/logo-square.png',
     shortcut: '/logo-square.png',
