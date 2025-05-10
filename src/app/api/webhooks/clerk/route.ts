@@ -1,145 +1,122 @@
-// src/app/api/webhooks/clerk/route.ts
-
-import { WebhookEvent, UserJSON } from '@clerk/nextjs/server'; // Import specific type UserJSON if available, or use type assertion
+import { WebhookEvent, UserJSON } from '@clerk/nextjs/server';
 import { headers } from 'next/headers';
 import { Webhook } from 'svix';
 import prisma from '@/lib/prisma';
 import { NextResponse } from 'next/server';
+import { formatErrorMessage } from '@/lib/errorUtils'; 
 
-// This is your Clerk webhook secret.
 const webhookSecret = process.env.CLERK_WEBHOOK_SECRET;
 
-// Handles POST requests from Clerk webhooks
 export async function POST(req: Request) {
-  // Get the headers from the incoming request
-  const headerPayload = headers();
-  const svix_id = (await headerPayload).get('svix-id'); // Removed await as headers() returns Headers object directly
-  const svix_timestamp = (await headerPayload).get('svix-timestamp');
-  const svix_signature = (await headerPayload).get('svix-signature');
-
-  // If there are no Svix headers, return an error
   if (!webhookSecret) {
-     console.error('Error: CLERK_WEBHOOK_SECRET is not set in environment variables.');
-     return new NextResponse('Webhook secret not configured', { status: 500 });
+    console.error('CLERK_WEBHOOK_SECRET nije postavljen u env varijablama.');
+    return new NextResponse('Webhook tajna nije konfigurisana.', { status: 500 });
   }
+
+  const headerPayload = await headers(); 
+  const svix_id = headerPayload.get("svix-id");
+  const svix_timestamp = headerPayload.get("svix-timestamp");
+  const svix_signature = headerPayload.get("svix-signature");
+
   if (!svix_id || !svix_timestamp || !svix_signature) {
-    console.log('Webhook Error: Missing Svix headers');
-    return new NextResponse('Error occured -- no Svix headers', {
+    console.warn('Webhook greška: Nedostaju Svix zaglavlja.');
+    return new NextResponse('Greška: Nedostaju Svix zaglavlja.', {
       status: 400,
     });
   }
 
-  // Get the request body as text
   const payload = await req.text();
-
-  // Verify the webhook signature
   const wh = new Webhook(webhookSecret);
-  let msg: WebhookEvent;
+  let evt: WebhookEvent;
 
   try {
-    // Verify the payload and headers against the secret
-    msg = wh.verify(payload, {
-      'svix-id': svix_id,
-      'svix-timestamp': svix_timestamp,
-      'svix-signature': svix_signature,
-    }) as WebhookEvent; // Cast the verified message to WebhookEvent
-  } catch (err) {
-    // If verification fails, log the error and return a 400
-    console.error('Error verifying webhook:', err);
-    return new NextResponse('Error occured -- verification failed', {
+    evt = wh.verify(payload, {
+      "svix-id": svix_id,
+      "svix-timestamp": svix_timestamp,
+      "svix-signature": svix_signature,
+    }) as WebhookEvent;
+  } catch (err: any) {
+    console.error('Greška pri verifikaciji webhook-a:', err.message);
+    return new NextResponse(`Greška pri verifikaciji: ${err.message}`, {
       status: 400,
     });
   }
 
-  // --- Process the webhook event ---
-  const eventType = msg.type;
-  const eventData = msg.data; // Use a different variable name to avoid confusion
+  const eventType = evt.type;
+  const eventData = evt.data as UserJSON; // Podaci o korisniku
 
-  console.log(`Processing webhook event: ${eventType}`);
+  console.log(`Primljen webhook događaj: ${eventType}`);
 
-  // Handle the 'user.created' event
-  if (eventType === 'user.created') {
-    console.log('User created event received:', eventData);
+  try {
+    switch (eventType) {
+      case 'user.created':
+        console.log('Obrada user.created:', eventData);
+        const existingUserOnCreate = await prisma.user.findUnique({
+          where: { clerkId: eventData.id },
+        });
+        if (existingUserOnCreate) {
+          console.log(`Korisnik ${eventData.id} već postoji u bazi. Preskače se kreiranje.`);
+          break;
+        }
+        await prisma.user.create({
+          data: {
+            clerkId: eventData.id,
+            email: eventData.email_addresses.find(email => email.id === eventData.primary_email_address_id)?.email_address || eventData.email_addresses[0]?.email_address || `user_${eventData.id}@example.com`,
+            name: `${eventData.first_name || ''} ${eventData.last_name || ''}`.trim() || null,
+           
+          },
+        });
+        console.log(`Korisnik ${eventData.id} uspešno kreiran u bazi.`);
+        break;
 
-    // *** Type Assertion/Guard for User Data ***
-    // Since we are inside the 'user.created' block, we expect data matching UserJSON
-    // Use type assertion to inform TypeScript
-    const userData = eventData as UserJSON; // Assert type here
+      case 'user.updated':
+        console.log('Obrada user.updated:', eventData);
+        const userToUpdate = await prisma.user.findUnique({
+          where: { clerkId: eventData.id },
+        });
+        if (!userToUpdate) {
+          console.warn(`Korisnik ${eventData.id} nije pronađen za ažuriranje. Možda je potrebno prvo kreirati korisnika.`);
+          
+          break;
+        }
+        await prisma.user.update({
+          where: { clerkId: eventData.id },
+          data: {
+            email: eventData.email_addresses.find(email => email.id === eventData.primary_email_address_id)?.email_address || eventData.email_addresses[0]?.email_address,
+            name: `${eventData.first_name || ''} ${eventData.last_name || ''}`.trim() || null,
+          },
+        });
+        console.log(`Korisnik ${eventData.id} uspešno ažuriran u bazi.`);
+        break;
 
-    // Extract necessary data from the typed userData object
-    const clerkId = userData.id;
-    // Clerk stores emails in an array, get the first one (primary)
-    // Accessing email_addresses is now safe due to the type assertion above
-    const email = userData.email_addresses[0]?.email_address;
-    const firstName = userData.first_name;
-    const lastName = userData.last_name;
-    const name = `${firstName || ''} ${lastName || ''}`.trim() || 'New User'; // Construct full name
+      case 'user.deleted':
+        console.log('Obrada user.deleted:', eventData);
+        if (!eventData.id) {
+          console.error('user.deleted događaj bez ID-a korisnika.');
+          return new NextResponse('Nedostaje ID korisnika za brisanje.', { status: 400 });
+        }
+        const userToDelete = await prisma.user.findUnique({
+          where: { clerkId: eventData.id },
+        });
+        if (!userToDelete) {
+          console.warn(`Korisnik ${eventData.id} nije pronađen za brisanje. Možda je već obrisan.`);
+          break;
+        }
+        await prisma.user.delete({
+          where: { clerkId: eventData.id },
+        });
+        console.log(`Korisnik ${eventData.id} uspešno obrisan iz baze.`);
+        break;
 
-    // Basic validation
-    if (!clerkId || !email) {
-        console.error('Webhook Error (user.created): Data missing required fields (clerkId or email)');
-         return new NextResponse('Webhook data missing required fields', { status: 400 });
+      default:
+        console.log(`Nije obrađen događaj: ${eventType}`);
     }
 
+    return new NextResponse('Webhook uspešno obrađen.', { status: 200 });
 
-    try {
-      // Create a new user record in your database using Prisma
-      const newUser = await prisma.user.create({
-        data: {
-          clerkId: clerkId,
-          email: email,
-          name: name, // Save the constructed name
-          // role defaults to 'user' as defined in schema.prisma
-        },
-      });
-      console.log('User created in database:', newUser);
-      // Return a success response
-      return NextResponse.json({ message: 'User created successfully', user: newUser }, { status: 201 });
-
-    } catch (dbError) {
-      console.error('Error creating user in database:', dbError);
-      // Return an error response if database operation fails
-      return new NextResponse('Database error creating user', { status: 500 });
-    }
+  } catch (error: any) {
+    const errorMessage = formatErrorMessage(error, `obrade webhook događaja ${eventType}`);
+    console.error(errorMessage);
+    return new NextResponse('Interna greška servera prilikom obrade webhook-a.', { status: 500 });
   }
-
-  // Handle the 'user.deleted' event
-  if (eventType === 'user.deleted') {
-      console.log('User deleted event received:', eventData);
-      // *** Type Assertion/Guard for Deleted Object Data ***
-      // Assert the type expected for deleted events (often contains just 'id' and 'deleted')
-      const deletedData = eventData as { id?: string; deleted?: boolean }; // Adjust type as needed based on Clerk docs
-
-      const clerkId = deletedData.id; // Accessing 'id' should be safer now
-      if (!clerkId) {
-           console.error('Webhook Error (user.deleted): Data missing clerkId for deletion');
-           return new NextResponse('Webhook data missing clerkId', { status: 400 });
-      }
-      try {
-          // Use deleteMany as the user might not exist if webhook failed before
-          const deleteResult = await prisma.user.deleteMany({
-              where: { clerkId: clerkId }
-          });
-          if (deleteResult.count > 0) {
-             console.log(`User deleted from database (Clerk ID: ${clerkId}). Count: ${deleteResult.count}`);
-          } else {
-             console.log(`User with Clerk ID ${clerkId} not found in database for deletion (might have been deleted already).`);
-          }
-          return NextResponse.json({ message: 'User deletion processed' }, { status: 200 });
-      } catch (dbError) {
-          console.error(`Error deleting user (Clerk ID: ${clerkId}) from database:`, dbError);
-          return new NextResponse('Database error deleting user', { status: 500 });
-      }
-  }
-
-  // TODO: Handle other relevant webhook events like 'user.updated'
-  // if (eventType === 'user.updated') {
-  //    const userData = eventData as UserJSON;
-  //    // ... logic to update user details in your DB ...
-  // }
-
-
-  // If the event type is not handled, return a success response (Clerk expects this)
-  console.log(`Webhook event type ${eventType} received but not explicitly handled.`);
-  return new NextResponse('Event received', { status: 200 });
 }

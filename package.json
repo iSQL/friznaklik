@@ -11,7 +11,8 @@
     "compose:prod": "docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d",
     "compose:down": "docker compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.prod.yml down",
     "compose:build": "docker compose -f docker-compose.yml -f docker-compose.dev.yml build --no-cache app",
-    "compose:deploy": "docker compose -f docker-compose.yml -f docker-compose.prod.yml pull && docker compose -f docker-compose.yml -f docker-compose.prod.yml down && docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d"
+    "compose:deploy": "docker compose -f docker-compose.yml -f docker-compose.prod.yml pull && docker compose -f docker-compose.yml -f docker-compose.prod.yml down && docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d",
+    "ngrok": "ngrok http --domain=valued-free-snail.ngrok-free.app 3000"
   },
   "dependencies": {
     "@clerk/nextjs": "^6.18.1",
