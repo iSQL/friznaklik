@@ -1,34 +1,28 @@
-// src/app/services/page.tsx
 
 import Link from 'next/link';
-import prisma from '@/lib/prisma'; 
-import type { Service } from '@prisma/client'; 
-import { formatErrorMessage } from '@/lib/errorUtils'; // Import the error utility
+import prisma from '@/lib/prisma';
+import type { Service } from '@prisma/client';
+import { formatErrorMessage } from '@/lib/errorUtils'; 
+import { Scissors, AlertTriangle } from 'lucide-react'; 
 
-// Fetch services directly from the database
 async function getServicesDirectly(): Promise<Service[]> {
   try {
-    console.log("Fetching services directly from DB for /services page...");
+    console.log("Preuzimanje usluga direktno iz baze za /services stranicu...");
     const services = await prisma.service.findMany({
-      orderBy: { 
-        name: 'asc',
+      orderBy: {
+        name: 'asc', 
       },
     });
-    console.log(`Fetched ${services.length} services directly from DB.`);
+    console.log(`Preuzeto ${services.length} usluga direktno iz baze.`);
     return services;
-  } catch (error: unknown) { // Catch unknown
-    // Use the centralized error formatter.
-    // The error will be logged in detail by formatErrorMessage on the server.
-    // Re-throw a new error with the user-friendly message to be caught by the page component.
-    const userFriendlyMessage = formatErrorMessage(error, "fetching services directly from database");
-    throw new Error(userFriendlyMessage); 
+  } catch (error: unknown) { 
+    const userFriendlyMessage = formatErrorMessage(error, "preuzimanja usluga direktno iz baze");
+    throw new Error(userFriendlyMessage);
   }
 }
 
-// This page will be dynamically rendered by default if it uses dynamic functions
-// For direct DB access, if you want it to be always dynamic:
 export const dynamic = 'force-dynamic';
-// Or, for time-based revalidation (e.g., every hour):
+// Ili, za revalidaciju zasnovanu na vremenu (npr. svakih sat vremena):
 // export const revalidate = 3600;
 
 export default async function ServicesPage() {
@@ -37,40 +31,44 @@ export default async function ServicesPage() {
 
   try {
     services = await getServicesDirectly();
-  } catch (error: unknown) { // Catch unknown
-    // If getServicesDirectly throws, it will already be a user-friendly message.
-    // If it's another type of error caught here, format it.
+  } catch (error: unknown) { 
     if (error instanceof Error) {
-        fetchError = error.message; // Assumes message is already formatted by getServicesDirectly
+        fetchError = error.message; 
     } else {
-        fetchError = formatErrorMessage(error, "displaying services page");
+        fetchError = formatErrorMessage(error, "prikazivanja stranice sa uslugama");
     }
-    // The detailed console.error is handled within formatErrorMessage or by getServicesDirectly's catch block.
   }
 
   return (
     <div className="container mx-auto p-4 sm:p-6 lg:p-8">
       <header className="mb-8 text-center">
-        <h1 className="text-4xl font-bold text-neutral-content mb-2">Our Services</h1>
+        <div className="inline-block p-3 bg-primary/10 rounded-full mb-4">
+          <Scissors className="h-12 w-12 text-primary" />
+        </div>
+        <h1 className="text-4xl font-bold text-neutral-content mb-2">Naše Usluge</h1>
         <p className="text-lg text-neutral-content/80">
-          Discover the range of professional haircut and styling services we offer.
+          Otkrijte paletu profesionalnih frizerskih i stilskih usluga koje nudimo.
         </p>
       </header>
 
       {fetchError && (
         <div role="alert" className="alert alert-error shadow-lg max-w-2xl mx-auto">
-          <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2 2m2-2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+          <AlertTriangle className="h-6 w-6"/>
           <div>
-            <h3 className="font-bold">Oops! Something went wrong.</h3>
+            <h3 className="font-bold">Ups! Došlo je do greške.</h3>
             <div className="text-xs">{fetchError}</div>
           </div>
         </div>
       )}
 
       {!fetchError && services.length === 0 && (
-        <div className="text-center py-10">
-          <p className="text-xl text-neutral-content/70">
-            No services are currently available. Please check back later.
+        <div className="text-center py-10 bg-base-200 rounded-box p-8">
+          <Scissors className="h-16 w-16 mx-auto text-base-content opacity-30 mb-4" />
+          <p className="text-xl text-neutral-content/70 font-semibold">
+            Trenutno nema dostupnih usluga.
+          </p>
+          <p className="text-neutral-content/60 mt-2">
+            Molimo Vas, proverite kasnije.
           </p>
         </div>
       )}
@@ -78,23 +76,23 @@ export default async function ServicesPage() {
       {!fetchError && services.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {services.map((service) => (
-            <div key={service.id} className="card bg-base-100 shadow-xl hover:shadow-2xl transition-shadow duration-300 ease-in-out">
-              <div className="card-body">
-                <h2 className="card-title text-2xl mb-2">{service.name}</h2>
-                <p className="text-base-content/80 mb-4 h-20 overflow-y-auto">
-                  {service.description || "No description available."}
+            <div key={service.id} className="card bg-base-100 shadow-xl hover:shadow-2xl transition-shadow duration-300 ease-in-out flex flex-col">
+              <div className="card-body flex flex-col flex-grow">
+                <h2 className="card-title text-2xl mb-2 text-primary">{service.name}</h2>
+                <p className="text-base-content/80 mb-4 h-24 overflow-y-auto text-sm leading-relaxed flex-grow">
+                  {service.description || "Nema dostupnog opisa."}
                 </p>
-                <div className="mb-4 space-y-1">
-                  <p className="text-sm">
-                    <span className="font-semibold">Duration:</span> {service.duration} minutes
+                <div className="mb-4 space-y-1 text-sm">
+                  <p>
+                    <span className="font-semibold text-base-content/90">Trajanje:</span> {service.duration} minuta
                   </p>
-                  <p className="text-sm">
-                    <span className="font-semibold">Price:</span> ${service.price.toFixed(2)}
+                  <p>
+                    <span className="font-semibold text-base-content/90">Cena:</span> {service.price.toFixed(2)} RSD
                   </p>
                 </div>
-                <div className="card-actions justify-end">
+                <div className="card-actions justify-end mt-auto">
                   <Link href={`/book?serviceId=${service.id}&serviceName=${encodeURIComponent(service.name)}`} className="btn btn-primary">
-                    Book Now
+                    Zakaži
                   </Link>
                 </div>
               </div>

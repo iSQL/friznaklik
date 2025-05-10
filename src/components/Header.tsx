@@ -2,14 +2,14 @@
 
 import { UserButton, useAuth } from "@clerk/nextjs";
 import Link from "next/link";
-import BookItTrimLogo from '@/components/BookItTrimLogo';
+import Image from 'next/image'; 
 import { MenuIcon } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 
 export default function Header() {
   const { userId, isLoaded } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const dropdownContainerRef = useRef<HTMLDivElement>(null); 
+  const dropdownContainerRef = useRef<HTMLDivElement>(null);
 
   const navLinks = [
     { href: "/services", label: "Services" },
@@ -110,9 +110,8 @@ export default function Header() {
             )}
           </ul>
         </div>
-        <Link href="/" className="btn btn-ghost text-xl px-2">
-          <BookItTrimLogo size={32} />
-          <span className="ml-1 font-bold hidden sm:inline">FrizNaKlik</span>
+        <Link href="/" className="btn btn-ghost text-xl px-2 flex items-center">
+          <Image src="/logo-wide.png" alt="FrizNaKlik Logo" width={128} height={64} />
         </Link>
       </div>
       <div className="navbar-center hidden lg:flex">
@@ -131,7 +130,7 @@ export default function Header() {
               ))}
             </ul>
             <div className="ml-2 hidden lg:flex">
-              <UserButton afterSignOutUrl="/" />
+              <UserButton/>
             </div>
           </>
         ) : (

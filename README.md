@@ -8,18 +8,20 @@ A web application built with Next.js for managing haircut appointments, includin
 * **Service Management:** Admin panel for creating, viewing, editing, and deleting haircut services.
 * **Appointment Booking:** User interface for selecting services, choosing dates via a calendar, viewing available time slots, and requesting appointments.
 * **User Dashboard:** View user's pending and approved appointments, with cancellation capability.
-* **Admin Appointment Management:** Admin panel for viewing pending appointments and approving/rejecting them.
+* **Admin Appointment Management:** Admin panel for viewing pending appointments, updating duration, and approving/rejecting them.
 * **AI Chat Assistant:** Conversational interface for user inquiries and potentially booking.
 * **Docker Support:** Run the application and database using Docker Compose.
+* **CI/CD:** Azure Pipelines for building Docker images and deploying to a Virtual Machine.
 
 ## Technologies Used
 
-* **Frontend:** Next.js (App Router), React, Tailwind CSS, Zustand, react-datepicker.
+* **Frontend:** Next.js (App Router), React, Tailwind CSS, DaisyUI v5, Zustand, react-datepicker, Lucide Icons.
 * **Backend:** Next.js (Route Handlers), Prisma, PostgreSQL.
 * **Authentication:** Clerk.
 * **Date/Time Handling:** date-fns.
 * **Webhook Verification:** svix (for Clerk webhooks).
 * **Containerization:** Docker, Docker Compose.
+* **CI/CD:** Azure Pipelines.
 
 ## Setup Instructions (Without Docker)
 
@@ -31,11 +33,11 @@ A web application built with Next.js for managing haircut appointments, includin
 
 2.  **Install Dependencies:**
     ```bash
-    pnpm install # Or npm install or yarn install
+    pnpm install
     ```
 
 3.  **Set up Environment Variables:**
-    Create a `.env` file in the project root and add the necessary variables (see `.env.example` or the Docker setup section below for required variables). You'll need keys from Clerk, Google AI, and your database connection string.
+    Create a `.env` file in the project root. Refer to the "Environment Variables" section under "Setup Instructions (With Docker)" for the required variables.
 
 4.  **Set up the Database (PostgreSQL):**
     Ensure your PostgreSQL server is running and the database specified in `DATABASE_URL` exists.
@@ -43,9 +45,7 @@ A web application built with Next.js for managing haircut appointments, includin
 5.  **Run Prisma Migrations:**
     Apply the database schema:
     ```bash
-    pnpm exec prisma migrate dev --name initial_setup # For initial setup or development changes
-    # OR for applying existing migrations in production-like environments:
-    # pnpm exec prisma migrate deploy
+    pnpm exec prisma migrate dev --name initial_setup
     ```
     Generate the Prisma client:
     ```bash
@@ -54,7 +54,7 @@ A web application built with Next.js for managing haircut appointments, includin
 
 6.  **Run the Development Server:**
     ```bash
-    pnpm dev # Or npm run dev or yarn dev
+    pnpm dev
     ```
     The application should now be running (usually at `http://localhost:3000`).
 
@@ -81,37 +81,38 @@ This is the recommended way to run the application locally, as it manages both t
 3.  **Create Environment File (`.env`):**
     Create a file named `.env` in the project root. Copy the following content into it and **replace the placeholder values with your actual credentials and keys.**
 
-    ```.env
+    ```dotenv
     # .env file
 
     # Database Credentials
     POSTGRES_USER=admin
-    POSTGRES_PASSWORD=xxx # <-- Replace with a strong, secure password
+    POSTGRES_PASSWORD=your_strong_db_password # <-- Replace
     POSTGRES_DB=haircut_db
-    # POSTGRES_PORT=5432 # Optional: uncomment and change if you need to map to a different host port
+    # POSTGRES_PORT=5432 # Optional: uncomment and change if you need to map to a different host port for the DB
+    DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?schema=public"
 
-    # Clerk Credentials
-    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=xxx# <-- Replace with your actual Clerk Publishable Key
-    CLERK_SECRET_KEY=xxx# <-- Replace with your actual Clerk Secret Key
-    NEXT_PUBLIC_CLERK_DOMAIN=xxx.accounts.dev # <-- Replace with your actual Clerk Domain
+    # Clerk Credentials (Frontend and Backend)
+    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx # <-- Replace
+    CLERK_SECRET_KEY=sk_test_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx # <-- Replace
+    NEXT_PUBLIC_CLERK_DOMAIN=your-instance-name.clerk.accounts.dev # <-- Replace (e.g., pleasant-newt-12.clerk.accounts.dev)
+    CLERK_WEBHOOK_SECRET=whsec_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx # <-- Replace
 
     # App Configuration
-    NEXT_PUBLIC_SITE_URL=http://localhost:3000 # Keep for local Docker dev, change for production
-    # APP_PORT=3000 # Optional: uncomment and change if you need to map to a different host port
+    NEXT_PUBLIC_SITE_URL=http://localhost:3000 # Keep for local Docker dev, change for production deployments
+    # APP_PORT=3000 # Optional: uncomment and change if you need to map the app to a different host port
 
     # Google AI
-    GOOGLE_API_KEY=xxx # <-- Replace with your actual Google AI API Key
+    GOOGLE_API_KEY=your_google_ai_api_key # <-- Replace
 
-    # Clerk Webhook
-    CLERK_WEBHOOK_SECRET=xxx # <-- Replace with your actual Clerk Webhook Secret
-
+    # Node Environment (optional, defaults to development for local builds if not set)
+    # NODE_ENV=development
     ```
     **IMPORTANT:** Add `.env` to your `.gitignore` file to avoid committing secrets to version control.
 
 4.  **Build and Start Containers:**
     Open a terminal in the project root directory and run:
     ```bash
-    docker-compose up --build -d
+    docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build -d
     ```
     * `--build`: Builds the application image using the `Dockerfile`.
     * `-d`: Runs the containers in detached mode (in the background).
@@ -119,9 +120,9 @@ This is the recommended way to run the application locally, as it manages both t
 5.  **Run Database Migrations:**
     After the containers have started (wait a few seconds for the database to initialize), run the Prisma migrations:
     ```bash
-    docker-compose exec app /app/node_modules/.bin/prisma migrate deploy
+    docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T app npx prisma migrate deploy
     ```
-    This command executes `prisma migrate deploy` inside the running `app` container. You only need to run this the first time or when you have new migrations to apply.
+    This command executes `prisma migrate deploy` inside the running `app` container.
 
 6.  **Access the Application:**
     Open your web browser and navigate to `http://localhost:3000` (or the `APP_PORT` you configured).
@@ -131,14 +132,14 @@ This is the recommended way to run the application locally, as it manages both t
 
 8.  **Stopping the Application:**
     ```bash
-    docker-compose down
+    docker compose -f docker-compose.yml -f docker-compose.dev.yml down
     ```
 
 ## Making a User Admin (SQL)
 
 To grant admin privileges to a user:
 
-1.  **Connect** to your PostgreSQL database (running either locally or in Docker).
+1.  **Connect** to your PostgreSQL database.
 2.  **Identify** the user by their Clerk ID (`clerkId`) or `email`.
 3.  **Run** the appropriate SQL command, replacing the placeholder:
 
@@ -161,7 +162,31 @@ For automatic user creation in your database upon signup via Clerk:
     * Production: `https://<your-production-url>/api/webhooks/clerk`
 3.  Subscribe to the `user.created` event (and potentially `user.deleted`, `user.updated`).
 4.  Copy the Webhook Signing Secret from Clerk.
-5.  Add the secret to your `.env` file as `CLERK_WEBHOOK_SECRET`. Ensure this variable is passed to the running container in `docker-compose.yml`.
+5.  Add the secret to your `.env` file as `CLERK_WEBHOOK_SECRET`.
+
+## Deployment (Azure Pipelines)
+
+This project includes two Azure Pipelines for CI/CD:
+
+1.  **`azure-pipelines.yml`**: Builds the Next.js application, creates a Docker image, and pushes it to Docker Hub.
+    * **Setup**:
+        * Create a Docker Hub Service Connection in Azure DevOps named `SCDocker` (or update the variable in the pipeline).
+        * Ensure your Azure DevOps agent pool (e.g., `Default`) has Docker installed.
+        * Define pipeline variables for `dockerHubUsername`, `imageName`.
+        * Pass necessary build arguments (like `NEXT_PUBLIC_SITE_URL`) to the Docker build task. These can be set as pipeline variables.
+
+2.  **`azure-pipelines-deploy-vm.yml`**: Deploys the application to an Ubuntu VM using Docker Compose.
+    * **Setup**:
+        * Ensure your target VM has an Azure DevOps agent installed and configured in an agent pool (e.g., `Default`).
+        * The agent user on the VM must have permissions to run Docker and Docker Compose commands and write to the project path (e.g., `/var/www/friznaklik`).
+        * Create a **Variable Group** in Azure DevOps (e.g., `FrizNaKlik-Prod-Secrets`) and link it to this pipeline. Store all your secrets and runtime environment variables here (e.g., `POSTGRES_USER`, `CLERK_SECRET_KEY`, `NEXT_PUBLIC_SITE_URL`, etc.). The pipeline script maps these to an `.env` file on the agent.
+        * The pipeline copies `docker-compose.yml`, `docker-compose.prod.yml`, and the generated `.env` file to the VM.
+        * It then runs `docker compose pull`, `docker compose down`, and `docker compose up -d` using the `docker-compose.prod.yml` configuration.
+        * Finally, it executes `npx prisma migrate deploy` inside the running app container.
+
+**Note on Azure Pipelines Variables:**
+* Secrets (like API keys, database passwords) should **always** be stored as secret variables in Azure DevOps (e.g., in a Variable Group) and not directly in the YAML files.
+* The `azure-pipelines-deploy-vm.yml` script expects specific variable names to be available from the linked Variable Group. Ensure these match your setup.
 
 ## License
 

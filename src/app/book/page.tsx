@@ -1,37 +1,33 @@
 // src/app/book/page.tsx
-'use client'; // This directive marks this as a Client Component
+'use client';
 
-import { useBookingStore } from '@/store/bookingStore'; // Import the Zustand booking store
-import { useState, useEffect, Suspense, useRef } from 'react'; // Import React hooks, added Suspense and useRef
-import { Service } from '@prisma/client'; // Import the Service type from Prisma
-import Link from 'next/link'; // Import Link for navigation
-import { useSearchParams } from 'next/navigation'; // Import for reading URL query params
-import { formatErrorMessage, type FormattedError } from '@/lib/errorUtils'; // Import the error utility and its type
+import { useBookingStore } from '@/store/bookingStore';
+import { useState, useEffect, Suspense, useRef } from 'react';
+import { Service } from '@prisma/client';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
+import { formatErrorMessage, type FormattedError } from '@/lib/errorUtils';
+import { CalendarDays, Clock, ShoppingBag, AlertTriangle, CheckCircle2, ArrowLeft, Loader2, X } from 'lucide-react';
 
-// Import react-datepicker and its CSS
-import DatePicker from 'react-datepicker';
+import DatePicker, { registerLocale } from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
+import { format, getDay, addHours, isBefore, startOfToday, isSameDay, setHours, setMinutes } from 'date-fns';
+import { srLatn } from 'date-fns/locale';
 
-// Import format function from date-fns
-import { format } from 'date-fns';
+registerLocale('sr-Latn', srLatn);
 
-// Define the base URL for your API.
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
 
-// Interface for the structured error payload when booking fails
 interface BookingErrorPayload {
   message: string;
-  status: number;
-  details?: string; // Details might come from the server or be the raw text
+  status?: number;
+  details?: string | object;
 }
 
-
-// New component to handle search param logic, because useSearchParams needs to be under Suspense
 function BookingForm() {
-  const searchParams = useSearchParams(); // Hook to access URL query parameters
-  const successModalRef = useRef<HTMLDialogElement>(null); // Ref for the success modal
+  const searchParams = useSearchParams();
+  const successModalRef = useRef<HTMLDialogElement>(null);
 
-  // Access state and actions from the Zustand store
   const {
     selectedServiceId,
     selectedDate,
@@ -45,18 +41,15 @@ function BookingForm() {
     selectSlot: setStoreSelectedSlot,
     setBookingStatus,
     setBookingError,
+    resetBooking,
   } = useBookingStore();
 
-  // State to hold the list of available services fetched from the API
   const [services, setServices] = useState<Service[]>([]);
   const [isLoadingServices, setIsLoadingServices] = useState(true);
   const [servicesError, setServicesError] = useState<string | null>(null);
-
-  // State to track loading of available slots
   const [isLoadingSlots, setIsLoadingSlots] = useState(false);
   const [slotsError, setSlotsError] = useState<string | null>(null);
 
-  // Fetch the list of services when the component mounts
   useEffect(() => {
     const fetchServices = async () => {
       setIsLoadingServices(true);
@@ -66,9 +59,9 @@ function BookingForm() {
         if (!response.ok) {
           const errorText = await response.text();
           const errorToThrow: FormattedError = {
-            message: `Failed to fetch services: ${response.status}`,
+            message: `Neuspesno preuzimanje usluga: ${response.status}`,
             originalError: errorText,
-            context: "fetching services",
+            context: "preuzimanje usluga",
             status: response.status
           };
           throw errorToThrow;
@@ -76,63 +69,63 @@ function BookingForm() {
         const data: Service[] = await response.json();
         setServices(data);
       } catch (err: unknown) {
-        setServicesError(formatErrorMessage(err, "fetching services"));
+        setServicesError(formatErrorMessage(err, "preuzimanja usluga"));
       } finally {
         setIsLoadingServices(false);
       }
     };
-
     fetchServices();
   }, []);
 
-  // Effect to pre-select service if serviceId is in URL and services are loaded
   useEffect(() => {
     const serviceIdFromUrl = searchParams.get('serviceId');
     if (serviceIdFromUrl && services.length > 0) {
       const serviceExists = services.some(s => s.id === serviceIdFromUrl);
       if (serviceExists) {
-        console.log(`Pre-selecting service from URL: ${serviceIdFromUrl}`);
         selectService(serviceIdFromUrl);
       } else {
-        console.warn(`Service ID ${serviceIdFromUrl} from URL not found in fetched services.`);
+        console.warn(`ID usluge ${serviceIdFromUrl} iz URL-a nije pronadjen u preuzetim uslugama.`);
       }
     }
   }, [searchParams, services, selectService]);
 
-
-  // Fetch available slots when selectedServiceId or selectedDate changes
   useEffect(() => {
     if (selectedServiceId && selectedDate) {
       const fetchAvailableSlots = async () => {
         setIsLoadingSlots(true);
         setSlotsError(null);
         setAvailableSlots([]);
-
         try {
           const formattedDate = format(selectedDate, 'yyyy-MM-dd');
-          console.log(`Fetching slots for service ${selectedServiceId} on date ${formattedDate}`);
-
           const response = await fetch(`${SITE_URL}/api/appointments/available?serviceId=${selectedServiceId}&date=${formattedDate}`);
-
           if (!response.ok) {
             const errorText = await response.text();
             const errorToThrow: FormattedError = {
-              message: `Failed to fetch available slots: ${response.status}`,
+              message: `Neuspesno preuzimanje dostupnih termina: ${response.status}`,
               originalError: errorText,
-              context: "fetching available slots",
+              context: "preuzimanje dostupnih termina",
               status: response.status
             };
             throw errorToThrow;
           }
-          const data: string[] = await response.json();
+          let data: string[] = await response.json();
+          
+          const currentMinBookingTime = addHours(new Date(), 12); // Ne moze se zakazati termin u sledecih 12 sati
+          if (isSameDay(selectedDate, new Date())) {
+            data = data.filter(slot => {
+              const [hours, minutes] = slot.split(':').map(Number);
+              const slotDateTime = setMinutes(setHours(selectedDate, hours), minutes);
+              return isBefore(currentMinBookingTime, slotDateTime);
+            });
+          }
           setAvailableSlots(data);
+
         } catch (err: unknown) {
-          setSlotsError(formatErrorMessage(err, "fetching available slots"));
+          setSlotsError(formatErrorMessage(err, "preuzimanja dostupnih termina"));
         } finally {
           setIsLoadingSlots(false);
         }
       };
-
       fetchAvailableSlots();
     } else {
       setAvailableSlots([]);
@@ -140,123 +133,158 @@ function BookingForm() {
     }
   }, [selectedServiceId, selectedDate, setAvailableSlots, setStoreSelectedSlot]);
 
-
   const handleServiceSelect = (serviceId: string) => {
     selectService(serviceId);
     selectDate(null);
     setStoreSelectedSlot(null);
     setAvailableSlots([]);
     setSlotsError(null);
+    setBookingError(null);
   };
 
   const handleDateSelect = (date: Date | null) => {
-    selectDate(date);
-    setStoreSelectedSlot(null); // Reset slot when date changes
+    if (date && isBefore(date, startOfToday())) {
+        selectDate(startOfToday());
+    } else {
+        selectDate(date);
+    }
+    setStoreSelectedSlot(null);
     setSlotsError(null);
+    setBookingError(null);
   };
 
   const handleSlotSelect = (slot: string) => {
+    const currentMinBookingTime = addHours(new Date(), 12);
+    if (selectedDate && isSameDay(selectedDate, new Date())) {
+        const [hours, minutes] = slot.split(':').map(Number);
+        const slotDateTime = setMinutes(setHours(selectedDate, hours), minutes);
+        if (isBefore(slotDateTime, currentMinBookingTime)) {
+            setBookingError("Odabrani termin je unutar narednih 12 sati i ne može se rezervisati.");
+            setStoreSelectedSlot(null);
+            return;
+        }
+    }
     setStoreSelectedSlot(slot);
+    setBookingError(null);
   };
 
   const handleBookingSubmit = async () => {
     if (!selectedServiceId || !selectedDate || !selectedSlot) {
-      console.error("Attempted booking without all required selections.");
-      setBookingError("Please select a service, date, and time slot.");
+      setBookingError("Molimo Vas odaberite uslugu, datum i vreme termina.");
       setBookingStatus('error');
       return;
     }
-
     setBookingStatus('submitting');
     setBookingError(null);
-
     try {
       const formattedDate = format(selectedDate, 'yyyy-MM-dd');
       const response = await fetch(`${SITE_URL}/api/appointments`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           serviceId: selectedServiceId,
           date: formattedDate,
           slot: selectedSlot,
         }),
       });
-
       if (!response.ok) {
         const errorPayload: BookingErrorPayload = {
-          message: `Booking failed with status ${response.status}`,
+          message: `Zakazivanje nije uspelo (Status: ${response.status})`,
           status: response.status
         };
         try {
           const errorData = await response.json();
-          errorPayload.details = errorData.message || errorData.error || errorData.details || JSON.stringify(errorData);
-        } catch (e) {
-          console.error("Failed to parse error response:", e);
+          errorPayload.details = errorData.message || errorData.error || errorPayload.details || JSON.stringify(errorData);
+        } catch {
           errorPayload.details = await response.text();
         }
         throw errorPayload;
       }
-
       setBookingStatus('success');
-      console.log('Appointment requested successfully!');
-      successModalRef.current?.showModal(); // Show the success modal
-
-      // Reset form state after successful booking and modal display
+      successModalRef.current?.showModal();
       selectDate(null);
       setStoreSelectedSlot(null);
-      // Optionally, you could reset the service as well, or navigate away
-      // selectService(null); 
-
     } catch (err: unknown) {
       setBookingStatus('error');
-      if (typeof err === 'object' && err !== null && 'message' in err) {
-        const knownError = err as BookingErrorPayload;
-        setBookingError(formatErrorMessage(knownError, "booking submission"));
-      } else {
-        setBookingError(formatErrorMessage(err, "booking submission"));
-      }
+      setBookingError(formatErrorMessage(err, "slanja zahteva za zakazivanje"));
     }
   };
 
-  const selectedServiceName = services.find(s => s.id === selectedServiceId)?.name || 'Service';
+  const selectedServiceName = services.find(s => s.id === selectedServiceId)?.name || 'Usluga';
+
+  const isWeekday = (date: Date) => {
+    const day = getDay(date);
+    return day !== 0 && day !== 6;
+  };
+
+  const getDayClassName = (date: Date): string => {
+    if (isBefore(date, startOfToday())) {
+      return "react-datepicker__day--past";
+    }
+    if (!isWeekday(date)) {
+      return "react-datepicker__day--weekend";
+    }
+    return "";
+  };
+  
+  const isSlotDisabled = (slot: string): boolean => {
+    const currentMinBookingTime = addHours(new Date(), 12);
+    if (selectedDate && isSameDay(selectedDate, new Date())) {
+        const [hours, minutes] = slot.split(':').map(Number);
+        const slotDateTime = setMinutes(setHours(selectedDate, hours), minutes);
+        return isBefore(slotDateTime, currentMinBookingTime);
+    }
+    return false;
+  };
 
 
   return (
     <div className="container mx-auto p-4 sm:p-6 lg:p-8">
-      <h1 className="text-3xl font-bold mb-8 text-center text-neutral-content">
-        Book an Appointment
-      </h1>
+      <div className="text-center mb-10">
+        <h1 className="text-4xl font-bold text-neutral-content">
+          Zakažite Vaš Termin
+        </h1>
+        <p className="text-lg text-neutral-content/80 mt-2">Brzo i lako do savršene frizure.</p>
+      </div>
 
-      {/* Step 1: Service Selection */}
-      <div className="mb-8 p-6 card bg-base-200 shadow-lg">
-        <h2 className="text-2xl font-semibold mb-4 card-title">1. Select a Service</h2>
+      <div className="mb-8 p-6 card bg-base-200 shadow-xl border border-base-300/50">
+        <h2 className="text-2xl font-semibold mb-4 card-title text-primary flex items-center">
+          <ShoppingBag className="h-6 w-6 mr-2" /> 1. Odaberite Uslugu
+        </h2>
         {isLoadingServices ? (
-          <div className="flex justify-center items-center h-24">
-            <span className="loading loading-spinner loading-lg text-primary"></span>
+          <div className="flex justify-center items-center h-32">
+            <Loader2 className="h-12 w-12 animate-spin text-primary" />
           </div>
         ) : servicesError ? (
           <div role="alert" className="alert alert-error">
-            <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2 2m2-2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            <AlertTriangle className="h-6 w-6" />
             <span>{servicesError}</span>
+          </div>
+        ) : services.length === 0 ? (
+          <div role="alert" className="alert alert-warning">
+             <AlertTriangle className="h-6 w-6" />
+            <span>Trenutno nema dostupnih usluga. Molimo pokušajte kasnije.</span>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {services.map((service) => (
               <div
                 key={service.id}
-                className={`card bordered cursor-pointer transition-all duration-200 ease-in-out hover:shadow-md ${
+                className={`card bordered cursor-pointer transition-all duration-200 ease-in-out hover:shadow-md transform hover:-translate-y-1 ${
                   selectedServiceId === service.id
-                    ? 'border-primary ring-2 ring-primary bg-primary/10'
+                    ? 'border-2 border-primary ring-2 ring-primary/50 bg-primary/10 shadow-lg'
                     : 'bg-base-100 border-base-300 hover:border-primary/70'
                 }`}
                 onClick={() => handleServiceSelect(service.id)}
+                tabIndex={0}
+                onKeyPress={(e) => e.key === 'Enter' && handleServiceSelect(service.id)}
               >
-                <div className="card-body p-4">
+                <div className="card-body p-5">
                   <h3 className="card-title text-lg">{service.name}</h3>
-                  <p className="text-sm text-base-content/70 mb-1 line-clamp-2">{service.description || "No description"}</p>
-                  <p className="font-semibold text-base-content/90">${service.price.toFixed(2)} - {service.duration} min</p>
+                  <p className="text-sm text-base-content/70 mb-1 line-clamp-2 h-10">
+                    {service.description || "Nema detaljnog opisa."}
+                  </p>
+                  <p className="font-semibold text-base-content/90">{service.price.toFixed(2)} RSD - {service.duration} min</p>
                 </div>
               </div>
             ))}
@@ -264,59 +292,69 @@ function BookingForm() {
         )}
       </div>
 
-      {/* Step 2 & 3: Date and Time Slot Selection (Combined) */}
       {selectedServiceId && (
-        <div className="mb-8 p-6 card bg-base-200 shadow-lg">
-          <h2 className="text-2xl font-semibold mb-4 card-title">2. Select Date & Time for {selectedServiceName}</h2>
+        <div className="mb-8 p-6 card bg-base-200 shadow-xl border border-base-300/50">
+          <h2 className="text-2xl font-semibold mb-6 card-title text-primary flex items-center">
+            <CalendarDays className="h-6 w-6 mr-2" /> 2. Odaberite Datum i Vreme za &quot;{selectedServiceName}&quot;
+          </h2>
           <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
-            {/* Date Selection Column */}
-            <div className="flex-1 lg:max-w-md"> {/* Constrain width of date picker on larger screens */}
-              <h3 className="text-xl font-medium mb-3 text-neutral-content">Date</h3>
-              <div className="p-4 border rounded-lg inline-block bg-base-100 border-base-300 shadow-sm">
+            <div className="flex-1 lg:max-w-sm">
+              <h3 className="text-xl font-medium mb-3 text-neutral-content">Datum</h3>
+              <div className="p-1 border rounded-lg inline-block bg-base-100 border-base-300 shadow-sm">
                 <DatePicker
                   selected={selectedDate}
                   onChange={handleDateSelect}
-                  dateFormat="yyyy/MM/dd"
-                  minDate={new Date()}
-                  filterDate={(date) => date.getDay() !== 0 && date.getDay() !== 6}
+                  dateFormat="dd.MM.yyyy"
+                  minDate={addHours(new Date(), 12)}
+                  filterDate={isWeekday}
                   inline
+                  locale="sr-Latn"
                   className="react-datepicker-override"
+                  calendarClassName="bg-base-100"
+                  dayClassName={getDayClassName}
                 />
               </div>
             </div>
 
-            {/* Time Slot Selection Column */}
-            {selectedDate && ( // Only show slots if a date is selected
-              <div className="flex-1 min-w-0"> {/* min-w-0 helps flex item shrink correctly */}
+            {selectedDate && (
+              <div className="flex-1 min-w-0">
                 <h3 className="text-xl font-medium mb-3 text-neutral-content">
-                  Available Slots for {format(selectedDate, 'MMMM d, yyyy')}
+                  Dostupni Termini za {format(selectedDate, "dd. MMMM yyyy'.'", { locale: srLatn })}
                 </h3>
                 {isLoadingSlots ? (
                   <div className="flex justify-center items-center h-24">
-                    <span className="loading loading-spinner loading-lg text-primary"></span>
+                     <Loader2 className="h-10 w-10 animate-spin text-primary" />
                   </div>
                 ) : slotsError ? (
-                  <div role="alert" className="alert alert-error">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2 2m2-2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                  <div role="alert" className="alert alert-warning text-sm p-3">
+                    <AlertTriangle className="h-5 w-5" />
                     <span>{slotsError}</span>
                   </div>
                 ) : availableSlots.length === 0 ? (
-                  <p className="text-base-content/70 mt-2">No available slots for the selected date. Please try another date.</p>
+                  <p className="text-base-content/70 mt-2 p-4 bg-base-100 rounded-md border border-base-300">
+                    Nema dostupnih termina za odabrani datum. Molimo Vas pokušajte sa drugim datumom.
+                  </p>
                 ) : (
-                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
-                    {availableSlots.map(slot => (
-                      <button
-                        key={slot}
-                        className={`btn ${
-                          selectedSlot === slot
-                            ? 'btn-primary'
-                            : 'btn-outline btn-ghost hover:bg-primary/10 hover:border-primary'
-                        }`}
-                        onClick={() => handleSlotSelect(slot)}
-                      >
-                        {slot}
-                      </button>
-                    ))}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                    {availableSlots.map(slot => {
+                      const disabledSlot = isSlotDisabled(slot);
+                      return (
+                        <button
+                          key={slot}
+                          className={`btn btn-md h-auto py-3 ${
+                            selectedSlot === slot && !disabledSlot
+                              ? 'btn-primary'
+                              : 'btn-outline btn-ghost hover:bg-primary/10 hover:border-primary'
+                          } ${disabledSlot ? 'btn-disabled !bg-base-200 !border-base-300 !text-base-content/30' : ''}`}
+                          onClick={() => !disabledSlot && handleSlotSelect(slot)}
+                          disabled={disabledSlot}
+                          title={disabledSlot ? "Ovaj termin je unutar narednih 12 sati" : `Zakaži za ${slot}`}
+                        >
+                          <Clock className="h-4 w-4 mr-1.5" /> {slot}
+                           {disabledSlot && <X className="h-3 w-3 ml-1 text-error/70" />}
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -324,17 +362,15 @@ function BookingForm() {
           </div>
         </div>
       )}
-      {/* Global styles for react-datepicker to match DaisyUI theme */}
       <style jsx global>{`
-        .react-datepicker-wrapper {
-          display: inline-block;
-        }
+        .react-datepicker-wrapper { display: inline-block; }
         .react-datepicker {
           font-family: inherit;
           border-color: hsl(var(--b3));
           background-color: hsl(var(--b1));
           color: hsl(var(--bc));
           border-radius: var(--rounded-box, 1rem);
+          box-shadow: var(--shadow-lg, 0 25px 50px -12px rgba(0,0,0,0.25));
         }
         .react-datepicker__header {
           background-color: hsl(var(--b2));
@@ -345,70 +381,96 @@ function BookingForm() {
         .react-datepicker-time__header,
         .react-datepicker-year-header {
           color: hsl(var(--bc));
-          font-weight: bold;
+          font-weight: 600;
         }
         .react-datepicker__day-name,
         .react-datepicker__day,
         .react-datepicker__time-name {
           color: hsl(var(--bc));
-          width: 2rem;
-          line-height: 2rem;
-          margin: 0.166rem;
+          width: 2.25rem;
+          line-height: 2.25rem;
+          margin: 0.2rem;
         }
         .react-datepicker__day--selected,
         .react-datepicker__day--in-selecting-range,
-        .react-datepicker__day--in-range,
-        .react-datepicker__month-text--selected,
-        .react-datepicker__month-text--in-selecting-range,
-        .react-datepicker__month-text--in-range,
-        .react-datepicker__quarter-text--selected,
-        .react-datepicker__quarter-text--in-selecting-range,
-        .react-datepicker__quarter-text--in-range,
-        .react-datepicker__year-text--selected,
-        .react-datepicker__year-text--in-selecting-range,
-        .react-datepicker__year-text--in-range {
-          background-color: hsl(var(--p));
-          color: hsl(var(--pc));
+        .react-datepicker__day--in-range {
+          background-color: hsl(var(--p)) !important;
+          color: hsl(var(--pc)) !important;
           border-radius: var(--rounded-btn, 0.5rem);
         }
         .react-datepicker__day--selected:hover,
         .react-datepicker__day--keyboard-selected {
-            background-color: hsl(var(--pf, var(--p)));
-            color: hsl(var(--pc));
+            background-color: hsl(var(--pf, var(--p))) !important;
+            color: hsl(var(--pc)) !important;
         }
-        .react-datepicker__day:hover {
+        .react-datepicker__day:not(.react-datepicker__day--selected):not(.react-datepicker__day--disabled):not(.react-datepicker__day--past):not(.react-datepicker__day--weekend):hover {
           background-color: hsl(var(--p)/0.1);
           border-radius: var(--rounded-btn, 0.5rem);
         }
-        .react-datepicker__day--disabled {
-          color: hsl(var(--bc) / 0.4);
-          cursor: default;
+
+        /* General style for days disabled by minDate/maxDate (but not past/weekend) */
+        .react-datepicker__day--disabled:not(.react-datepicker__day--past):not(.react-datepicker__day--weekend) {
+          color: hsl(var(--bc) / 0.35) !important;
+          background-color: hsl(var(--b2) / 0.3) !important; 
+          cursor: default !important;
         }
-        .react-datepicker__day--disabled:hover {
-          background-color: transparent;
+        .react-datepicker__day--disabled:not(.react-datepicker__day--past):not(.react-datepicker__day--weekend):hover {
+          background-color: hsl(var(--b2) / 0.3) !important;
         }
+
+        /* Style for PAST days */
+        .react-datepicker__day--past {
+  color: hsl(var(--bc) / 0.3) !important; /* Lighter text for disabled effect */
+  background-color: hsl(var(--b2)) !important; /* Softer background tone */
+  cursor: not-allowed !important; /* Standard cursor for disabled items */
+  pointer-events: none !important; /* Prevent interaction */
+  opacity: 0.2; /* Additional visual cue for disabled state */
+        }
+        .react-datepicker__day--past:hover {
+          background-color: hsl(var(--b2) / 0.6) !important;
+        }
+
+
+
+        .react-datepicker__day--weekend:not(.react-datepicker__day--past):hover {
+          background-color: hsl(var(--b3)) !important; /* No change on hover */
+        }
+
         .react-datepicker__navigation {
-          top: 10px;
+          top: 12px;
         }
         .react-datepicker__navigation-icon::before {
           border-color: hsl(var(--bc));
           border-width: 2px 2px 0 0;
-          height: 8px;
-          width: 8px;
+          height: 7px;
+          width: 7px;
         }
         .react-datepicker__navigation:hover .react-datepicker__navigation-icon::before {
             border-color: hsl(var(--p));
         }
+        .react-datepicker__month {
+            margin: 0.4rem;
+        }
+                    /* Style for WEEKEND days (that are not past) */
+        /* These will also have .react-datepicker__day--disabled due to filterDate */
+        .react-datepicker__day--weekend:not(.react-datepicker__day--past) {
+  color: hsl(var(--bc) / 0.3) !important; /* Lighter text for disabled effect */
+  background-color: hsl(var(--b2)) !important; /* Softer background tone */
+  cursor: not-allowed !important; /* Standard cursor for disabled items */
+  pointer-events: none !important; /* Prevent interaction */
+  opacity: 0.2; /* Additional visual cue for disabled state */
+}
       `}</style>
 
-      {/* Step 4: Booking Button & Status */}
       {selectedSlot && selectedDate && selectedServiceId && (
-        <div className="mt-6 p-6 card bg-base-200 shadow-lg">
-          <h2 className="text-2xl font-semibold mb-4 card-title">3. Confirm Your Booking</h2> {/* Changed step number */}
-          <div className="mb-4 space-y-1 text-base-content/90">
-            <p><span className="font-semibold">Service:</span> {selectedServiceName}</p>
-            <p><span className="font-semibold">Date:</span> {selectedDate ? format(selectedDate, 'EEEE, MMMM d, yyyy') : 'N/A'}</p>
-            <p><span className="font-semibold">Time:</span> {selectedSlot}</p>
+        <div className="mt-8 p-6 card bg-base-200 shadow-xl border border-base-300/50">
+          <h2 className="text-2xl font-semibold mb-4 card-title text-primary flex items-center">
+            <CheckCircle2 className="h-6 w-6 mr-2" /> 3. Potvrdite Vaš Zahtev za Termin
+          </h2>
+          <div className="mb-6 space-y-2 text-base-content/90 p-4 bg-base-100 rounded-lg border border-base-300">
+            <p><span className="font-semibold">Usluga:</span> {selectedServiceName}</p>
+            <p><span className="font-semibold">Datum:</span> {selectedDate ? format(selectedDate, "eeee, dd. MMMM yyyy'.'", { locale: srLatn }) : 'N/A'}</p>
+            <p><span className="font-semibold">Vreme:</span> {selectedSlot}</p>
           </div>
           <button
             onClick={handleBookingSubmit}
@@ -419,19 +481,18 @@ function BookingForm() {
           >
             {bookingStatus === 'submitting' ? (
               <>
-                <span className="loading loading-spinner loading-sm"></span>
-                Requesting...
+                <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                Slanje Zahteva...
               </>
             ) : (
-              'Request Appointment'
+              'Pošalji Zahtev za Termin'
             )}
           </button>
-          {/* Error message display (remains inline for now) */}
           {bookingStatus === 'error' && bookingError && (
             <div role="alert" className="alert alert-error mt-4">
-              <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2 2m2-2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              <AlertTriangle className="h-6 w-6" />
               <div>
-                <h3 className="font-bold">Booking Failed!</h3>
+                <h3 className="font-bold">Zakazivanje Neuspešno!</h3>
                 <div className="text-xs">{bookingError}</div>
               </div>
             </div>
@@ -439,37 +500,31 @@ function BookingForm() {
         </div>
       )}
 
-      <div className="mt-10 text-center">
+      <div className="mt-12 text-center">
         <Link href="/" className="btn btn-ghost">
-          &larr; Back to Home
+          <ArrowLeft className="h-5 w-5 mr-2" /> Nazad na Početnu
         </Link>
       </div>
 
-      {/* Success Modal */}
       <dialog id="success_booking_modal" className="modal modal-bottom sm:modal-middle" ref={successModalRef}>
-        <div className="modal-box text-center">
-            <svg xmlns="http://www.w3.org/2000/svg" className="stroke-success shrink-0 h-16 w-16 mx-auto mb-4" fill="none" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          <h3 className="font-bold text-2xl">Success!</h3>
-          <p className="py-4 text-base">Your appointment has been successfully requested. You&apos;ll receive confirmation once it&apos;s approved.</p>
+        <div className="modal-box text-center bg-base-100">
+            <CheckCircle2 className="text-success h-16 w-16 mx-auto mb-4" />
+          <h3 className="font-bold text-2xl text-success">Uspešno!</h3>
+          <p className="py-4 text-base text-base-content">Vaš zahtev za termin je uspešno poslat. Dobićete potvrdu kada bude odobren.</p>
           <div className="modal-action justify-center">
             <form method="dialog">
-              {/* if there is a button in form, it will close the modal */}
-              <button className="btn btn-primary">Great!</button>
+              <button className="btn btn-primary" onClick={() => resetBooking()}>Odlično!</button>
             </form>
           </div>
         </div>
         <form method="dialog" className="modal-backdrop">
-            <button>close</button> {/* Allows closing by clicking backdrop */}
+            <button onClick={() => resetBooking()}>zatvori</button>
         </form>
       </dialog>
-
     </div>
   );
 }
 
-// This is the main page component that Next.js will render.
 export default function BookingPage() {
   return (
     <Suspense fallback={<BookingPageSkeleton />}>
@@ -478,22 +533,20 @@ export default function BookingPage() {
   );
 }
 
-// Skeleton component for loading state while Suspense resolves
 function BookingPageSkeleton() {
     return (
         <div className="container mx-auto p-4 sm:p-6 lg:p-8 animate-pulse">
-            <div className="h-10 bg-base-300 rounded w-1/2 mx-auto mb-8"></div>
+            <div className="h-10 bg-base-300 rounded w-3/4 md:w-1/2 mx-auto mb-10"></div>
 
-            {/* Service Selection Skeleton */}
-            <div className="mb-8 p-6 card bg-base-200 shadow-lg">
-                <div className="h-8 bg-base-300 rounded w-1/3 mb-4"></div>
+            <div className="mb-8 p-6 card bg-base-200">
+                <div className="h-8 bg-base-300 rounded w-1/3 mb-6"></div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {[1, 2, 3].map(i => (
-                        <div key={i} className="card bordered bg-base-100">
-                            <div className="card-body p-4">
-                                <div className="h-6 bg-base-300 rounded w-3/4 mb-2"></div>
-                                <div className="h-4 bg-base-300 rounded w-full mb-1"></div>
-                                <div className="h-4 bg-base-300 rounded w-5/6 mb-2"></div>
+                        <div key={i} className="card bg-base-100 h-36">
+                            <div className="card-body p-5 space-y-3">
+                                <div className="h-6 bg-base-300 rounded w-3/4"></div>
+                                <div className="h-4 bg-base-300 rounded w-full"></div>
+                                <div className="h-4 bg-base-300 rounded w-5/6"></div>
                                 <div className="h-5 bg-base-300 rounded w-1/2"></div>
                             </div>
                         </div>
@@ -501,22 +554,19 @@ function BookingPageSkeleton() {
                 </div>
             </div>
 
-             {/* Date & Time Skeleton (Combined) */}
-            <div className="mb-8 p-6 card bg-base-200 shadow-lg">
-                <div className="h-8 bg-base-300 rounded w-2/5 mb-6"></div> {/* Skeleton for section title */}
+            <div className="mb-8 p-6 card bg-base-200">
+                <div className="h-8 bg-base-300 rounded w-2/5 mb-6"></div>
                 <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
-                    {/* Date Picker Skeleton */}
-                    <div className="flex-1 lg:max-w-md">
-                        <div className="h-7 bg-base-300 rounded w-1/4 mb-3"></div> {/* "Date" title skeleton */}
-                        <div className="p-4 bg-base-100 rounded-lg inline-block">
+                    <div className="flex-1 lg:max-w-sm">
+                        <div className="h-7 bg-base-300 rounded w-1/4 mb-3"></div>
+                        <div className="p-1 bg-base-100 rounded-lg inline-block">
                             <div className="h-64 w-72 bg-base-300 rounded-md"></div>
                         </div>
                     </div>
-                    {/* Time Slot Skeleton */}
                     <div className="flex-1 min-w-0">
-                        <div className="h-7 bg-base-300 rounded w-1/2 mb-3"></div> {/* "Available Slots" title skeleton */}
-                        <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
-                            {[...Array(6)].map((_, i) => (
+                        <div className="h-7 bg-base-300 rounded w-1/2 mb-3"></div>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                            {[...Array(8)].map((_, i) => (
                                 <div key={i} className="h-12 bg-base-300 rounded-lg"></div>
                             ))}
                         </div>
@@ -524,17 +574,17 @@ function BookingPageSkeleton() {
                 </div>
             </div>
 
-             {/* Confirmation Skeleton */}
-             <div className="mt-6 p-6 card bg-base-200 shadow-lg">
-                <div className="h-8 bg-base-300 rounded w-1/3 mb-4"></div>
-                <div className="h-4 bg-base-300 rounded w-3/4 mb-2"></div>
-                <div className="h-4 bg-base-300 rounded w-1/2 mb-2"></div>
-                <div className="h-4 bg-base-300 rounded w-1/3 mb-4"></div>
-                <div className="h-12 bg-base-300 rounded-lg w-full sm:w-1/3"></div>
+             <div className="mt-8 p-6 card bg-base-200">
+                <div className="h-8 bg-base-300 rounded w-1/3 mb-6"></div>
+                <div className="space-y-2 p-4 bg-base-100 rounded-lg mb-6">
+                    <div className="h-4 bg-base-300 rounded w-3/4"></div>
+                    <div className="h-4 bg-base-300 rounded w-1/2"></div>
+                    <div className="h-4 bg-base-300 rounded w-1/3"></div>
+                </div>
+                <div className="h-12 bg-success/50 rounded-lg w-full sm:w-1/3"></div>
             </div>
 
-
-            <div className="mt-10 text-center">
+            <div className="mt-12 text-center">
                 <div className="h-10 bg-base-300 rounded w-1/4 mx-auto"></div>
             </div>
         </div>

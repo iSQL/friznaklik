@@ -6,6 +6,11 @@ import Header from '@/components/Header';
 export const metadata: Metadata = {
   title: 'Haircut Appointment App',
   description: 'Book your next haircut appointment easily.',
+  icons: {
+    icon: '/logo-square.png',
+    shortcut: '/logo-square.png',
+    apple: '/android-chrome-192x192.png',
+  },
 };
 
 export default function RootLayout({

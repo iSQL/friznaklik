@@ -1,140 +1,93 @@
-// src/components/chat/ChatWindow.tsx
-'use client'; // Required for hooks
+'use client';
 
-import React, {useEffect, useRef } from 'react';
-import { useChatStore } from '@/store/chatStore'; // Import the Zustand chat store
+import React, { useEffect, useRef } from 'react';
+import { useChatStore } from '@/store/chatStore';
+import ChatMessage from './ChatMessage';
+import { Send, MessageCircle, Loader2 } from 'lucide-react'; 
 
 export default function ChatWindow() {
-    // Get state and actions from the Zustand store
-    const messages = useChatStore((state) => state.messages);
-    const inputMessage = useChatStore((state) => state.inputMessage);
-    const setInputMessage = useChatStore((state) => state.setInputMessage);
-    const sendMessage = useChatStore((state) => state.sendMessage);
-    const isSending = useChatStore((state) => state.isSending);
+  const messages = useChatStore((state) => state.messages);
+  const inputMessage = useChatStore((state) => state.inputMessage);
+  const setInputMessage = useChatStore((state) => state.setInputMessage);
+  const sendMessage = useChatStore((state) => state.sendMessage);
+  const isSending = useChatStore((state) => state.isSending);
 
-    // Ref for an empty div at the end of the messages list
-    const messagesEndRef = useRef<HTMLDivElement | null>(null);
-    // Ref for the scrollable message container itself (optional, but can be useful)
-    const messageContainerRef = useRef<HTMLDivElement | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const messageContainerRef = useRef<HTMLDivElement | null>(null);
 
-    // Function to scroll the message container to the bottom
-    const scrollToBottom = () => {
-        // Use smooth scrolling for a better user experience
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    };
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
 
-    // Effect to scroll down whenever the 'messages' array changes
-    useEffect(() => {
-        scrollToBottom();
-    }, [messages]); // Dependency array ensures this runs when messages update
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
 
-    const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-        setInputMessage(event.target.value);
-    };
+  const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setInputMessage(event.target.value);
+  };
 
-    // Handle form submission to send a message
-    const handleSendMessage = (event: React.FormEvent<HTMLFormElement>) => {
-        event.preventDefault(); // Prevent page reload
-        if (inputMessage.trim()) {
-            sendMessage(inputMessage.trim());
-            // Input clearing is handled within the sendMessage action in chatStore.ts
-        }
-    };
+  const handleSendMessage = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (inputMessage.trim()) {
+      sendMessage(inputMessage.trim());
+    }
+  };
 
-    // Helper to format timestamp for display
-    const formatTimestamp = (timestamp: Date) => {
-        // Check if timestamp is a valid Date object
-        if (!(timestamp instanceof Date) || isNaN(timestamp.getTime())) {
-           // Try parsing if it might be a string initially (though store should handle this)
-           try {
-               const parsedDate = new Date(timestamp);
-               if (isNaN(parsedDate.getTime())) return 'Invalid Time';
-               return parsedDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-           } catch {
-               return 'Invalid Time';
-           }
-        }
-        // Format valid Date object
-        return timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    };
-
-     // Determine message alignment and style based on sender
-    const getMessageStyle = (sender: 'user' | 'ai' | 'admin') => {
-        switch (sender) {
-            case 'user':
-                // User messages align right, blue background
-                return 'bg-blue-500 text-white self-end';
-            case 'admin':
-                // Admin messages align left, green background
-                return 'bg-green-100 dark:bg-green-900 text-gray-900 dark:text-white self-start';
-            case 'ai':
-            default:
-                 // AI messages align left, gray background
-                return 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white self-start';
-        }
-    };
-
-    return (
-        // Outer container for the chat window
-        // Uses flex-col, defines height/max-height, and basic styling
-        <div className="flex flex-col h-[600px] max-h-[80vh] w-full bg-white dark:bg-gray-800 shadow-xl rounded-lg border border-gray-200 dark:border-gray-700">
-
-            {/* Header (Optional but recommended) */}
-            <div className="p-3 border-b border-gray-200 dark:border-gray-700 sticky top-0 bg-white dark:bg-gray-800 z-10">
-                <h2 className="text-lg font-semibold text-center text-gray-800 dark:text-white">Chat Assistant</h2>
-            </div>
-
-            {/* Message Display Area - Scrollable */}
-            <div
-                ref={messageContainerRef} // Assign ref to the scrollable container
-                className="flex-grow p-4 overflow-y-auto space-y-4" // Key classes: flex-grow, overflow-y-auto
-            >
-                {messages.map((msg) => (
-                     // Use flex container for alignment based on sender
-                     <div key={msg.id} className={`flex flex-col ${msg.sender === 'user' ? 'items-end' : 'items-start'}`}>
-                        {/* Message bubble with styling based on sender */}
-                        <div className={`max-w-[80%] p-3 rounded-lg shadow-md ${getMessageStyle(msg.sender)}`}>
-                             {/* Message text - pre-wrap preserves whitespace/newlines */}
-                             <p className="text-sm whitespace-pre-wrap">{msg.text}</p>
-                             {/* Timestamp */}
-                             <p className="text-xs opacity-70 mt-1 text-right">{formatTimestamp(msg.timestamp)}</p>
-                        </div>
-                    </div>
-                ))}
-                {/* Empty div at the end. When this div scrolls into view, it means we are at the bottom. */}
-                <div ref={messagesEndRef} />
-            </div>
-
-             {/* Loading Indicator (Optional) */}
-             {isSending && (
-                <div className="px-4 pb-2 text-sm text-gray-500 dark:text-gray-400 italic text-center">
-                    AI is thinking...
-                </div>
-             )}
-
-
-            {/* Message Input Area */}
-            <div className="p-3 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-                <form onSubmit={handleSendMessage} className="flex items-center gap-2">
-                    <input
-                        type="text"
-                        value={inputMessage}
-                        onChange={handleInputChange}
-                        placeholder="Ask about services or booking..."
-                        disabled={isSending}
-                        className="flex-grow p-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white disabled:opacity-50"
-                        aria-label="Chat message input"
-                    />
-                    <button
-                        type="submit"
-                        disabled={isSending || !inputMessage.trim()}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity duration-150"
-                        aria-label="Send chat message"
-                    >
-                        {isSending ? '...' : 'Send'}
-                    </button>
-                </form>
-            </div>
+  return (
+    <div className="card w-full max-w-6xl mx-auto bg-base-100 shadow-xl flex flex-col h-[70vh] sm:h-[80vh] border border-base-300/50">
+      <div className="card-body p-0 flex flex-col h-full">
+        <div className="navbar bg-base-200 rounded-t-box min-h-0 py-3 px-4">
+          <div className="flex-1 flex items-center gap-2">
+            <MessageCircle className="h-6 w-6 text-primary" />
+            <span className="text-lg font-semibold text-base-content">Asistent</span>
+          </div>
         </div>
-    );
+
+        <div
+          ref={messageContainerRef}
+          className="flex-grow p-4 overflow-y-auto space-y-2 bg-base-200/30"
+        >
+          {messages.length === 0 && !isSending && (
+            <div className="text-center text-base-content/70 italic py-10">
+              Započnite razgovor sa našim asistentom. <br /> Možete pitati o uslugama, cenama ili pomoći oko zakazivanja.
+            </div>
+          )}
+          {messages.map((msg) => (
+            <ChatMessage key={msg.id} message={msg} />
+          ))}
+          <div ref={messagesEndRef} />
+        </div>
+
+        {isSending && messages.length > 0 && (
+          <div className="px-4 pb-2 text-sm text-base-content/60 italic text-center flex items-center justify-center">
+            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+            Asistent odgovara...
+          </div>
+        )}
+
+        <div className="p-4 border-t border-base-300 bg-base-100 rounded-b-box">
+          <form onSubmit={handleSendMessage} className="flex items-center gap-3">
+            <input
+              type="text"
+              value={inputMessage}
+              onChange={handleInputChange}
+              placeholder={isSending ? "Slanje..." : "Unesite Vašu poruku..."}
+              disabled={isSending}
+              className="input input-bordered w-full focus:input-primary"
+              aria-label="Polje za unos poruke za ćaskanje"
+            />
+            <button
+              type="submit"
+              disabled={isSending || !inputMessage.trim()}
+              className="btn btn-primary btn-square"
+              aria-label="Pošalji poruku"
+            >
+              {isSending ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
 }
