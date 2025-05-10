@@ -1,194 +1,182 @@
-'use client'; // This directive marks this as a Client Component
+'use client';
 
-import { useState, FormEvent } from 'react'; // Import React hooks
-import { useRouter } from 'next/navigation'; // Import Next.js router for navigation/revalidation
-import { Service } from '@prisma/client'; // Import the Service type (optional, but good for typing initial data)
+import { useState, FormEvent, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { Service } from '@prisma/client';
 
-// Define the props for the ServiceForm component
 interface ServiceFormProps {
-  // Optional: Pass initial data for editing an existing service
   initialData?: Service;
-  // Optional: Callback function to execute after successful submission (e.g., close a modal)
   onSuccess?: () => void;
+  onCancel?: () => void;
 }
 
-// This Client Component renders a form for adding or editing a service.
-export default function ServiceForm({ initialData, onSuccess }: ServiceFormProps) {
-  // State to manage form inputs
-  const [name, setName] = useState(initialData?.name || '');
-  const [description, setDescription] = useState(initialData?.description || '');
-  const [duration, setDuration] = useState(initialData?.duration.toString() || ''); // Duration as string initially for input
-  const [price, setPrice] = useState(initialData?.price.toString() || ''); // Price as string initially for input
-  const [isLoading, setIsLoading] = useState(false); // State to indicate loading/submitting status
-  const [error, setError] = useState<string | null>(null); // State to store submission errors
+export default function ServiceForm({ initialData, onSuccess, onCancel }: ServiceFormProps) {
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [duration, setDuration] = useState('');
+  const [price, setPrice] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const router = useRouter(); // Get the Next.js router instance
-
-  // Determine if the form is for editing or adding based on initialData
+  const router = useRouter();
   const isEditing = !!initialData;
 
-  // Handle form submission
+  useEffect(() => {
+    if (initialData) {
+      setName(initialData.name || '');
+      setDescription(initialData.description || '');
+      setDuration(initialData.duration?.toString() || '');
+      setPrice(initialData.price?.toString() || '');
+    }
+  }, [initialData]);
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault(); // Prevent default browser form submission
+    event.preventDefault();
+    setIsLoading(true);
+    setError(null);
 
-    setIsLoading(true); // Set loading state
-    setError(null); // Clear previous errors
-
-    // Basic validation
-    if (!name || !duration || !price) {
-      setError('Please fill in all required fields.');
+    if (!name.trim() || !duration.trim() || !price.trim()) {
+      setError('Name, duration, and price are required.');
       setIsLoading(false);
       return;
     }
 
-    // Convert duration and price to numbers
     const durationNum = parseInt(duration, 10);
     const priceNum = parseFloat(price);
 
-    if (isNaN(durationNum) || isNaN(priceNum) || durationNum <= 0 || priceNum < 0) {
-       setError('Please enter valid numbers for duration and price.');
-       setIsLoading(false);
-       return;
+    if (isNaN(durationNum) || durationNum <= 0) {
+      setError('Please enter a valid positive number for duration.');
+      setIsLoading(false);
+      return;
+    }
+    if (isNaN(priceNum) || priceNum < 0) {
+      setError('Please enter a valid non-negative number for price.');
+      setIsLoading(false);
+      return;
     }
 
-
-    // Prepare the data to be sent to the API
     const serviceData = {
-      name,
-      description: description || null, // Send null if description is empty
+      name: name.trim(),
+      description: description.trim() || null,
       duration: durationNum,
       price: priceNum,
     };
 
-    // Determine the API endpoint and HTTP method based on whether we are editing or adding
-    const apiEndpoint = isEditing ? `/api/admin/services/${initialData.id}` : '/api/admin/services';
+    const apiEndpoint = isEditing ? `/api/admin/services/${initialData?.id}` : '/api/admin/services';
     const httpMethod = isEditing ? 'PUT' : 'POST';
 
     try {
-      // Make the API call
-      // Similar to making an HttpClient request in .NET
       const response = await fetch(apiEndpoint, {
         method: httpMethod,
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(serviceData),
       });
 
-      // Handle the API response
       if (!response.ok) {
-        // If the response is not OK, throw an error with the status
-        const errorData = await response.json(); // Attempt to get error details from the response body
-        throw new Error(errorData.message || `API request failed with status ${response.status}`);
+        const errorData = await response.json().catch(() => ({ message: `Request failed with status ${response.status}` }));
+        throw new Error(errorData.message || `API request failed`);
       }
 
-      // If the submission was successful
-      console.log('Service saved successfully!');
-      // Execute the onSuccess callback if provided
       if (onSuccess) {
         onSuccess();
       } else {
-        // If no onSuccess callback, navigate back to the services list or redirect
-        // router.push('/admin/services'); // Navigate to the services list page
-        router.refresh(); // Revalidate the data on the current page (if used in a modal/same page)
-        // Or if this is on a dedicated /new page, you might redirect:
-         if (!isEditing) { // Only redirect after adding a new service
-             router.push('/admin/services');
-         }
+        router.refresh();
+        if (!isEditing) {
+          router.push('/admin/services');
+        }
       }
-
     } catch (err) {
-      // Handle errors during the fetch call or from the API response
-      console.error('Error saving service:', err);
       setError(err instanceof Error ? err.message : 'An unknown error occurred.');
     } finally {
-      // Always set loading state back to false after the request is complete
       setIsLoading(false);
     }
   };
 
   return (
-    // Render the form
     <form onSubmit={handleSubmit} className="space-y-4">
-      {/* Display error message if there is one */}
       {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
-          <span className="block sm:inline">{error}</span>
+        <div role="alert" className="alert alert-error">
+          <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2 2m2-2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+          <span>{error}</span>
         </div>
       )}
 
-      {/* Service Name Input */}
-      <div>
-        <label htmlFor="name" className="block text-sm font-medium text-gray-700">
-          Service Name
-        </label>
+      <label className="form-control w-full">
+        <div className="label">
+          <span className="label-text text-base-content">Service Name</span>
+        </div>
         <input
           type="text"
-          id="name"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          required // Make this field required
-          className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
+          placeholder="e.g., Men's Haircut"
+          className="input input-bordered w-full"
+          required
         />
-      </div>
+      </label>
 
-      {/* Service Description Input (Optional) */}
-      <div>
-        <label htmlFor="description" className="block text-sm font-medium text-gray-700">
-          Description (Optional)
-        </label>
+      <label className="form-control w-full">
+        <div className="label">
+          <span className="label-text text-base-content">Description (Optional)</span>
+        </div>
         <textarea
-          id="description"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          rows={3} // Set number of visible rows
-          className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
+          placeholder="Detailed description of the service"
+          className="textarea textarea-bordered w-full h-24"
+          rows={3}
         ></textarea>
-      </div>
+      </label>
 
-      {/* Service Duration Input */}
-      <div>
-        <label htmlFor="duration" className="block text-sm font-medium text-gray-700">
-          Duration (minutes)
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <label className="form-control w-full">
+          <div className="label">
+            <span className="label-text text-base-content">Duration (minutes)</span>
+          </div>
+          <input
+            type="number"
+            value={duration}
+            onChange={(e) => setDuration(e.target.value)}
+            placeholder="e.g., 30"
+            className="input input-bordered w-full"
+            required
+            min="1"
+          />
         </label>
-        <input
-          type="number" // Use type="number" for numeric input
-          id="duration"
-          value={duration}
-          onChange={(e) => setDuration(e.target.value)}
-          required
-          min="1" // Duration should be at least 1 minute
-          className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
-        />
-      </div>
 
-      {/* Service Price Input */}
-      <div>
-        <label htmlFor="price" className="block text-sm font-medium text-gray-700">
-          Price ($) {/* Adjust currency symbol */}
+        <label className="form-control w-full">
+          <div className="label">
+            <span className="label-text text-base-content">Price</span>
+          </div>
+          <input
+            type="number"
+            value={price}
+            onChange={(e) => setPrice(e.target.value)}
+            placeholder="e.g., 25.00"
+            className="input input-bordered w-full"
+            required
+            min="0"
+            step="0.01"
+          />
         </label>
-        <input
-          type="number" // Use type="number" for numeric input
-          id="price"
-          value={price}
-          onChange={(e) => setPrice(e.target.value)}
-          required
-          min="0" // Price can be 0 or more
-          step="0.01" // Allow decimal values for price
-          className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
-        />
       </div>
 
-      {/* Submit Button */}
-      <div>
+      <div className="flex justify-end space-x-3 mt-6">
+        {onCancel && (
+          <button type="button" onClick={onCancel} className="btn btn-ghost">
+            Cancel
+          </button>
+        )}
         <button
           type="submit"
-          disabled={isLoading} // Disable button while loading
-          className={`w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white ${
-            isLoading ? 'bg-gray-400' : 'bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500'
-          }`}
+          disabled={isLoading}
+          className="btn btn-primary"
         >
-          {isLoading ? (isEditing ? 'Saving...' : 'Adding...') : (isEditing ? 'Save Changes' : 'Add Service')}
+          {isLoading ? (
+            <span className="loading loading-spinner"></span>
+          ) : (
+            isEditing ? 'Save Changes' : 'Add Service'
+          )}
         </button>
       </div>
     </form>

@@ -1,189 +1,169 @@
-// src/app/dashboard/AppointmentItem.tsx
-"use client";
+'use client';
 
-import { useState, useRef } from 'react'; // Added useRef for modal
+import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Appointment, Service } from '@prisma/client';
 import { format } from 'date-fns';
 import { formatErrorMessage } from '@/lib/errorUtils';
+import { CalendarOff, AlertTriangle } from 'lucide-react';
 
 interface AppointmentItemProps {
-  appointment: Appointment & { // Or your ProcessedAppointment type
+  appointment: Appointment & {
     service: Service;
-    startTime: Date; // Expect Date object
-    endTime: Date;   // Expect Date object
+    startTime: Date;
+    endTime: Date;
   };
 }
 
-// Interface for the structured error data when cancellation fails
 interface CancelErrorData {
   message: string;
   status: number;
-  details?: string | object; // Details can be a string or a parsed JSON object
+  details?: string | object;
 }
 
 export default function AppointmentItem({ appointment }: AppointmentItemProps) {
   const router = useRouter();
   const [isCancelling, setIsCancelling] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const modalRef = useRef<HTMLDialogElement>(null); // Ref for the modal
+  const modalRef = useRef<HTMLDialogElement>(null);
 
   const handleOpenCancelModal = () => {
-    setError(null); // Clear previous errors when opening modal
-    if (modalRef.current) {
-      modalRef.current.showModal();
-    }
+    setError(null);
+    modalRef.current?.showModal();
+  };
+
+  const handleCloseCancelModal = () => {
+    setError(null);
+    modalRef.current?.close();
   };
 
   const handleCancel = async () => {
     if (isCancelling) return;
-
     setIsCancelling(true);
     setError(null);
 
     try {
       const response = await fetch(`/api/appointments/${appointment.id}/cancel`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
       });
 
       if (!response.ok) {
-        // Use the new interface for errorData
-        const errorData: CancelErrorData = { // Type applied here
+        const errorData: CancelErrorData = {
           message: `Failed to cancel appointment (Status: ${response.status})`,
           status: response.status
         };
         try {
-          // Try to parse JSON error from the backend
           const parsedError = await response.json();
-          // parsedError could be { message: string } or { error: string, details?: any }
           errorData.message = parsedError.message || parsedError.error || errorData.message;
-          errorData.details = parsedError.details; // Capture details if provided
+          errorData.details = parsedError.details;
         } catch (e) {
-          // If response is not JSON, use text
-          console.error('Failed to parse error response as JSON:', e);
+          console.error('Error parsing error response:', e);
           errorData.details = await response.text();
         }
-        throw errorData; // Throw the structured error object
+        throw errorData;
       }
-
-      console.log(`Appointment ${appointment.id} cancelled.`);
-      if (modalRef.current) {
-        modalRef.current.close(); // Close modal on success
-      }
-      router.refresh(); // Refresh the page to update the appointment list
-    } catch (err: unknown) { // Catch unknown
-      // Use the centralized error formatter
-      // Ensure formatErrorMessage can handle CancelErrorData or similar structures
+      handleCloseCancelModal();
+      router.refresh();
+    } catch (err: unknown) {
       const userFriendlyError = formatErrorMessage(err, `cancelling appointment for ${appointment.service.name}`);
       setError(userFriendlyError);
-      // console.error is handled by formatErrorMessage
-      // Keep modal open if error to show message
     } finally {
       setIsCancelling(false);
     }
   };
 
-  // Determine if the appointment can be cancelled based on its status
   const canCancel = ['pending', 'approved'].includes(appointment.status.toLowerCase());
 
-  // Helper function to get the badge color based on appointment status
-  const getStatusBadgeColor = (status: string) => {
-    switch (status.toLowerCase()) { // Normalize status to lower case for robust comparison
-      case 'approved':
-        return 'badge-success';
-      case 'pending':
-        return 'badge-warning';
-      case 'cancelled':
-      case 'rejected':
-        return 'badge-error';
-      default:
-        return 'badge-ghost'; // Neutral/default badge
+  const getStatusBadgeClass = (status: string) => {
+    switch (status.toLowerCase()) {
+      case 'approved': return 'badge-success';
+      case 'pending': return 'badge-warning';
+      case 'cancelled': return 'badge-error';
+      case 'rejected': return 'badge-error';
+      default: return 'badge-ghost';
     }
   };
 
   return (
     <>
-      {/* DaisyUI Card */}
-      <div
-        className={`card card-bordered bg-base-100 shadow-lg mb-4 ${isCancelling && !modalRef.current?.open ? 'opacity-70' : ''}`} // Dim card only if modal is not open during cancelling
-      >
+      <div className="card card-bordered bg-base-100 shadow-lg hover:shadow-xl transition-shadow">
         <div className="card-body p-4 sm:p-6">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
-            {/* Appointment Details */}
-            <div className="mb-3 sm:mb-0">
-              <h2 className="card-title text-lg mb-1">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+            <div className="flex-grow">
+              <h2 className="card-title text-lg text-base-content mb-1">
                 {appointment.service.name}
               </h2>
-              <p className="text-sm text-base-content/80">
-                {/* Ensure startTime is a valid Date object before formatting */}
-                {format(new Date(appointment.startTime), 'eeee, MMMM d, yyyy')} at {format(new Date(appointment.startTime), 'HH:mm')}
+              <p className="text-sm text-base-content opacity-80">
+                {format(new Date(appointment.startTime), 'eeee, MMMM d, yyyy')}
+              </p>
+              <p className="text-sm text-base-content opacity-80">
+                Time: {format(new Date(appointment.startTime), 'HH:mm')} - {format(new Date(appointment.endTime), 'HH:mm')}
               </p>
               <div className="mt-2">
-                <span className="text-sm text-base-content/70">Status: </span>
-                <span className={`badge ${getStatusBadgeColor(appointment.status)} badge-md font-medium`}>
+                <span className={`badge ${getStatusBadgeClass(appointment.status)} badge-md font-medium`}>
                   {appointment.status.charAt(0).toUpperCase() + appointment.status.slice(1)}
                 </span>
               </div>
             </div>
 
-            {/* Cancel Button */}
             {canCancel && (
               <button
                 onClick={handleOpenCancelModal}
                 disabled={isCancelling}
-                className="btn btn-error btn-sm mt-2 sm:mt-0 sm:ml-4"
+                className="btn btn-outline btn-error btn-sm mt-2 sm:mt-0 self-start sm:self-center"
               >
-                Cancel Appointment
+                <CalendarOff className="h-4 w-4 mr-1" />
+                Cancel
               </button>
             )}
           </div>
-          {/* Display Error Message for cancellation if modal is not open (e.g., initial load error if applicable) */}
-          {error && !modalRef.current?.open && (
-            <div role="alert" className="alert alert-error text-xs p-2 mt-3">
-              <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current shrink-0 h-4 w-4" fill="none" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2 2m2-2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-              <span>{error}</span>
-            </div>
-          )}
         </div>
       </div>
 
-      {/* DaisyUI Modal for Confirmation */}
-      <dialog id={`cancel-modal-${appointment.id}`} className="modal" ref={modalRef}>
-        <div className="modal-box">
-          <h3 className="font-bold text-lg">Confirm Cancellation</h3>
-          <p className="py-4">
-            Are you sure you want to cancel the appointment for <span className="font-semibold">{appointment.service.name}</span> on <span className="font-semibold">{format(new Date(appointment.startTime), 'MMMM d')}</span>? This action cannot be undone.
+      <dialog ref={modalRef} className="modal">
+        <div className="modal-box bg-base-200">
+          <form method="dialog">
+            <button type="button" className="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" onClick={handleCloseCancelModal}>✕</button>
+          </form>
+          <div className="flex items-start mb-3">
+            <AlertTriangle className="h-8 w-8 text-warning mr-3 shrink-0 mt-1" />
+            <h3 className="font-bold text-xl text-base-content">Confirm Cancellation</h3>
+          </div>
+          <p className="py-2 text-base-content opacity-90">
+            Are you sure you want to cancel your appointment for <span className="font-semibold">{appointment.service.name}</span> on <span className="font-semibold">{format(new Date(appointment.startTime), 'MMMM d, yyyy')}</span> at <span className="font-semibold">{format(new Date(appointment.startTime), 'HH:mm')}</span>?
           </p>
-          {error && ( // Show error within the modal if cancellation fails
-            <div role="alert" className="alert alert-error text-xs p-2 mb-3">
-              <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current shrink-0 h-4 w-4" fill="none" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2 2m2-2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+          <p className="text-sm text-base-content opacity-70 mt-1">This action cannot be undone.</p>
+
+          {error && (
+            <div role="alert" className="alert alert-error mt-4 text-xs p-2">
+              <AlertTriangle className="h-4 w-4"/>
               <span>{error}</span>
             </div>
           )}
-          <div className="modal-action">
-            <button className="btn btn-ghost" onClick={() => { setError(null); if (modalRef.current) modalRef.current.close(); }}>Close</button>
+          <div className="modal-action mt-6">
+            <button type="button" className="btn btn-ghost" onClick={handleCloseCancelModal} disabled={isCancelling}>
+              Keep Appointment
+            </button>
             <button
-              className={`btn btn-error ${isCancelling ? 'btn-disabled' : ''}`}
+              type="button"
+              className="btn btn-error"
               onClick={handleCancel}
               disabled={isCancelling}
             >
               {isCancelling ? (
                 <>
-                  <span className="loading loading-spinner loading-xs"></span>
+                  <span className="loading loading-spinner loading-sm"></span>
                   Cancelling...
                 </>
               ) : (
-                'Yes, Cancel'
+                'Yes, Cancel It'
               )}
             </button>
           </div>
         </div>
-        {/* Optional: close modal when clicking outside */}
         <form method="dialog" className="modal-backdrop">
-          <button onClick={() => setError(null)}>close</button>
+          <button type="button" onClick={handleCloseCancelModal}>close</button>
         </form>
       </dialog>
     </>

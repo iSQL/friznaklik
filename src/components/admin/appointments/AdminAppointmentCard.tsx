@@ -1,48 +1,49 @@
-// src/components/admin/appointments/AdminAppointmentCard.tsx
 'use client';
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { format, differenceInMinutes, parseISO } from 'date-fns';
-import type { AppointmentWithDetails } from '@/app/admin/appointments/page'; // Adjusted import path
-import { formatErrorMessage } from '@/lib/errorUtils'; // Import the error utility and its type
+import type { AppointmentWithDetails } from '@/app/admin/appointments/page';
+import { formatErrorMessage } from '@/lib/errorUtils';
+import { CheckCircle2, XCircle, Edit, AlertTriangle, Info } from 'lucide-react';
 
 interface AdminAppointmentCardProps {
   appointment: AppointmentWithDetails;
 }
 
-// Interface for the structured error data from API responses
 interface ApiErrorData {
   message: string;
   status: number;
-  details?: string | object; // Details can be a string or a parsed JSON object from the backend
+  details?: string | object;
 }
 
 export default function AdminAppointmentCard({ appointment }: AdminAppointmentCardProps) {
   const router = useRouter();
-  const [newDuration, setNewDuration] = useState<string>(''); // Store input as string
+  const [newDuration, setNewDuration] = useState<string>('');
   const [isUpdating, setIsUpdating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  // Calculate current duration for display
-  // Ensure dates are parsed correctly if they are strings
   const currentStartTime = typeof appointment.startTime === 'string' ? parseISO(appointment.startTime) : appointment.startTime;
   const currentEndTime = typeof appointment.endTime === 'string' ? parseISO(appointment.endTime) : appointment.endTime;
   const currentDuration = differenceInMinutes(currentEndTime, currentStartTime);
 
   const handleDurationChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setNewDuration(e.target.value);
-    setError(null); // Clear error when user types
-    setSuccessMessage(null); // Clear success message
+    setError(null);
+    setSuccessMessage(null);
+  };
+
+  const showTemporaryMessage = (setter: React.Dispatch<React.SetStateAction<string | null>>, message: string) => {
+    setter(message);
+    setTimeout(() => setter(null), 3000);
   };
 
   const handleSubmitDurationUpdate = async () => {
     if (!newDuration || isNaN(parseInt(newDuration)) || parseInt(newDuration) <= 0) {
-      setError('Please enter a valid positive number for the duration.');
+      showTemporaryMessage(setError, 'Please enter a valid positive number for the duration.');
       return;
     }
-
     setIsUpdating(true);
     setError(null);
     setSuccessMessage(null);
@@ -50,171 +51,150 @@ export default function AdminAppointmentCard({ appointment }: AdminAppointmentCa
     try {
       const response = await fetch(`/api/admin/appointments/${appointment.id}/duration`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ newDuration: parseInt(newDuration) }),
       });
-
       if (!response.ok) {
-        // Use the new interface for errorData
-        const errorData: ApiErrorData = { // Type applied here
-          message: `Failed to update duration (Status: ${response.status})`,
-          status: response.status
-        };
-        try {
-          const parsedError = await response.json();
-          // parsedError could be { message: string } or { error: string, details?: any }
-          errorData.message = parsedError.message || parsedError.error || errorData.message;
-          errorData.details = parsedError.details; // Capture details if provided
-        } catch (e) {
-          console.error('Update duration error - failed to parse JSON:', e);
-          errorData.details = await response.text(); // Fallback to text if JSON parsing fails
-        }
+        const errorData: ApiErrorData = { message: `Failed to update duration (Status: ${response.status})`, status: response.status };
+        try { const parsedError = await response.json(); errorData.message = parsedError.message || parsedError.error || errorData.message; errorData.details = parsedError.details; }
+        catch { errorData.details = await response.text(); }
         throw errorData;
       }
-
-      setSuccessMessage('Duration updated successfully!');
-      setNewDuration(''); // Clear input
-      router.refresh(); // Re-fetch server-side data to reflect changes
-    } catch (err: unknown) { // Catch unknown
-      // Use the centralized error formatter
-      // Ensure formatErrorMessage can handle ApiErrorData or similar structures
+      showTemporaryMessage(setSuccessMessage, 'Duration updated successfully!');
+      setNewDuration('');
+      router.refresh();
+    } catch (err: unknown) {
       const userFriendlyError = formatErrorMessage(err, `updating duration for appointment ID ${appointment.id}`);
-      setError(userFriendlyError);
+      showTemporaryMessage(setError, userFriendlyError);
     } finally {
       setIsUpdating(false);
     }
   };
 
-  // Function to handle appointment status updates (approve/reject)
   const handleUpdateStatus = async (newStatus: 'approved' | 'rejected') => {
     setIsUpdating(true);
     setError(null);
     setSuccessMessage(null);
-
-    const endpoint = newStatus === 'approved'
-      ? `/api/admin/appointments/${appointment.id}/approve`
-      : `/api/admin/appointments/${appointment.id}/reject`;
+    const endpoint = newStatus === 'approved' ? `/api/admin/appointments/${appointment.id}/approve` : `/api/admin/appointments/${appointment.id}/reject`;
 
     try {
-      const response = await fetch(endpoint, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-      });
-
+      const response = await fetch(endpoint, { method: 'PUT', headers: { 'Content-Type': 'application/json' } });
       if (!response.ok) {
-        // Use the new interface for errorData
-        const errorData: ApiErrorData = { // Type applied here
-          message: `Failed to ${newStatus} appointment (Status: ${response.status})`,
-          status: response.status
-        };
-        try {
-          const parsedError = await response.json();
-          errorData.message = parsedError.message || parsedError.error || errorData.message;
-          errorData.details = parsedError.details;
-        } catch (e) {
-          console.error(`Update status (${newStatus}) error - failed to parse JSON:`, e);
-          errorData.details = await response.text(); // Fallback to text if JSON parsing fails
-        }
-        throw errorData; // Throw the structured error
+        const errorData: ApiErrorData = { message: `Failed to ${newStatus} appointment (Status: ${response.status})`, status: response.status };
+        try { const parsedError = await response.json(); errorData.message = parsedError.message || parsedError.error || errorData.message; errorData.details = parsedError.details; }
+        catch { errorData.details = await response.text(); }
+        throw errorData;
       }
-
-      setSuccessMessage(`Appointment ${newStatus} successfully!`);
-      router.refresh(); // Refresh data to reflect the status change
-    } catch (err: unknown) { // Catch unknown
-      // Use the centralized error formatter
+      showTemporaryMessage(setSuccessMessage, `Appointment ${newStatus} successfully!`);
+      router.refresh();
+    } catch (err: unknown) {
       const userFriendlyError = formatErrorMessage(err, `${newStatus} appointment ID ${appointment.id}`);
-      setError(userFriendlyError);
+      showTemporaryMessage(setError, userFriendlyError);
     } finally {
       setIsUpdating(false);
     }
   };
 
+  const getStatusBadgeClass = (status: string) => {
+    switch (status.toLowerCase()) {
+      case 'pending': return 'badge-warning';
+      case 'approved': return 'badge-success';
+      case 'rejected': return 'badge-error';
+      case 'cancelled': return 'badge-neutral text-base-content opacity-80';
+      default: return 'badge-ghost';
+    }
+  };
 
   return (
-    <div className="card bg-base-100 shadow-xl w-full">
-      <div className="card-body">
+    <div className="card bg-base-100 shadow-xl w-full transition-all hover:shadow-2xl">
+      <div className="card-body p-5 md:p-6">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-3">
           <div>
-            <h2 className="card-title text-xl mb-1">
-              {appointment.service.name} - <span className="font-normal text-lg">{appointment.user.name || appointment.user.email}</span>
+            <h2 className="card-title text-xl text-base-content mb-1">
+              {appointment.service.name}
             </h2>
-            <p className="text-sm text-base-content/70">
-              User Email: {appointment.user.email}
+            <p className="text-sm text-base-content opacity-80">
+              Client: {appointment.user.name || appointment.user.email}
+            </p>
+             <p className="text-xs text-base-content opacity-60">
+              Email: {appointment.user.email}
             </p>
           </div>
-          <span className={`badge badge-lg mt-2 sm:mt-0 ${
-            appointment.status === 'pending' ? 'badge-warning' :
-            appointment.status === 'approved' ? 'badge-success' :
-            appointment.status === 'rejected' ? 'badge-error' :
-            appointment.status === 'cancelled' ? 'badge-neutral' :
-            'badge-ghost'
-          }`}>
+          <span className={`badge badge-lg mt-2 sm:mt-0 ${getStatusBadgeClass(appointment.status)}`}>
             {appointment.status.charAt(0).toUpperCase() + appointment.status.slice(1)}
           </span>
         </div>
 
+        <div className="divider my-2">Details</div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2 text-sm mb-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2 text-sm mb-4 text-base-content">
           <p><strong>Date:</strong> {format(currentStartTime, 'EEEE, MMMM d, yyyy')}</p>
           <p><strong>Time:</strong> {format(currentStartTime, 'HH:mm')} - {format(currentEndTime, 'HH:mm')}</p>
-          <p><strong>Original Service Duration:</strong> {appointment.service.duration} minutes</p>
-          <p><strong>Current Appointment Duration:</strong> {currentDuration} minutes</p>
+          <p><strong>Service Duration:</strong> {appointment.service.duration} min</p>
+          <p><strong>Booked Duration:</strong> {currentDuration} min</p>
           <p><strong>Price:</strong> ${appointment.service.price.toFixed(2)}</p>
         </div>
 
-        {/* Duration Update Section */}
-        <div className="mt-4 pt-4 border-t border-base-300">
-          <h3 className="text-md font-semibold mb-2">Modify Appointment Duration</h3>
-          <div className="flex flex-col sm:flex-row items-end gap-3">
-            <div className="form-control w-full sm:w-auto flex-grow">
-              <label className="label pb-1">
-                <span className="label-text">New Duration (minutes)</span>
-              </label>
-              <input
-                type="number"
-                placeholder="e.g., 45"
-                className={`input input-bordered w-full ${error && newDuration ? 'input-error' : ''}`} // Show error on input if error is related to duration
-                value={newDuration}
-                onChange={handleDurationChange}
-                disabled={isUpdating}
-              />
-            </div>
-            <button
-              onClick={handleSubmitDurationUpdate}
-              className={`btn btn-secondary btn-sm sm:btn-md ${isUpdating ? 'btn-disabled' : ''}`}
-              disabled={isUpdating || !newDuration}
-            >
-              {/* Simplified spinner logic: Show spinner if isUpdating AND no success/error message is active for this specific action */}
-              {isUpdating && successMessage === null && error === null ? <span className="loading loading-spinner loading-xs"></span> : 'Update Duration'}
-            </button>
-          </div>
-          {/* Display error or success messages */}
-          {error && <p className="text-error text-xs mt-2">{error}</p>}
-          {successMessage && <p className="text-success text-xs mt-2">{successMessage}</p>}
-        </div>
-        
-        {/* Action Buttons for Pending Appointments */}
         {appointment.status === 'pending' && (
-          <div className="card-actions justify-end mt-6 pt-4 border-t border-base-300">
-            <button 
-              onClick={() => handleUpdateStatus('approved')} 
-              className={`btn btn-success btn-sm ${isUpdating ? 'btn-disabled' : ''}`}
-              disabled={isUpdating}
-            >
-              {isUpdating && successMessage === null && error === null ? <span className="loading loading-spinner loading-xs"></span> : 'Approve'}
-            </button>
-            <button 
-              onClick={() => handleUpdateStatus('rejected')} 
-              className={`btn btn-error btn-sm ${isUpdating ? 'btn-disabled' : ''}`}
-              disabled={isUpdating}
-            >
-              {isUpdating && successMessage === null && error === null ? <span className="loading loading-spinner loading-xs"></span> : 'Reject'}
-            </button>
-          </div>
+          <>
+            <div className="divider my-2">Actions</div>
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-md font-semibold mb-2 text-base-content">Modify Duration (Optional)</h3>
+                <div className="flex flex-col sm:flex-row items-stretch gap-2">
+                  <input
+                    type="number"
+                    placeholder="e.g., 45 (minutes)"
+                    className={`input input-bordered w-full sm:flex-grow ${error && newDuration ? 'input-error' : ''}`}
+                    value={newDuration}
+                    onChange={handleDurationChange}
+                    disabled={isUpdating}
+                  />
+                  <button
+                    onClick={handleSubmitDurationUpdate}
+                    className="btn btn-secondary btn-sm sm:btn-md"
+                    disabled={isUpdating || !newDuration.trim()}
+                  >
+                    <Edit className="h-4 w-4 mr-1" />
+                    {isUpdating && !successMessage && !error ? <span className="loading loading-spinner loading-xs"></span> : 'Update Duration'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row justify-end gap-2 pt-2">
+                <button
+                  onClick={() => handleUpdateStatus('rejected')}
+                  className="btn btn-error btn-outline"
+                  disabled={isUpdating}
+                >
+                  <XCircle className="h-5 w-5 mr-1" />
+                  {isUpdating && !successMessage && !error ? <span className="loading loading-spinner loading-xs"></span> : 'Reject'}
+                </button>
+                <button
+                  onClick={() => handleUpdateStatus('approved')}
+                  className="btn btn-success"
+                  disabled={isUpdating}
+                >
+                  <CheckCircle2 className="h-5 w-5 mr-1" />
+                  {isUpdating && !successMessage && !error ? <span className="loading loading-spinner loading-xs"></span> : 'Approve'}
+                </button>
+              </div>
+            </div>
+          </>
         )}
 
+        {successMessage && (
+            <div role="alert" className="alert alert-success mt-4 text-xs p-3">
+                <Info className="h-5 w-5"/>
+                <span>{successMessage}</span>
+            </div>
+        )}
+        {error && (
+            <div role="alert" className="alert alert-error mt-4 text-xs p-3">
+                <AlertTriangle className="h-5 w-5"/>
+                <span>{error}</span>
+            </div>
+        )}
       </div>
     </div>
   );

@@ -1,13 +1,14 @@
-// src/components/admin/appointments/AppointmentList.tsx
 'use client';
 
-import { Appointment, Service, User } from '@prisma/client';
-import AdminAppointmentCard from './AdminAppointmentCard'; // We'll create this next
+import { Appointment, Service, User } from '@prisma/client'; // Types only
+import AdminAppointmentCard from './AdminAppointmentCard';
+import { CalendarX2 } from 'lucide-react';
 
-// Define the type for appointments including related Service and User data
 export type AppointmentWithDetails = Appointment & {
   service: Service;
   user: User;
+  startTime: Date;
+  endTime: Date;
 };
 
 interface AppointmentListProps {
@@ -17,16 +18,17 @@ interface AppointmentListProps {
 export default function AppointmentList({ appointments }: AppointmentListProps) {
   if (!appointments || appointments.length === 0) {
     return (
-      <div className="text-center py-10">
-        <p className="text-lg text-neutral-content/70">
-          No pending appointments found.
+      <div className="text-center py-16 bg-base-200 rounded-box">
+        <CalendarX2 className="h-16 w-16 mx-auto text-base-content opacity-40 mb-4" />
+        <p className="text-xl font-semibold text-base-content">
+          No appointments to display.
+        </p>
+        <p className="text-base-content opacity-60 mt-1">
+          All pending appointments have been processed or there are none.
         </p>
       </div>
     );
   }
-
-  // Function to refresh data (passed to child components if needed, or use router.refresh() directly in child)
-  // For simplicity, router.refresh() can be called directly in AdminAppointmentCard after an update.
 
   return (
     <div className="space-y-6">

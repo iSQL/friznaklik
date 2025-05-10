@@ -1,6 +1,6 @@
 import { ClerkProvider } from '@clerk/nextjs';
 import type { Metadata } from "next";
-import "./globals.css";
+import "./globals.css"; 
 import Header from '@/components/Header';
 
 export const metadata: Metadata = {
@@ -14,17 +14,26 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <ClerkProvider publishableKey="pk_test_ZW5vdWdoLW5ld3QtNjAuY2xlcmsuYWNjb3VudHMuZGV2JA">
-      <html lang="en" data-theme="dark">
-      <body>
-      <Header /> 
-        <main className="container mx-auto p-4"> 
-          {/* Main content area */}
-          {/* You can add a sidebar or other components here */}
-          {children}
-        </main>
-      </body>
-    </html>
+    <ClerkProvider>
+      <html lang="en" data-theme="dark"> 
+        <body>
+          <div className="flex flex-col min-h-screen"> 
+            <Header /> 
+            
+            <main className="flex-grow container mx-auto p-4 md:p-6 lg:p-8"> 
+              
+              {children}
+            </main>
+
+           
+            <footer className="footer footer-center p-4 bg-base-300 text-base-content">
+              <div>
+                <p>Copyright © {new Date().getFullYear()} - All rights reserved by FrizNaKlik</p>
+              </div>
+            </footer>
+          </div>
+        </body>
+      </html>
     </ClerkProvider>
   );
 }

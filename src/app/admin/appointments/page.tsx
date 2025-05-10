@@ -1,10 +1,9 @@
-// src/app/admin/appointments/page.tsx
-
 import AppointmentList from '@/components/admin/appointments/AppointmentList';
 import { Appointment, Service, User } from '@prisma/client';
 import prisma from '@/lib/prisma';
 import { parseISO } from 'date-fns';
-import { formatErrorMessage } from '@/lib/errorUtils'; // Import the new utility
+import { formatErrorMessage } from '@/lib/errorUtils';
+import { ServerCrash, CalendarX2 } from 'lucide-react';
 
 export type AppointmentWithDetails = Appointment & {
   service: Service;
@@ -16,8 +15,6 @@ export type AppointmentWithDetails = Appointment & {
 export const dynamic = 'force-dynamic';
 
 export default async function AdminAppointmentsPage() {
-  console.log('AdminAppointmentsPage: Fetching pending appointments directly with Prisma (dynamic rendering)...');
-
   let pendingAppointments: AppointmentWithDetails[] = [];
   let error: string | null = null;
 
@@ -41,36 +38,38 @@ export default async function AdminAppointmentsPage() {
       endTime: app.endTime instanceof Date ? app.endTime : parseISO(app.endTime as unknown as string),
     }));
 
-    console.log(`AdminAppointmentsPage: Found ${pendingAppointments.length} pending appointments.`);
-
   } catch (fetchError: unknown) {
-    // Use the centralized error formatting function
     error = formatErrorMessage(fetchError, "loading pending appointments");
-    // The detailed console.error is now handled within formatErrorMessage
   }
 
   return (
-    <div className="container mx-auto p-4 sm:p-6">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-neutral-content">Manage Pending Appointments</h1>
-        <p className="text-neutral-content/80">
+    <div className="space-y-6">
+      <div className="pb-4 border-b border-base-300">
+        <h1 className="text-3xl font-bold text-base-content">Manage Pending Appointments</h1>
+        <p className="text-base-content opacity-70 mt-1">
           Review, update duration, approve, or reject pending client appointments.
         </p>
       </div>
 
       {error && (
-        <div role="alert" className="alert alert-error shadow-lg max-w-2xl mx-auto">
-          <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2 2m2-2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
+        <div role="alert" className="alert alert-error shadow-lg">
+          <ServerCrash className="h-6 w-6"/>
           <div>
             <h3 className="font-bold">Error Loading Appointments!</h3>
-            <div className="text-xs">{error}</div> {/* Display the formatted error message */}
+            <div className="text-xs">{error}</div>
           </div>
         </div>
       )}
 
-      {!error && (
+      {!error && pendingAppointments.length === 0 && (
+        <div className="text-center py-10 bg-base-200 rounded-box mt-6">
+            <CalendarX2 className="h-12 w-12 mx-auto text-base-content opacity-50 mb-4" />
+            <p className="text-xl font-semibold text-base-content">No Pending Appointments</p>
+            <p className="text-base-content opacity-70">There are currently no appointments awaiting review.</p>
+        </div>
+      )}
+
+      {!error && pendingAppointments.length > 0 && (
         <AppointmentList appointments={pendingAppointments} />
       )}
     </div>

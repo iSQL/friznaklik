@@ -1,67 +1,146 @@
-// src/components/Header.tsx (or your actual path)
-'use client'; // This directive makes this a Client Component
+'use client';
 
 import { UserButton, useAuth } from "@clerk/nextjs";
 import Link from "next/link";
-import BookItTrimLogo from '@/components/BookItTrimLogo'; // Adjust path if your logo component is elsewhere
+import BookItTrimLogo from '@/components/BookItTrimLogo';
+import { MenuIcon } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
 
 export default function Header() {
-  const { userId, isLoaded } = useAuth(); // Use useAuth hook to get userId and loading state
+  const { userId, isLoaded } = useAuth();
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const dropdownContainerRef = useRef<HTMLDivElement>(null); 
 
-  // isLoaded indicates if the auth state has finished loading
+  const navLinks = [
+    { href: "/services", label: "Services" },
+    { href: "/book", label: "Book" },
+    { href: "/chat", label: "Chat" },
+  ];
+
+  const userNavLinks = userId ? [
+    { href: "/dashboard", label: "Dashboard" },
+    { href: "/admin", label: "Admin" },
+  ] : [];
+
+  const closeMobileMenu = () => {
+    setIsMobileMenuOpen(false);
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+  };
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownContainerRef.current && !dropdownContainerRef.current.contains(event.target as Node)) {
+        setIsMobileMenuOpen(false);
+      }
+    };
+
+    if (isMobileMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    } else {
+      document.removeEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isMobileMenuOpen]);
+
   if (!isLoaded) {
-    // You might want to return a placeholder or a simplified header during loading
-    // to prevent layout shifts, or null if that's preferred.
     return (
-      <header className="bg-gray-800 text-white p-4">
-        <div className="container mx-auto flex justify-between items-center">
-          <div className="h-8 w-32 bg-gray-700 rounded animate-pulse"></div> {/* Logo Placeholder */}
-          <nav>
-            <ul className="flex space-x-4">
-              <li className="h-5 w-16 bg-gray-700 rounded animate-pulse"></li>
-              <li className="h-5 w-12 bg-gray-700 rounded animate-pulse"></li>
-              <li className="h-5 w-10 bg-gray-700 rounded animate-pulse"></li>
-            </ul>
-          </nav>
+      <div className="navbar bg-base-200 text-base-content shadow-lg sticky top-0 z-50">
+        <div className="navbar-start">
+          <div className="h-8 w-8 bg-base-300 rounded animate-pulse"></div>
+          <div className="h-6 w-24 bg-base-300 rounded animate-pulse ml-2"></div>
         </div>
-      </header>
+        <div className="navbar-center hidden lg:flex">
+          <ul className="menu menu-horizontal px-1 space-x-2">
+            <li className="h-8 w-20 bg-base-300 rounded animate-pulse"></li>
+            <li className="h-8 w-20 bg-base-300 rounded animate-pulse"></li>
+            <li className="h-8 w-20 bg-base-300 rounded animate-pulse"></li>
+          </ul>
+        </div>
+        <div className="navbar-end">
+          <div className="h-8 w-24 bg-base-300 rounded animate-pulse"></div>
+        </div>
+      </div>
     );
   }
 
   return (
-    <header className="bg-gray-800 text-white p-4 shadow-md"> {/* Added shadow for a bit of depth */}
-      <div className="container mx-auto flex justify-between items-center">
-        <Link href="/" className="flex items-center space-x-2 group"> {/* Added group for potential hover effects on logo + text */}
-          <BookItTrimLogo size={64} /> {/* Using the logo component, adjust size as needed */}
-          <span className="text-xl font-bold group-hover:text-gray-300 transition-colors"> {/* App name next to logo */}
-            FrizNaKlik
-          </span>
-        </Link>
-        <nav>
-          <ul className="flex space-x-4 items-center"> {/* Added items-center for vertical alignment with UserButton */}
-            <li><Link href="/services" className="hover:text-gray-300 transition-colors">Services</Link></li>
-            <li><Link href="/book" className="hover:text-gray-300 transition-colors">Book</Link></li>
-            <li><Link href="/chat" className="hover:text-gray-300 transition-colors">Chat</Link></li>
-
-            {userId ? (
-              // If user is signed in
+    <div className="navbar bg-base-200 text-base-content shadow-lg sticky top-0 z-50">
+      <div className="navbar-start">
+        <div
+          ref={dropdownContainerRef}
+          className={`dropdown ${isMobileMenuOpen ? 'dropdown-open' : ''}`}
+        >
+          <button
+            tabIndex={0}
+            aria-label="Open menu"
+            role="button"
+            className="btn btn-ghost lg:hidden"
+            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            aria-expanded={isMobileMenuOpen}
+          >
+            <MenuIcon className="h-5 w-5" />
+          </button>
+          <ul
+            tabIndex={0}
+            className="menu menu-sm dropdown-content mt-3 z-[51] p-2 shadow bg-base-200 text-base-content rounded-box w-52"
+          >
+            {navLinks.map((link) => (
+              <li key={link.href}><Link href={link.href} onClick={closeMobileMenu}>{link.label}</Link></li>
+            ))}
+            {userId && userNavLinks.map((link) => (
+              <li key={link.href}><Link href={link.href} onClick={closeMobileMenu}>{link.label}</Link></li>
+            ))}
+            <div className="divider my-1 px-2"></div>
+            {!userId ? (
               <>
-                <li><Link href="/dashboard" className="hover:text-gray-300 transition-colors">Dashboard</Link></li>
-                {/* TODO: Implement actual admin role check before showing Admin link */}
-                {/* For now, show Admin link if logged in */}
-                <li><Link href="/admin" className="hover:text-gray-300 transition-colors">Admin</Link></li>
-                <li><UserButton/></li> {/* Added afterSignOutUrl for better UX */}
+                <li><Link href="/sign-in" onClick={closeMobileMenu} className="justify-between">Sign In</Link></li>
+                <li className="mt-1"><Link href="/sign-up" onClick={closeMobileMenu} className="btn btn-primary btn-sm w-full">Sign Up</Link></li>
               </>
             ) : (
-              // If user is signed out
-              <>
-                <li><Link href="/sign-in" className="hover:text-gray-300 transition-colors">Sign In</Link></li>
-                <li><Link href="/sign-up" className="btn btn-primary btn-sm">Sign Up</Link></li> {/* Styled Sign Up as a button */}
-              </>
+              <li>
+                <div className="flex justify-center py-2">
+                   <UserButton afterSignOutUrl="/" />
+                </div>
+              </li>
             )}
           </ul>
-        </nav>
+        </div>
+        <Link href="/" className="btn btn-ghost text-xl px-2">
+          <BookItTrimLogo size={32} />
+          <span className="ml-1 font-bold hidden sm:inline">FrizNaKlik</span>
+        </Link>
       </div>
-    </header>
+      <div className="navbar-center hidden lg:flex">
+        <ul className="menu menu-horizontal px-1">
+          {navLinks.map((link) => (
+            <li key={link.href}><Link href={link.href} className="btn btn-ghost">{link.label}</Link></li>
+          ))}
+        </ul>
+      </div>
+      <div className="navbar-end">
+        {userId ? (
+          <>
+            <ul className="menu menu-horizontal px-1 hidden lg:flex">
+              {userNavLinks.map((link) => (
+                <li key={link.href}><Link href={link.href} className="btn btn-ghost">{link.label}</Link></li>
+              ))}
+            </ul>
+            <div className="ml-2 hidden lg:flex">
+              <UserButton afterSignOutUrl="/" />
+            </div>
+          </>
+        ) : (
+          <div className="hidden lg:flex items-center space-x-2">
+            <Link href="/sign-in" className="btn btn-ghost">Sign In</Link>
+            <Link href="/sign-up" className="btn btn-primary">Sign Up</Link>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
