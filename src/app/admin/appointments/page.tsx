@@ -39,15 +39,15 @@ export default async function AdminAppointmentsPage() {
     }));
 
   } catch (fetchError: unknown) {
-    error = formatErrorMessage(fetchError, "loading pending appointments");
+    error = formatErrorMessage(fetchError, "učitavanja termina na čekanju");
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-4 md:p-8"> {/* Dodat padding za bolji izgled na većim ekranima */}
       <div className="pb-4 border-b border-base-300">
-        <h1 className="text-3xl font-bold text-base-content">Manage Pending Appointments</h1>
+        <h1 className="text-3xl font-bold text-base-content">Upravljanje terminima na čekanju</h1>
         <p className="text-base-content opacity-70 mt-1">
-          Review, update duration, approve, or reject pending client appointments.
+          Pregledajte, ažurirajte trajanje, odobrite ili odbijte termine klijenata na čekanju.
         </p>
       </div>
 
@@ -55,7 +55,7 @@ export default async function AdminAppointmentsPage() {
         <div role="alert" className="alert alert-error shadow-lg">
           <ServerCrash className="h-6 w-6"/>
           <div>
-            <h3 className="font-bold">Error Loading Appointments!</h3>
+            <h3 className="font-bold">Greška pri učitavanju termina!</h3>
             <div className="text-xs">{error}</div>
           </div>
         </div>
@@ -64,8 +64,8 @@ export default async function AdminAppointmentsPage() {
       {!error && pendingAppointments.length === 0 && (
         <div className="text-center py-10 bg-base-200 rounded-box mt-6">
             <CalendarX2 className="h-12 w-12 mx-auto text-base-content opacity-50 mb-4" />
-            <p className="text-xl font-semibold text-base-content">No Pending Appointments</p>
-            <p className="text-base-content opacity-70">There are currently no appointments awaiting review.</p>
+            <p className="text-xl font-semibold text-base-content">Nema termina na čekanju</p>
+            <p className="text-base-content opacity-70">Trenutno nema termina koji čekaju na pregled.</p>
         </div>
       )}
 

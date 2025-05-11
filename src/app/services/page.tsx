@@ -3,7 +3,34 @@ import Link from 'next/link';
 import prisma from '@/lib/prisma';
 import type { Service } from '@prisma/client';
 import { formatErrorMessage } from '@/lib/errorUtils'; 
+import type { Metadata } from 'next';
 import { Scissors, AlertTriangle } from 'lucide-react'; 
+
+// Uzeti u obzir da ako bude vise vendora / salona, ovo treba da bude dinamicno
+export const metadata: Metadata = {
+  title: 'Naše Usluge - Friz Na Klik',
+  description: 'Pregledajte sve frizerske usluge koje nudimo u salonu Friz Na Klik. Pronađite savršenu uslugu za sebe i zakažite termin online.', 
+  openGraph: {
+    title: 'Naše Usluge - Friz Na Klik',
+    description: 'Otkrijte širok spektar frizerskih usluga dostupnih u Friz Na Klik. Od šišanja do specijalnih tretmana.',
+    // url: 'https://friznaklik.zabari.online/services',
+    // images: [
+    //   {
+    //     url: 'https://friznaklik.zabari.online/neka slika za servise.png',
+    //     width: 1200,
+    //     height: 630,
+    //     alt: 'Frizerske usluge - Friz Na Klik',
+    //   },
+    // ],
+    locale: 'sr_RS',
+    type: 'website', 
+  },
+  keywords: ['frizerske usluge', 'šišanje', 'farbanje', 'feniranje', 'Friz Na Klik', 'zakazivanje frizera'],
+  alternates: { 
+    canonical: '/services', 
+    
+  },
+};
 
 async function getServicesDirectly(): Promise<Service[]> {
   try {
@@ -22,7 +49,7 @@ async function getServicesDirectly(): Promise<Service[]> {
 }
 
 export const dynamic = 'force-dynamic';
-// Ili, za revalidaciju zasnovanu na vremenu (npr. svakih sat vremena):
+// Ili, za revalidaciju (npr. svakih sat vremena):
 // export const revalidate = 3600;
 
 export default async function ServicesPage() {

@@ -4,7 +4,7 @@ import prisma from '@/lib/prisma';
 import { auth } from '@clerk/nextjs/server';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { ShieldAlert, ServerCrash } from 'lucide-react';
+import { ShieldAlert, ServerCrash, ListOrdered } from 'lucide-react'; // 
 
 async function isAdminUser(userId: string): Promise<boolean> {
   const dbUser = await prisma.user.findUnique({
@@ -18,21 +18,21 @@ export default async function AdminServicesPage() {
   const { userId } = await auth();
 
   if (!userId) {
-    redirect('/sign-in');
+    redirect('/sign-in'); 
   }
 
   const isAdmin = await isAdminUser(userId);
 
   if (!isAdmin) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-10rem)]">
-        <div role="alert" className="alert alert-error max-w-lg">
-          <ShieldAlert className="h-6 w-6" />
+      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-12rem)] p-4 text-center"> 
+        <div role="alert" className="alert alert-error max-w-md shadow-lg"> 
+          <ShieldAlert className="h-8 w-8" />
           <div>
-            <h3 className="font-bold">Unauthorized Access</h3>
-            <div className="text-xs">You do not have permission to view this page.</div>
+            <h3 className="font-bold text-lg">Neovlašćen pristup</h3>
+            <div className="text-sm">Nemate dozvolu za pregled ove stranice.</div>
           </div>
-          <Link href="/admin" className="btn btn-sm btn-neutral">Go to Dashboard</Link>
+          <Link href="/admin" className="btn btn-sm btn-neutral mt-2 sm:mt-0">Idi na kontrolnu tablu</Link>
         </div>
       </div>
     );
@@ -48,18 +48,21 @@ export default async function AdminServicesPage() {
       }
     });
   } catch (e) {
-    console.error('Error fetching services:', e);
-    error = 'Failed to load services. Please try again later.';
+    console.error('Greška pri dohvatanju usluga:', e); 
+    error = 'Neuspešno učitavanje usluga. Molimo pokušajte ponovo kasnije.';
   }
 
   if (error) {
     return (
-      <div>
-        <h1 className="text-3xl font-bold mb-6 text-base-content">Manage Services</h1>
-        <div role="alert" className="alert alert-warning">
+      <div className="container mx-auto px-4 py-8">
+        <div className="flex items-center mb-6">
+          <ListOrdered className="h-8 w-8 mr-3 text-primary" />
+          <h1 className="text-3xl font-bold text-base-content">Upravljanje uslugama</h1>
+        </div>
+        <div role="alert" className="alert alert-warning shadow-md"> 
           <ServerCrash className="h-6 w-6"/>
           <div>
-            <h3 className="font-bold">Error Loading Data</h3>
+            <h3 className="font-bold">Greška pri učitavanju podataka</h3>
             <div className="text-xs">{error}</div>
           </div>
         </div>
@@ -68,6 +71,12 @@ export default async function AdminServicesPage() {
   }
 
   return (
-    <AdminServicesClient services={services} />
+    <div className="container mx-auto px-4 py-8">
+       <div className="flex items-center mb-6">
+          <ListOrdered className="h-8 w-8 mr-3 text-primary" />
+          <h1 className="text-3xl font-bold text-base-content">Upravljanje uslugama</h1>
+        </div>
+      <AdminServicesClient services={services} />
+    </div>
   );
 }

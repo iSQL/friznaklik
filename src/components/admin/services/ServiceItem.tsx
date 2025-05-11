@@ -2,40 +2,42 @@
 
 import { Service } from '@prisma/client';
 import { Edit3, Trash2 } from 'lucide-react';
-import { useState } from 'react';
 
 interface ServiceItemProps {
   service: Service;
   onEditClick: (service: Service) => void;
-  onDeleteClick: (service: Service) => void; 
+  onDeleteClick: (service: Service) => void;
 }
 
 export default function ServiceItem({ service, onEditClick, onDeleteClick }: ServiceItemProps) {
-  const [isProcessingAction] = useState(false);
   const handleAttemptDelete = () => {
     onDeleteClick(service);
   };
 
   return (
-    <tr className="hover">
-      <td className="text-base-content font-medium">{service.name}</td>
-      <td className="text-base-content">{service.duration} min</td>
-      <td className="text-base-content">${service.price.toFixed(2)}</td>
-      <td className="text-right">
-        <div className="space-x-2">
+    <tr className="hover group"> 
+      <td className="text-base-content font-medium px-3 py-3 sm:px-4 sm:py-3 align-middle"> 
+        {service.name}
+      </td>
+      <td className="text-base-content px-3 py-3 sm:px-4 sm:py-3 align-middle">
+        {service.duration} min
+      </td>
+      <td className="text-base-content px-3 py-3 sm:px-4 sm:py-3 align-middle">
+        {service.price.toFixed(2)} RSD
+      </td>
+      <td className="text-right px-3 py-3 sm:px-4 sm:py-3 align-middle">
+        <div className="flex items-center justify-end space-x-1 sm:space-x-2">
           <button
             onClick={() => onEditClick(service)}
-            className="btn btn-sm btn-ghost btn-square"
-            aria-label="Edit Service"
-            disabled={isProcessingAction} 
+            className="btn btn-xs sm:btn-sm btn-ghost btn-square text-info hover:bg-info hover:text-info-content" 
+            aria-label="Izmeni uslugu" 
           >
             <Edit3 className="h-4 w-4" />
           </button>
           <button
             onClick={handleAttemptDelete}
-            className="btn btn-sm btn-ghost btn-square text-error hover:bg-error hover:text-error-content"
-            aria-label="Delete Service"
-            disabled={isProcessingAction}
+            className="btn btn-xs sm:btn-sm btn-ghost btn-square text-error hover:bg-error hover:text-error-content" 
+            aria-label="Obriši uslugu" 
           >
             <Trash2 className="h-4 w-4" />
           </button>

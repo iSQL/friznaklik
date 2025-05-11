@@ -3,6 +3,7 @@
 import { useState, FormEvent, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Service } from '@prisma/client';
+import { AlertTriangle, XCircle, Save, Plus } from 'lucide-react'; 
 
 interface ServiceFormProps {
   initialData?: Service;
@@ -17,7 +18,6 @@ export default function ServiceForm({ initialData, onSuccess, onCancel }: Servic
   const [price, setPrice] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
   const router = useRouter();
   const isEditing = !!initialData;
 
@@ -27,7 +27,13 @@ export default function ServiceForm({ initialData, onSuccess, onCancel }: Servic
       setDescription(initialData.description || '');
       setDuration(initialData.duration?.toString() || '');
       setPrice(initialData.price?.toString() || '');
+    } else {
+      setName('');
+      setDescription('');
+      setDuration('');
+      setPrice('');
     }
+    setError(null); 
   }, [initialData]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -36,21 +42,21 @@ export default function ServiceForm({ initialData, onSuccess, onCancel }: Servic
     setError(null);
 
     if (!name.trim() || !duration.trim() || !price.trim()) {
-      setError('Name, duration, and price are required.');
+      setError('Naziv usluge, trajanje i cena su obavezna polja.');
       setIsLoading(false);
       return;
     }
 
     const durationNum = parseInt(duration, 10);
-    const priceNum = parseFloat(price);
+    const priceNum = parseFloat(price.replace(',', '.')); 
 
     if (isNaN(durationNum) || durationNum <= 0) {
-      setError('Please enter a valid positive number for duration.');
+      setError('Molimo unesite validno pozitivno trajanje u minutima.');
       setIsLoading(false);
       return;
     }
     if (isNaN(priceNum) || priceNum < 0) {
-      setError('Please enter a valid non-negative number for price.');
+      setError('Molimo unesite validnu nenegativnu cenu.');
       setIsLoading(false);
       return;
     }
@@ -73,72 +79,73 @@ export default function ServiceForm({ initialData, onSuccess, onCancel }: Servic
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: `Request failed with status ${response.status}` }));
-        throw new Error(errorData.message || `API request failed`);
+        const errorData = await response.json().catch(() => ({ message: `Zahtev nije uspeo: Status ${response.status}` }));
+        throw new Error(errorData.message || `Došlo je do greške pri komunikaciji sa serverom.`);
       }
 
-      if (onSuccess) {
-        onSuccess();
-      } else {
-        router.refresh();
-        if (!isEditing) {
-          router.push('/admin/services');
+        if (onSuccess) {
+          onSuccess();
+        } else {
+          router.refresh(); 
+          if (!isEditing) {
+            router.push('/admin/services'); 
+          }
         }
-      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An unknown error occurred.');
+      setError(err instanceof Error ? err.message : 'Došlo je do nepoznate greške.');
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} className="space-y-6"> 
       {error && (
-        <div role="alert" className="alert alert-error">
-          <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2 2m2-2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+        <div role="alert" className="alert alert-error shadow-md">
+          <AlertTriangle className="h-6 w-6" />
           <span>{error}</span>
         </div>
       )}
-
       <label className="form-control w-full">
         <div className="label">
-          <span className="label-text text-base-content">Service Name</span>
+          <span className="label-text text-base-content font-medium">Naziv usluge</span> 
+          <span className="label-text-alt text-error">* Obavezno</span>
         </div>
         <input
           type="text"
           value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="e.g., Men's Haircut"
-          className="input input-bordered w-full"
+          onChange={(e) => { setName(e.target.value); setError(null); }}
+          placeholder="npr. Muško šišanje"
+          className={`input input-bordered w-full ${error && !name.trim() ? 'input-error' : 'focus:input-primary'}`}
           required
         />
       </label>
 
       <label className="form-control w-full">
         <div className="label">
-          <span className="label-text text-base-content">Description (Optional)</span>
+          <span className="label-text text-base-content font-medium">Opis (Opciono)</span>
         </div>
         <textarea
           value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder="Detailed description of the service"
-          className="textarea textarea-bordered w-full h-24"
-          rows={3}
+          onChange={(e) => { setDescription(e.target.value); setError(null); }}
+          placeholder="Detaljan opis usluge (npr. uključuje pranje, masažu...)"
+          className="textarea textarea-bordered w-full h-28 focus:textarea-primary" 
+          rows={4}
         ></textarea>
       </label>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-6"> 
         <label className="form-control w-full">
           <div className="label">
-            <span className="label-text text-base-content">Duration (minutes)</span>
+            <span className="label-text text-base-content font-medium">Trajanje (minuti)</span>
+            <span className="label-text-alt text-error">* Obavezno</span>
           </div>
           <input
             type="number"
             value={duration}
-            onChange={(e) => setDuration(e.target.value)}
-            placeholder="e.g., 30"
-            className="input input-bordered w-full"
+            onChange={(e) => { setDuration(e.target.value); setError(null);  }}
+            placeholder="npr. 30"
+            className={`input input-bordered w-full ${error && (!duration.trim() || parseInt(duration) <=0) ? 'input-error' : 'focus:input-primary'}`}
             required
             min="1"
           />
@@ -146,36 +153,36 @@ export default function ServiceForm({ initialData, onSuccess, onCancel }: Servic
 
         <label className="form-control w-full">
           <div className="label">
-            <span className="label-text text-base-content">Price</span>
+            <span className="label-text text-base-content font-medium">Cena (RSD)</span>
+            <span className="label-text-alt text-error">* Obavezno</span>
           </div>
           <input
-            type="number"
+            type="text" 
             value={price}
-            onChange={(e) => setPrice(e.target.value)}
-            placeholder="e.g., 25.00"
-            className="input input-bordered w-full"
+            onChange={(e) => { setPrice(e.target.value); setError(null); }}
+            placeholder="npr. 1500.00 ili 1500,00"
+            className={`input input-bordered w-full ${error && (!price.trim() || parseFloat(price.replace(',', '.')) < 0) ? 'input-error' : 'focus:input-primary'}`}
             required
-            min="0"
-            step="0.01"
           />
         </label>
       </div>
 
-      <div className="flex justify-end space-x-3 mt-6">
+      <div className="flex flex-col-reverse sm:flex-row justify-end items-center gap-3 mt-8"> 
         {onCancel && (
-          <button type="button" onClick={onCancel} className="btn btn-ghost">
-            Cancel
+          <button type="button" onClick={onCancel} className="btn btn-ghost w-full sm:w-auto" disabled={isLoading}>
+            <XCircle className="h-5 w-5 mr-1" />
+            Otkaži
           </button>
         )}
         <button
           type="submit"
           disabled={isLoading}
-          className="btn btn-primary"
+          className="btn btn-primary w-full sm:w-auto"
         >
           {isLoading ? (
-            <span className="loading loading-spinner"></span>
+            <span className="loading loading-spinner loading-sm"></span>
           ) : (
-            isEditing ? 'Save Changes' : 'Add Service'
+            isEditing ? <><Save className="h-5 w-5 mr-2" />Sačuvaj izmene</> : <><Plus className="h-5 w-5 mr-2" />Dodaj uslugu</>
           )}
         </button>
       </div>

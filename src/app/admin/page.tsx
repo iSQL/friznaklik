@@ -5,8 +5,9 @@ import {
     ClipboardList,
     CalendarClock,
     MessageSquare,
-    Settings2 as Settings, 
+    Settings2 as Settings,
     CalendarCheck,
+    LayoutDashboard, 
 } from 'lucide-react';
 
 export default async function AdminDashboardPage() {
@@ -20,66 +21,69 @@ export default async function AdminDashboardPage() {
     ]);
 
     const overviewStats = [
-        { title: 'Pending Appointments', value: pendingAppointmentCount, icon: CalendarClock, iconColor: 'text-warning' },
-        { title: 'Total Services', value: totalServiceCount, icon: ClipboardList, iconColor: 'text-info' },
-        { title: 'Total Chat Sessions', value: totalSessionCount, icon: MessageSquare, iconColor: 'text-success' },
-        { title: 'Total Users', value: totalUserCount, icon: Users, iconColor: 'text-primary' },
+        { title: 'Termini na čekanju', value: pendingAppointmentCount, icon: CalendarClock, iconColor: 'text-warning' },
+        { title: 'Ukupno usluga', value: totalServiceCount, icon: ClipboardList, iconColor: 'text-info' },
+        { title: 'Ukupno čet sesija', value: totalSessionCount, icon: MessageSquare, iconColor: 'text-success' },
+        { title: 'Ukupno korisnika', value: totalUserCount, icon: Users, iconColor: 'text-primary' },
     ];
 
     const managementPanels = [
         {
             href: '/admin/appointments',
-            title: 'Manage Appointments',
-            description: 'View, approve, reject, or reschedule appointments.',
+            title: 'Upravljanje terminima',
+            description: 'Pregledajte, odobrite, odbijte ili promenite termine.',
             icon: CalendarCheck,
             accentColor: 'border-primary',
         },
         {
             href: '/admin/services',
-            title: 'Manage Services',
-            description: 'Add, edit, or remove haircut services and details.',
+            title: 'Upravljanje uslugama',
+            description: 'Dodajte, izmenite ili uklonite frizerske usluge i detalje.',
             icon: Settings,
             accentColor: 'border-secondary',
         },
         {
             href: '/admin/chat',
-            title: 'Manage Chats',
-            description: 'View user chat history and respond as admin.',
+            title: 'Upravljanje četom',
+            description: 'Pregledajte istoriju korisničkih četova i odgovarajte kao administrator.',
             icon: MessageSquare,
             accentColor: 'border-accent',
         },
     ];
 
     return (
-        <div>
-            <h1 className="text-3xl font-bold mb-8 text-base-content">Admin Dashboard</h1>
+        <div className="container mx-auto px-4 py-8"> 
+            <div className="flex items-center mb-8"> 
+                <LayoutDashboard className="h-10 w-10 mr-3 text-primary" strokeWidth={1.5} />
+                <h1 className="text-3xl font-bold text-base-content">Administratorska tabla</h1>
+            </div>
 
             <section className="mb-10">
-                <h2 className="text-2xl font-semibold mb-4 text-base-content">Overview</h2>
-                <div className="stats stats-vertical lg:stats-horizontal shadow w-full">
+                <h2 className="text-2xl font-semibold mb-4 text-base-content">Pregled statistike</h2>
+                <div className="stats stats-vertical lg:stats-horizontal shadow-lg w-full bg-base-100">
                     {overviewStats.map((statItem) => (
                         <div className="stat" key={statItem.title}>
                             <div className={`stat-figure ${statItem.iconColor}`}>
                                 <statItem.icon className="h-8 w-8" strokeWidth={1.5} />
                             </div>
-                            <div className="stat-title">{statItem.title}</div>
-                            <div className="stat-value">{statItem.value}</div>
+                            <div className="stat-title text-base-content/70">{statItem.title}</div> 
+                            <div className="stat-value text-base-content">{statItem.value}</div>
                         </div>
                     ))}
                 </div>
             </section>
 
             <section>
-                 <h2 className="text-2xl font-semibold mb-4 text-base-content">Management Tools</h2>
-                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <h2 className="text-2xl font-semibold mb-6 text-base-content">Alati za upravljanje</h2> 
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {managementPanels.map((panel) => (
-                        <Link href={panel.href} key={panel.href} className="card bg-base-200 shadow-lg hover:shadow-xl transition-shadow duration-200 ease-in-out group">
-                            <div className={`card-body border-l-4 ${panel.accentColor}`}>
-                                <panel.icon className="h-8 w-8 mb-3 text-base-content opacity-80 group-hover:opacity-100" strokeWidth={1.5} />
+                        <Link href={panel.href} key={panel.href} className="card bg-base-100 shadow-lg hover:shadow-xl hover:scale-[1.02] transform transition-all duration-200 ease-in-out group">
+                            <div className={`card-body items-center text-center sm:items-start sm:text-left border-l-4 ${panel.accentColor} rounded-r-md`}>
+                                <panel.icon className="h-10 w-10 mb-3 text-base-content opacity-80 group-hover:opacity-100 transition-opacity" strokeWidth={1.5} />
                                 <h3 className="card-title text-xl font-semibold text-base-content mb-1 group-hover:text-primary transition-colors">
                                     {panel.title}
                                 </h3>
-                                <p className="text-base-content opacity-70 text-sm">{panel.description}</p>
+                                <p className="text-base-content/70 text-sm">{panel.description}</p> 
                             </div>
                         </Link>
                     ))}

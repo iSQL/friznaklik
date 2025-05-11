@@ -1,13 +1,13 @@
-// src/app/dashboard/AppointmentItem.tsx
+
 'use client';
 
 import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Appointment, Service } from '@prisma/client';
 import { format, isPast } from 'date-fns';
-import { sr } from 'date-fns/locale'; // Srpska lokalizacija za date-fns
+import { sr } from 'date-fns/locale'; 
 import { formatErrorMessage } from '@/lib/errorUtils';
-import { CalendarOff, AlertTriangle, CheckCircle2, Clock, HelpCircle, XCircle } from 'lucide-react'; // Dodate ikone
+import { CalendarOff, AlertTriangle, CheckCircle2, Clock, HelpCircle, XCircle } from 'lucide-react';
 
 interface AppointmentItemProps {
   appointment: Appointment & {
