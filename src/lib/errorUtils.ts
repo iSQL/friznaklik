@@ -1,5 +1,3 @@
-// src/lib/errorUtils.ts
-
 /**
  * Interface for a structured error object.
  * This can be used to create more detailed error objects before passing to formatErrorMessage.
