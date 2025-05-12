@@ -1,9 +1,12 @@
 import { ClerkProvider } from '@clerk/nextjs';
+import { auth } from '@clerk/nextjs/server'; 
 import type { Metadata } from "next";
 import "./globals.css";
 import Header from '@/components/Header';
 import { Inter } from 'next/font/google'; 
 import {srRS} from './locales/sr-RS';
+import { isAdminUser as checkIsAdmin } from '@/lib/authUtils';
+
 
 const inter = Inter({ subsets: ['latin', 'latin-ext'] }); 
 export const metadata: Metadata = {
@@ -31,17 +34,23 @@ export const metadata: Metadata = {
   }
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const { userId } = await auth();
+  let isUserAdmin = false;
+
+  if (userId) {
+    isUserAdmin = await checkIsAdmin(userId);
+  }
   return (
     <ClerkProvider localization={srRS}>
       <html lang="sr" data-theme="dark" className={inter.className}>
         <body>
           <div className="flex flex-col min-h-screen bg-base-100 text-base-content"> 
-            <Header />
+            <Header isUserAdminFromServer={isUserAdmin} />
 
             <main className="flex-grow container mx-auto p-4 md:p-6 lg:p-8">
               {children}

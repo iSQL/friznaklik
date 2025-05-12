@@ -2,25 +2,40 @@
 
 import { UserButton, useAuth } from "@clerk/nextjs";
 import Link from "next/link";
-import Image from 'next/image'; 
-import { MenuIcon } from 'lucide-react';
+import Image from 'next/image';
+import { Menu as MenuIcon, LogIn, UserPlus, LayoutDashboard, Settings, MessageCircle, CalendarPlus, ListOrdered, X, ShieldCheck } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
+import { usePathname } from 'next/navigation';
 
-export default function Header() {
+interface HeaderProps {
+  isUserAdminFromServer: boolean; 
+}
+
+export default function Header({ isUserAdminFromServer }: HeaderProps) {
   const { userId, isLoaded } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const dropdownContainerRef = useRef<HTMLDivElement>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const pathname = usePathname();
+  const isUserAdmin = isUserAdminFromServer;
 
   const navLinks = [
-    { href: "/services", label: "Services" },
-    { href: "/book", label: "Book" },
-    { href: "/chat", label: "Chat" },
+    { href: "/services", label: "Usluge", icon: ListOrdered },
+    { href: "/book", label: "Zakaži", icon: CalendarPlus },
+    { href: "/chat", label: "Čet", icon: MessageCircle },
   ];
 
-  const userNavLinks = userId ? [
-    { href: "/dashboard", label: "Dashboard" },
-    { href: "/admin", label: "Admin" },
-  ] : [];
+  const userNavLinks = [];
+  if (userId) {
+    userNavLinks.push({ href: "/dashboard", label: "Kontrolna tabla", icon: LayoutDashboard });
+    if (isUserAdmin) { 
+      userNavLinks.push({ href: "/admin", label: "Admin Panel", icon: ShieldCheck });
+    }
+  }
+
+  const toggleMobileMenu = () => {
+    setIsMobileMenuOpen(prev => !prev);
+  };
 
   const closeMobileMenu = () => {
     setIsMobileMenuOpen(false);
@@ -31,6 +46,9 @@ export default function Header() {
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
+      if (menuButtonRef.current && menuButtonRef.current.contains(event.target as Node)) {
+        return;
+      }
       if (dropdownContainerRef.current && !dropdownContainerRef.current.contains(event.target as Node)) {
         setIsMobileMenuOpen(false);
       }
@@ -49,97 +67,141 @@ export default function Header() {
 
   if (!isLoaded) {
     return (
-      <div className="navbar bg-base-200 text-base-content shadow-lg sticky top-0 z-50">
+      <div className="navbar bg-base-200 text-base-content shadow-md sticky top-0 z-50 print:hidden">
         <div className="navbar-start">
-          <div className="h-8 w-8 bg-base-300 rounded animate-pulse"></div>
-          <div className="h-6 w-24 bg-base-300 rounded animate-pulse ml-2"></div>
+          <div className="btn btn-ghost px-2 flex items-center">
+            <div className="h-8 w-32 bg-base-300 rounded animate-pulse"></div>
+          </div>
         </div>
         <div className="navbar-center hidden lg:flex">
-          <ul className="menu menu-horizontal px-1 space-x-2">
-            <li className="h-8 w-20 bg-base-300 rounded animate-pulse"></li>
-            <li className="h-8 w-20 bg-base-300 rounded animate-pulse"></li>
-            <li className="h-8 w-20 bg-base-300 rounded animate-pulse"></li>
+          <ul className="menu menu-horizontal px-1 space-x-1">
+            {[1, 2, 3].map(i => <li key={i} className="h-9 w-24 bg-base-300 rounded animate-pulse"></li>)}
           </ul>
         </div>
         <div className="navbar-end">
-          <div className="h-8 w-24 bg-base-300 rounded animate-pulse"></div>
+          <div className="h-9 w-28 bg-base-300 rounded animate-pulse"></div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="navbar bg-base-200 text-base-content shadow-lg sticky top-0 z-50">
+    <nav className="navbar bg-base-200 text-base-content shadow-md sticky top-0 z-50 print:hidden">
       <div className="navbar-start">
         <div
           ref={dropdownContainerRef}
           className={`dropdown ${isMobileMenuOpen ? 'dropdown-open' : ''}`}
         >
           <button
+            ref={menuButtonRef}
             tabIndex={0}
-            aria-label="Open menu"
+            aria-label={isMobileMenuOpen ? "Zatvori meni" : "Otvori meni"}
             role="button"
             className="btn btn-ghost lg:hidden"
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            onClick={toggleMobileMenu}
             aria-expanded={isMobileMenuOpen}
           >
-            <MenuIcon className="h-5 w-5" />
+            {isMobileMenuOpen ? <X className="h-5 w-5" /> : <MenuIcon className="h-5 w-5" />}
           </button>
           <ul
-            tabIndex={0}
-            className="menu menu-sm dropdown-content mt-3 z-[51] p-2 shadow bg-base-200 text-base-content rounded-box w-52"
+            tabIndex={-1}
+            className="menu menu-sm dropdown-content mt-3 z-[51] p-2 shadow-lg bg-base-100 text-base-content rounded-box w-64"
           >
             {navLinks.map((link) => (
-              <li key={link.href}><Link href={link.href} onClick={closeMobileMenu}>{link.label}</Link></li>
+              <li key={link.href}>
+                <Link href={link.href} onClick={closeMobileMenu} className={`flex items-center gap-2 p-2 rounded-md ${pathname === link.href ? 'bg-primary text-primary-content' : 'hover:bg-base-300'}`}>
+                  {link.icon && <link.icon className="h-4 w-4" />}
+                  {link.label}
+                </Link>
+              </li>
             ))}
-            {userId && userNavLinks.map((link) => (
-              <li key={link.href}><Link href={link.href} onClick={closeMobileMenu}>{link.label}</Link></li>
+            {userNavLinks.map((link) => (
+              <li key={link.href}>
+                <Link href={link.href} onClick={closeMobileMenu} className={`flex items-center gap-2 p-2 rounded-md ${pathname.startsWith(link.href) && link.href !== '/' ? 'bg-primary text-primary-content' : 'hover:bg-base-300'}`}>
+                  {link.icon && <link.icon className="h-4 w-4" />}
+                  {link.label}
+                </Link>
+              </li>
             ))}
-            <div className="divider my-1 px-2"></div>
+            <div className="divider my-2 px-2 text-xs">Korisnik</div>
             {!userId ? (
               <>
-                <li><Link href="/sign-in" onClick={closeMobileMenu} className="justify-between">Sign In</Link></li>
-                <li className="mt-1"><Link href="/sign-up" onClick={closeMobileMenu} className="btn btn-primary btn-sm w-full">Sign Up</Link></li>
+                <li>
+                  <Link href="/sign-in" onClick={closeMobileMenu} className="flex items-center gap-2 p-2 rounded-md hover:bg-base-300">
+                    <LogIn className="h-4 w-4" /> Prijavi se
+                  </Link>
+                </li>
+                <li className="mt-1">
+                  <Link href="/sign-up" onClick={closeMobileMenu} className="btn btn-primary btn-sm w-full mt-1">
+                    <UserPlus className="h-4 w-4 mr-1" /> Registruj se
+                  </Link>
+                </li>
               </>
             ) : (
               <li>
-                <div className="flex justify-center py-2">
-                   <UserButton afterSignOutUrl="/" />
+                <div className="flex justify-center items-center py-2 px-2 rounded-md hover:bg-base-300">
+                  <UserButton
+                    afterSignOutUrl="/"
+                    appearance={{
+                      elements: {
+                        userButtonAvatarBox: "w-8 h-8",
+                        userButtonPopoverCard: "bg-base-100 border border-base-300 shadow-lg",
+                      }
+                    }}
+                  />
+                  <span className="ml-2 text-sm font-medium">Profil</span>
                 </div>
               </li>
             )}
           </ul>
         </div>
-        <Link href="/" className="btn btn-ghost text-xl px-2 flex items-center">
-          <Image src="/logo-wide.png" alt="FrizNaKlik Logo" width={128} height={64} />
+        <Link href="/" className="btn btn-ghost text-xl px-1 sm:px-2 flex items-center" onClick={closeMobileMenu}>
+          <Image src="/logo-wide.png" alt="FrizNaKlik Logo" width={125} height={50} priority style={{width: 'auto', height: '50px'}} />
         </Link>
       </div>
+
       <div className="navbar-center hidden lg:flex">
-        <ul className="menu menu-horizontal px-1">
+        <ul className="menu menu-horizontal px-1 space-x-1">
           {navLinks.map((link) => (
-            <li key={link.href}><Link href={link.href} className="btn btn-ghost">{link.label}</Link></li>
+            <li key={link.href}>
+              <Link href={link.href} className={`btn btn-ghost font-medium ${pathname === link.href ? 'btn-active text-primary' : ''}`}>
+                {link.label}
+              </Link>
+            </li>
           ))}
         </ul>
       </div>
+
       <div className="navbar-end">
         {userId ? (
           <>
-            <ul className="menu menu-horizontal px-1 hidden lg:flex">
+            <ul className="menu menu-horizontal px-1 space-x-1 hidden lg:flex">
               {userNavLinks.map((link) => (
-                <li key={link.href}><Link href={link.href} className="btn btn-ghost">{link.label}</Link></li>
+                <li key={link.href}>
+                  <Link href={link.href} className={`btn btn-ghost font-medium ${pathname.startsWith(link.href) && link.href !== '/' ? 'btn-active text-primary' : ''}`}>
+                    {link.label}
+                  </Link>
+                </li>
               ))}
             </ul>
-            <div className="ml-2 hidden lg:flex">
-              <UserButton/>
+            <div className="ml-2 pl-1 border-l border-base-300/70 hidden lg:flex">
+              <UserButton
+                appearance={{
+                  elements: {
+                    userButtonAvatarBox: "w-9 h-9",
+                    userButtonPopoverCard: "bg-base-100 border border-base-300 shadow-lg",
+                  }
+                }}
+              />
             </div>
           </>
         ) : (
           <div className="hidden lg:flex items-center space-x-2">
-            <Link href="/sign-in" className="btn btn-ghost">Sign In</Link>
-            <Link href="/sign-up" className="btn btn-primary">Sign Up</Link>
+            <Link href="/sign-in" className="btn btn-ghost">Prijavi se</Link>
+            <Link href="/sign-up" className="btn btn-primary">Registruj se</Link>
           </div>
         )}
       </div>
-    </div>
+    </nav>
   );
 }
