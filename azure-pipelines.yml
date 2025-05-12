@@ -59,12 +59,6 @@ stages:
         PG_USER: $(POSTGRES_USER)
         PG_PASSWORD: $(POSTGRES_PASSWORD)
         PG_DB: $(POSTGRES_DB)
-        CLERK_SECRET: $(CLERK_SECRET_KEY)
-        CLERK_DOMAIN: $(NEXT_PUBLIC_CLERK_DOMAIN)
-        NEXT_PUBLIC_SITE_URL: $(NEXT_PUBLIC_SITE_URL)
-        CLERK_WEBHOOK: $(CLERK_WEBHOOK_SECRET)
-        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: $(NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY)
-        GOOGLE_API_KEY: $(GOOGLE_API_KEY)
         DATABASE_URL: postgresql://${PG_USER}:${PG_PASSWORD}@db:5432/${PG_DB}?schema=public
         # Map optional ports if they exist as pipeline variables
         # PG_PORT: $(POSTGRES_PORT) 
@@ -74,29 +68,26 @@ stages:
         script: |
           ENV_FILE_PATH="$(Agent.BuildDirectory)/s/.env"
           echo "Creating .env file at ${ENV_FILE_PATH}"
-          
-          # Ensure the file is empty before writing
           > "${ENV_FILE_PATH}" 
 
-          # Write variables to the .env file using the mapped environment variables
-          # Using double quotes "${VAR_NAME}" is safer in case values contain spaces
           echo "POSTGRES_USER=${PG_USER}" >> "${ENV_FILE_PATH}"
           echo "POSTGRES_PASSWORD=${PG_PASSWORD}" >> "${ENV_FILE_PATH}"
           echo "POSTGRES_DB=${PG_DB}" >> "${ENV_FILE_PATH}"
-          # Construct DATABASE_URL using the mapped variables
-          echo "DATABASE_URL=postgresql://${PG_USER}:${PG_PASSWORD}@db:5432/${PG_DB}?schema=public" >> "${ENV_FILE_PATH}"
+          echo "DATABASE_URL=${DATABASE_URL}" >> "${ENV_FILE_PATH}"
+
           # Clerk Runtime Variables
-          echo "CLERK_SECRET_KEY=${CLERK_SECRET}" >> "${ENV_FILE_PATH}"
-          echo "NEXT_PUBLIC_CLERK_DOMAIN=${CLERK_DOMAIN}" >> "${ENV_FILE_PATH}" 
-          # Other Runtime Variables
-          echo "NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL}" >> "${ENV_FILE_PATH}" 
-          echo "CLERK_WEBHOOK_SECRET=${CLERK_WEBHOOK}" >> "${ENV_FILE_PATH}"
-          echo "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}" >> "${ENV_FILE_PATH}"
-          echo "GOOGLE_API_KEY="$(GOOGLE_API_KEY) >> "${ENV_FILE_PATH}"
+          echo "CLERK_SECRET_KEY=$(CLERK_SECRET_KEY_SECRET)" >> "${ENV_FILE_PATH}"
+          echo "CLERK_WEBHOOK_SECRET=$(CLERK_WEBHOOK_SECRET)" >> "${ENV_FILE_PATH}"
+          echo "NEXT_PUBLIC_CLERK_DOMAIN=$(NEXT_PUBLIC_CLERK_DOMAIN)" >> "${ENV_FILE_PATH}" 
           echo "NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in" >> "${ENV_FILE_PATH}"
           echo "NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up" >> "${ENV_FILE_PATH}"
           echo "NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL=/dashboard" >> "${ENV_FILE_PATH}"
           echo "NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL=/dashboard" >> "${ENV_FILE_PATH}"
+          echo "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=$(NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY)" >> "${ENV_FILE_PATH}"
+
+          # Other Runtime Variables
+          echo "NEXT_PUBLIC_SITE_URL=$(NEXT_PUBLIC_SITE_URL)" >> "${ENV_FILE_PATH}" 
+          echo "GOOGLE_API_KEY="$(GOOGLE_API_KEY) >> "${ENV_FILE_PATH}"
 
           # Add optional ports if mapped in env:
           # if [ -n "${PG_PORT}" ]; then echo "POSTGRES_PORT=${PG_PORT}" >> "${ENV_FILE_PATH}"; fi
