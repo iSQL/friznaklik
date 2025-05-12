@@ -3,7 +3,7 @@
 import { UserButton, useAuth } from "@clerk/nextjs";
 import Link from "next/link";
 import Image from 'next/image';
-import { Menu as MenuIcon, LogIn, UserPlus, LayoutDashboard, Settings, MessageCircle, CalendarPlus, ListOrdered, X, ShieldCheck } from 'lucide-react';
+import { Menu as MenuIcon, LogIn, UserPlus, LayoutDashboard, MessageCircle, CalendarPlus, ListOrdered, X, ShieldCheck } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { usePathname } from 'next/navigation';
 
