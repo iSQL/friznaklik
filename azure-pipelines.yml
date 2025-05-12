@@ -7,6 +7,8 @@ variables:
   imageName: 'friznaklik' 
   dockerfilePath: '$(Build.SourcesDirectory)/Dockerfile'
   tag: '$(Build.BuildId)'
+  VM_PROJECT_PATH: '/var/www/friznaklik'
+
 
 stages:
 - stage: BuildAndPushToDockerHub
@@ -49,20 +51,128 @@ stages:
           $(tag)
           latest
         # No need for dockerfile, buildContext, or arguments for push
-- stage: DeployOnVM
-  dependsOn: BuildAndPushToDockerHub
-  condition: and(succeeded(), eq(variables['deploytoVM'], 'true'))
-  jobs:
-    - job: Trigger
-      steps:
-        - task: Bash@3
-          env:
-            AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
-          inputs:
-            targetType: 'inline'
-            script: |
-              curl -X POST \
-                -H "Authorization: Bearer $AZURE_DEVOPS_EXT_PAT" \
-                -H "Content-Type: application/json" \
-                https://dev.azure.com/ZabariServer/FrizNaKlik/_apis/pipelines/3/runs?api-version=7.1-preview.1 \
-                -d '{}'
+
+    - task: Bash@3
+      displayName: 'Create .env file on VM Agent'
+      # Map pipeline variables (including secrets) to environment variables for the script
+      env:
+        PG_USER: $(POSTGRES_USER)
+        PG_PASSWORD: $(POSTGRES_PASSWORD)
+        PG_DB: $(POSTGRES_DB)
+        CLERK_SECRET: $(CLERK_SECRET_KEY)
+        CLERK_DOMAIN: $(NEXT_PUBLIC_CLERK_DOMAIN)
+        NEXT_PUBLIC_SITE_URL: $(NEXT_PUBLIC_SITE_URL)
+        CLERK_WEBHOOK: $(CLERK_WEBHOOK_SECRET)
+        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: $(NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY)
+        GOOGLE_API_KEY: $(GOOGLE_API_KEY)
+        DATABASE_URL: postgresql://${PG_USER}:${PG_PASSWORD}@db:5432/${PG_DB}?schema=public
+        # Map optional ports if they exist as pipeline variables
+        # PG_PORT: $(POSTGRES_PORT) 
+        # APP_PORT: $(APP_PORT)
+      inputs:
+        targetType: 'inline'
+        script: |
+          ENV_FILE_PATH="$(Agent.BuildDirectory)/s/.env"
+          echo "Creating .env file at ${ENV_FILE_PATH}"
+          
+          # Ensure the file is empty before writing
+          > "${ENV_FILE_PATH}" 
+
+          # Write variables to the .env file using the mapped environment variables
+          # Using double quotes "${VAR_NAME}" is safer in case values contain spaces
+          echo "POSTGRES_USER=${PG_USER}" >> "${ENV_FILE_PATH}"
+          echo "POSTGRES_PASSWORD=${PG_PASSWORD}" >> "${ENV_FILE_PATH}"
+          echo "POSTGRES_DB=${PG_DB}" >> "${ENV_FILE_PATH}"
+          # Construct DATABASE_URL using the mapped variables
+          echo "DATABASE_URL=postgresql://${PG_USER}:${PG_PASSWORD}@db:5432/${PG_DB}?schema=public" >> "${ENV_FILE_PATH}"
+          # Clerk Runtime Variables
+          echo "CLERK_SECRET_KEY=${CLERK_SECRET}" >> "${ENV_FILE_PATH}"
+          echo "NEXT_PUBLIC_CLERK_DOMAIN=${CLERK_DOMAIN}" >> "${ENV_FILE_PATH}" 
+          # Other Runtime Variables
+          echo "NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL}" >> "${ENV_FILE_PATH}" 
+          echo "CLERK_WEBHOOK_SECRET=${CLERK_WEBHOOK}" >> "${ENV_FILE_PATH}"
+          echo "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}" >> "${ENV_FILE_PATH}"
+          echo "GOOGLE_API_KEY="$(GOOGLE_API_KEY) >> "${ENV_FILE_PATH}"
+          echo "NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in" >> "${ENV_FILE_PATH}"
+          echo "NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up" >> "${ENV_FILE_PATH}"
+          echo "NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL=/dashboard" >> "${ENV_FILE_PATH}"
+          echo "NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL=/dashboard" >> "${ENV_FILE_PATH}"
+
+          # Add optional ports if mapped in env:
+          # if [ -n "${PG_PORT}" ]; then echo "POSTGRES_PORT=${PG_PORT}" >> "${ENV_FILE_PATH}"; fi
+          # if [ -n "${APP_PORT}" ]; then echo "APP_PORT=${APP_PORT}" >> "${ENV_FILE_PATH}"; fi
+
+          echo ".env file created successfully."
+          echo "Contents (excluding secrets for security):" # Avoid printing secrets
+          # Use grep with -i for case-insensitivity, add KEY to exclusion
+          grep -ivE 'SECRET|PASSWORD|KEY' "${ENV_FILE_PATH}" || echo "No non-secret lines found."
+        failOnStderr: false # Fail if any command writes to stderr
+    - task: CopyFiles@2
+      displayName: 'Copy deployment files to target VM path'
+      inputs:
+        SourceFolder: '$(Agent.BuildDirectory)/s' # Where checkout and .env happened
+        Contents: |
+          docker-compose.yml
+          docker-compose.prod.yml
+          .env
+        TargetFolder: '$(VM_PROJECT_PATH)'
+        OverWrite: true
+        
+    - task: Bash@3
+      displayName: 'Pull latest images and restart containers'
+      inputs:
+        targetType: 'inline'
+        script: |
+          echo "Attempting to navigate to project directory: $(VM_PROJECT_PATH)"
+          cd $(VM_PROJECT_PATH) || { echo "Failed to change directory to $(VM_PROJECT_PATH)"; exit 1; }
+
+          echo "Current directory is: $(pwd)" # <-- DEBUG: Print current directory
+          echo "Listing files in current directory:" # <-- DEBUG: List files
+          ls -la # <-- DEBUG: Check if docker-compose.yml and .env are present
+
+          echo "Checking if docker-compose.yml exists..." # <-- DEBUG: Explicit check
+          if [ ! -f docker-compose.yml ]; then
+            echo "ERROR: docker-compose.yml not found in $(pwd)"
+            exit 1
+          fi
+          echo "Checking if .env exists..." # <-- DEBUG: Explicit check
+          if [ ! -f .env ]; then
+            echo "ERROR: .env not found in $(pwd)"
+            exit 1
+          fi
+          echo "Displaying .env contents (excluding secrets) from target directory:"
+          grep -ivE 'SECRET|PASSWORD|KEY' .env || echo "No non-secret lines found in target .env"
+
+
+          echo "Logging into Docker Hub (if needed for private images - requires Docker login setup on VM or service connection usage)"
+          # docker login -u $(dockerHubUsername) -p $(DockerHubPassword) # Example if needed
+
+          echo "Pulling latest images specified in docker-compose.yml..."
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml pull # Pulls images defined in docker-compose.yml, including your app image
+
+          echo "Stopping and removing old containers (if any)..."
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml down # Stops and removes containers, networks defined in the compose file
+
+          echo "Starting new containers in detached mode..."
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d # Starts containers based on the latest images and the .env file
+
+          echo "Deployment containers started."
+        failOnStderr: false
+
+    - task: Bash@3
+      displayName: 'Apply Database Migrations'
+      inputs:
+        targetType: 'inline'
+        script: |
+          echo "Waiting a few seconds for services to stabilize..."
+          sleep 10 
+          
+          echo "Navigating to project directory: $(VM_PROJECT_PATH)"
+          cd $(VM_PROJECT_PATH) || { echo "Failed to change directory to $(VM_PROJECT_PATH)"; exit 1; }
+          echo "Running Prisma migrations inside the app container..."
+          # Use docker-compose exec to run the command inside the 'app' service container
+          # The -T flag disables pseudo-tty allocation, often needed for non-interactive exec commands
+          #docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T app pnpm exec prisma migrate deploy
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T app npx prisma migrate deploy #Use npx until dockerfile is updated with working pnpm 
+          echo "Prisma migrations applied."
+        failOnStderr: false
