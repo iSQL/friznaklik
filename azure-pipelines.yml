@@ -56,23 +56,13 @@ stages:
       displayName: 'Create .env file on VM Agent'
       # Map pipeline variables (including secrets) to environment variables for the script
       env:
-        PG_USER: $(POSTGRES_USER)
-        PG_PASSWORD: $(POSTGRES_PASSWORD)
-        PG_DB: $(POSTGRES_DB)
-        DATABASE_URL: postgresql://${PG_USER}:${PG_PASSWORD}@db:5432/${PG_DB}?schema=public
-        # Map optional ports if they exist as pipeline variables
-        # PG_PORT: $(POSTGRES_PORT) 
-        # APP_PORT: $(APP_PORT)
+        DATABASE_URL: postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@db:5432/$$(POSTGRES_DB)?schema=public
       inputs:
         targetType: 'inline'
         script: |
           ENV_FILE_PATH="$(Agent.BuildDirectory)/s/.env"
           echo "Creating .env file at ${ENV_FILE_PATH}"
           > "${ENV_FILE_PATH}" 
-
-          echo "POSTGRES_USER=${PG_USER}" >> "${ENV_FILE_PATH}"
-          echo "POSTGRES_PASSWORD=${PG_PASSWORD}" >> "${ENV_FILE_PATH}"
-          echo "POSTGRES_DB=${PG_DB}" >> "${ENV_FILE_PATH}"
           echo "DATABASE_URL=${DATABASE_URL}" >> "${ENV_FILE_PATH}"
 
           # Clerk Runtime Variables
