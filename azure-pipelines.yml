@@ -39,7 +39,8 @@ stages:
           latest
         buildContext: '$(Build.SourcesDirectory)' # This should be the path argument Docker needs
         # --- Re-added arguments on a single line ---
-        arguments: '--build-arg NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=$(NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) --build-arg DATABASE_URL=postgresql://${PG_USER}:${PG_PASSWORD}@db:5432/${PG_DB}?schema=public --build-arg NEXT_PUBLIC_SITE_URL=$(NEXT_PUBLIC_SITE_URL)'
+        #arguments: '--build-arg NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=$(NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) --build-arg DATABASE_URL=postgresql://${PG_USER}:${PG_PASSWORD}@db:5432/${PG_DB}?schema=public --build-arg NEXT_PUBLIC_SITE_URL=$(NEXT_PUBLIC_SITE_URL)'
+        arguments: '--build-arg NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=$(NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) --build-arg NEXT_PUBLIC_CLERK_DOMAIN=$(NEXT_PUBLIC_CLERK_DOMAIN) --build-arg NEXT_PUBLIC_SITE_URL=$(NEXT_PUBLIC_SITE_URL)'
 
     - task: Docker@2
       displayName: 'Push image to Docker Hub' 
