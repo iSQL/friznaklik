@@ -62,7 +62,7 @@ stages:
 
     - script: |
         cd $(Build.SourcesDirectory)
-        echo "Building Next.js application with NODE_ENV=$(NODE_ENV)..."
+        echo "Building Next.js application with NODE_ENV=${NODE_ENV}..."
         pnpm build
       displayName: 'Build Next.js Application (pnpm build)'
       env:
