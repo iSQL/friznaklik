@@ -1,22 +1,12 @@
-# azure-pipelines-deploy-vm.yml
-name: FrizNaKlik - Compose app on agent VM # Using user-provided name
+
+name: FrizNaKlik - Deploy on agent
 
 trigger:
-  none # Typically triggered manually or after the build pipeline completes
+  none 
 
 variables:
-  # Define non-secret variables or link to a Variable Group
-  VM_PROJECT_PATH: '/var/www/friznaklik' # Using user-provided path - *** Verify agent user has permissions ***
-  # Define secrets in a Variable Group linked to this pipeline (mark them as secret)
-  # Ensure these variable names match your Variable Group in Azure DevOps
-  # Example Variable Group variable names:
-  # POSTGRES_USER_SECRET
-  # POSTGRES_PASSWORD_SECRET
-  # POSTGRES_DB_SECRET
-  # CLERK_SECRET_KEY_SECRET
-  # NEXT_PUBLIC_CLERK_DOMAIN_SECRET
-  # NEXT_PUBLIC_SITE_URL_RUNTIME 
-  # CLERK_WEBHOOK_SECRET_SECRET
+  VM_PROJECT_PATH: '/var/www/friznaklik' 
+  APP_NAME: 'friznaklik-app' 
 
 pool:
   name: 'Default' # *** IMPORTANT: Replace with the name of the pool containing your VM's agent ***
@@ -28,134 +18,98 @@ stages:
   - job: Deploy
     displayName: 'Deploy using Docker Compose'
     steps:
-    # Step 1: Checkout Repository (if docker-compose.yml is in the repo)
     - checkout: self
-      path: s # Checkout to the agent's source directory
-
-    # Step 2: Create the .env file securely from pipeline variables/secrets
+      path: s 
     - task: Bash@3
       displayName: 'Create .env file on VM Agent'
-      # Map pipeline variables (including secrets) to environment variables for the script
-      env:
-        PG_USER: $(POSTGRES_USER)
-        PG_PASSWORD: $(POSTGRES_PASSWORD)
-        PG_DB: $(POSTGRES_DB)
-        CLERK_SECRET: $(CLERK_SECRET_KEY)
-        CLERK_DOMAIN: $(NEXT_PUBLIC_CLERK_DOMAIN)
-        NEXT_PUBLIC_SITE_URL: $(NEXT_PUBLIC_SITE_URL)
-        CLERK_WEBHOOK: $(CLERK_WEBHOOK_SECRET)
-        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: $(NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY)
-        GOOGLE_API_KEY: $(GOOGLE_API_KEY)
-        DATABASE_URL: postgresql://${PG_USER}:${PG_PASSWORD}@db:5432/${PG_DB}?schema=public
-        # Map optional ports if they exist as pipeline variables
-        # PG_PORT: $(POSTGRES_PORT) 
-        # APP_PORT: $(APP_PORT)
       inputs:
         targetType: 'inline'
         script: |
           ENV_FILE_PATH="$(Agent.BuildDirectory)/s/.env"
           echo "Creating .env file at ${ENV_FILE_PATH}"
-          
           # Ensure the file is empty before writing
           > "${ENV_FILE_PATH}" 
-
-          # Write variables to the .env file using the mapped environment variables
-          # Using double quotes "${VAR_NAME}" is safer in case values contain spaces
-          echo "POSTGRES_USER=${PG_USER}" >> "${ENV_FILE_PATH}"
-          echo "POSTGRES_PASSWORD=${PG_PASSWORD}" >> "${ENV_FILE_PATH}"
-          echo "POSTGRES_DB=${PG_DB}" >> "${ENV_FILE_PATH}"
-          # Construct DATABASE_URL using the mapped variables
-          echo "DATABASE_URL=postgresql://${PG_USER}:${PG_PASSWORD}@db:5432/${PG_DB}?schema=public" >> "${ENV_FILE_PATH}"
+          echo "POSTGRES_USER=$(POSTGRES_USER)" >> "${ENV_FILE_PATH}"
+          echo "POSTGRES_PASSWORD=$(POSTGRES_PASSWORD)" >> "${ENV_FILE_PATH}"
+          echo "POSTGRES_DB=$(POSTGRES_DB)" >> "${ENV_FILE_PATH}"
+          echo "DATABASE_URL=postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:5432/$(POSTGRES_DB)?schema=public" >> "${ENV_FILE_PATH}"
+          
           # Clerk Runtime Variables
-          echo "CLERK_SECRET_KEY=${CLERK_SECRET}" >> "${ENV_FILE_PATH}"
-          echo "NEXT_PUBLIC_CLERK_DOMAIN=${CLERK_DOMAIN}" >> "${ENV_FILE_PATH}" 
+          echo "CLERK_SECRET_KEY=$(CLERK_SECRET_KEY)" >> "${ENV_FILE_PATH}"
+          echo "CLERK_WEBHOOK_SECRET=$(CLERK_WEBHOOK_SECRET)" >> "${ENV_FILE_PATH}"
+          echo "NEXT_PUBLIC_CLERK_DOMAIN=$(NEXT_PUBLIC_CLERK_DOMAIN)" >> "${ENV_FILE_PATH}" 
+          echo "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=$(NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY)" >> "${ENV_FILE_PATH}"
+          echo "NEXT_PUBLIC_SITE_URL= $(NEXT_PUBLIC_SITE_URL)" >> "${ENV_FILE_PATH}" 
+
           # Other Runtime Variables
-          echo "NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL}" >> "${ENV_FILE_PATH}" 
-          echo "CLERK_WEBHOOK_SECRET=${CLERK_WEBHOOK}" >> "${ENV_FILE_PATH}"
-          echo "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}" >> "${ENV_FILE_PATH}"
           echo "GOOGLE_API_KEY="$(GOOGLE_API_KEY) >> "${ENV_FILE_PATH}"
 
-          # Add optional ports if mapped in env:
-          # if [ -n "${PG_PORT}" ]; then echo "POSTGRES_PORT=${PG_PORT}" >> "${ENV_FILE_PATH}"; fi
-          # if [ -n "${APP_PORT}" ]; then echo "APP_PORT=${APP_PORT}" >> "${ENV_FILE_PATH}"; fi
-
           echo ".env file created successfully."
-          echo "Contents (excluding secrets for security):" # Avoid printing secrets
-          # Use grep with -i for case-insensitivity, add KEY to exclusion
+          echo "Contents (excluding secrets for security):" 
           grep -ivE 'SECRET|PASSWORD|KEY' "${ENV_FILE_PATH}" || echo "No non-secret lines found."
-        failOnStderr: false # Fail if any command writes to stderr
+        failOnStderr: false 
 
+    - script: |
+        cd $(Build.SourcesDirectory)
+        pnpm install --frozen-lockfile
+      displayName: 'Install Dependencies (pnpm install)'
 
-    # Step 3: Copy project files (docker-compose.yml, .env) to the target VM path
-    # This assumes the agent user has write permissions to VM_PROJECT_PATH
+    - script: |
+        cd $(Build.SourcesDirectory)
+        pnpm exec prisma generate
+      displayName: 'Prisma Generate Client'
+
+    - script: |
+        cd $(Build.SourcesDirectory)
+        echo "Building Next.js application with NODE_ENV=$(NODE_ENV)..."
+        pnpm build
+      displayName: 'Build Next.js Application (pnpm build)'
+      env:
+        NODE_ENV: 'production'
     - task: CopyFiles@2
-      displayName: 'Copy deployment files to target VM path'
+      displayName: 'Prepare Artifact: Copy Files to Staging Directory'
       inputs:
-        SourceFolder: '$(Agent.BuildDirectory)/s' # Where checkout and .env happened
+        SourceFolder: '$(Build.SourcesDirectory)'
         Contents: |
-          docker-compose.yml
-          docker-compose.prod.yml
+          .next/**
+          public/**
+          node_modules/**
+          package.json
+          pnpm-lock.yaml
+          next.config.ts
           .env
+          prisma/schema.prisma
         TargetFolder: '$(VM_PROJECT_PATH)'
+        CleanTargetFolder: true
         OverWrite: true
-
-    # Step 4: Run Docker Compose commands on the VM
     - task: Bash@3
-      displayName: 'Pull latest images and restart containers'
+      displayName: 'Run Prisma Database Migrations on VM'
       inputs:
         targetType: 'inline'
         script: |
-          echo "Attempting to navigate to project directory: $(VM_PROJECT_PATH)"
-          cd $(VM_PROJECT_PATH) || { echo "Failed to change directory to $(VM_PROJECT_PATH)"; exit 1; }
-
-          echo "Current directory is: $(pwd)" # <-- DEBUG: Print current directory
-          echo "Listing files in current directory:" # <-- DEBUG: List files
-          ls -la # <-- DEBUG: Check if docker-compose.yml and .env are present
-
-          echo "Checking if docker-compose.yml exists..." # <-- DEBUG: Explicit check
-          if [ ! -f docker-compose.yml ]; then
-            echo "ERROR: docker-compose.yml not found in $(pwd)"
-            exit 1
-          fi
-          echo "Checking if .env exists..." # <-- DEBUG: Explicit check
-          if [ ! -f .env ]; then
-            echo "ERROR: .env not found in $(pwd)"
-            exit 1
-          fi
-          echo "Displaying .env contents (excluding secrets) from target directory:"
-          grep -ivE 'SECRET|PASSWORD|KEY' .env || echo "No non-secret lines found in target .env"
-
-
-          echo "Logging into Docker Hub (if needed for private images - requires Docker login setup on VM or service connection usage)"
-          # docker login -u $(dockerHubUsername) -p $(DockerHubPassword) # Example if needed
-
-          echo "Pulling latest images specified in docker-compose.yml..."
-          docker compose -f docker-compose.yml -f docker-compose.prod.yml pull # Pulls images defined in docker-compose.yml, including your app image
-
-          echo "Stopping and removing old containers (if any)..."
-          docker compose -f docker-compose.yml -f docker-compose.prod.yml down # Stops and removes containers, networks defined in the compose file
-
-          echo "Starting new containers in detached mode..."
-          docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d # Starts containers based on the latest images and the .env file
-
-          echo "Deployment containers started."
-        failOnStderr: false
-
-    # Step 5: Run Prisma Migrations (after containers are up)
-    - task: Bash@3
-      displayName: 'Apply Database Migrations'
-      inputs:
-        targetType: 'inline'
-        script: |
-          echo "Waiting a few seconds for services to stabilize..."
-          sleep 10 
-          
-          echo "Navigating to project directory: $(VM_PROJECT_PATH)"
-          cd $(VM_PROJECT_PATH) || { echo "Failed to change directory to $(VM_PROJECT_PATH)"; exit 1; }
-          echo "Running Prisma migrations inside the app container..."
-          # Use docker-compose exec to run the command inside the 'app' service container
-          # The -T flag disables pseudo-tty allocation, often needed for non-interactive exec commands
-          #docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T app pnpm exec prisma migrate deploy
-          docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T app npx prisma migrate deploy #Use npx until dockerfile is updated with working pnpm 
+          echo "Running Prisma migrations using DATABASE_URL from .env file..."
+          pnpm exec prisma migrate deploy
           echo "Prisma migrations applied."
+        failOnStderr: true
+        workingDirectory: '$(VM_PROJECT_PATH)'
+
+    - task: Bash@3
+      displayName: 'Start/Restart Application with pm2'
+      inputs:
+        targetType: 'inline'
+        script: |
+          echo "Managing application with pm2: $(APP_NAME)"
+          
+          pm2 describe $(APP_NAME) > /dev/null 2>&1
+          if [ $? -eq 0 ]; then
+            echo "Application '$(APP_NAME)' is already running. Restarting..."
+            pm2 restart $(APP_NAME) --update-env
+          else
+            echo "Application '$(APP_NAME)' not found by pm2. Starting new process..."
+            pm2 start pnpm --name "$(APP_NAME)" --interpreter none -- start
+          fi
+          pm2 save
+          echo "Application $(APP_NAME) started/restarted successfully."
+          pm2 list
         failOnStderr: false
+        workingDirectory: '$(VM_PROJECT_PATH)'
