@@ -50,11 +50,10 @@ stages:
           echo "Contents (excluding secrets for security):" 
           grep -ivE 'SECRET|PASSWORD|KEY' "${ENV_FILE_PATH}" || echo "No non-secret lines found."
         failOnStderr: false 
-
-    - script: |
-        cd $(Build.SourcesDirectory)
-        pnpm install --frozen-lockfile
-      displayName: 'Install Dependencies (pnpm install)'
+    - task: Bash@3
+      inputs:
+        targetType: 'inline'
+        script: 'pnpm install --frozen-lockfile'
 
     - script: |
         cd $(Build.SourcesDirectory)
