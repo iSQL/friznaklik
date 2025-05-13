@@ -9,7 +9,7 @@ variables:
   APP_NAME: 'friznaklik-app' 
 
 pool:
-  name: 'Default' # *** IMPORTANT: Replace with the name of the pool containing your VM's agent ***
+  name: 'Default'
 
 stages:
 - stage: DeployToVM
@@ -51,6 +51,7 @@ stages:
           grep -ivE 'SECRET|PASSWORD|KEY' "${ENV_FILE_PATH}" || echo "No non-secret lines found."
         failOnStderr: false 
     - task: Bash@3
+      displayName: 'Install dependencies'
       inputs:
         targetType: 'inline'
         script: 'pnpm install --frozen-lockfile'
@@ -90,7 +91,7 @@ stages:
         targetType: 'inline'
         script: |
           echo "Installing production dependencies in $(VM_PROJECT_PATH)..."
-          pnpm install --prod --frozen-lockfile # Use --prod to skip devDependencies
+          pnpm install --prod --frozen-lockfile # Used --prod to skip devDependencies
           echo "Production dependencies installed."
         failOnStderr: false
         workingDirectory: '$(VM_PROJECT_PATH)'
