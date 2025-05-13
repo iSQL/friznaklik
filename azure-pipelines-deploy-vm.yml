@@ -100,7 +100,7 @@ stages:
         targetType: 'inline'
         script: |
           echo "Running Prisma Generate in deployment directory after fresh install..."
-          npx exec prisma generate
+          npx prisma generate
           echo "Prisma Client generated for deployment environment."
         failOnStderr: true
         workingDirectory: '$(VM_PROJECT_PATH)'
@@ -111,7 +111,7 @@ stages:
         targetType: 'inline'
         script: |
           echo "Running Prisma migrations using DATABASE_URL from .env file..."
-          npx exec prisma migrate deploy
+          npx prisma migrate deploy
           echo "Prisma migrations applied."
         failOnStderr: true
         workingDirectory: '$(VM_PROJECT_PATH)'
