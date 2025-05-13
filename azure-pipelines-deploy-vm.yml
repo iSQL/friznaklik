@@ -57,7 +57,7 @@ stages:
 
     - script: |
         cd $(Build.SourcesDirectory)
-        npx exec prisma generate
+        pnpm exec prisma generate
       displayName: 'Prisma Generate Client'
 
     - script: |
