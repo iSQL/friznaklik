@@ -92,7 +92,7 @@ stages:
           echo "Installing production dependencies in $(VM_PROJECT_PATH)..."
           pnpm install --prod --frozen-lockfile # Use --prod to skip devDependencies
           echo "Production dependencies installed."
-        failOnStderr: true
+        failOnStderr: false
         workingDirectory: '$(VM_PROJECT_PATH)'
     - task: Bash@3
       displayName: 'Prisma Generate Client on VM (Post-Install)'
@@ -102,7 +102,7 @@ stages:
           echo "Running Prisma Generate in deployment directory after fresh install..."
           npx prisma generate
           echo "Prisma Client generated for deployment environment."
-        failOnStderr: true
+        failOnStderr: false
         workingDirectory: '$(VM_PROJECT_PATH)'
          
     - task: Bash@3
