@@ -57,7 +57,7 @@ stages:
 
     - script: |
         cd $(Build.SourcesDirectory)
-        pnpm exec prisma generate
+        npx exec prisma generate
       displayName: 'Prisma Generate Client'
 
     - script: |
@@ -100,7 +100,7 @@ stages:
         targetType: 'inline'
         script: |
           echo "Running Prisma Generate in deployment directory after fresh install..."
-          pnpm exec prisma generate
+          npx exec prisma generate
           echo "Prisma Client generated for deployment environment."
         failOnStderr: true
         workingDirectory: '$(VM_PROJECT_PATH)'
@@ -111,7 +111,7 @@ stages:
         targetType: 'inline'
         script: |
           echo "Running Prisma migrations using DATABASE_URL from .env file..."
-          pnpm exec prisma migrate deploy
+          npx exec prisma migrate deploy
           echo "Prisma migrations applied."
         failOnStderr: true
         workingDirectory: '$(VM_PROJECT_PATH)'
