@@ -42,6 +42,8 @@ stages:
           echo "NEXT_PUBLIC_SITE_URL= $(NEXT_PUBLIC_SITE_URL)" >> "${ENV_FILE_PATH}" 
 
           # Other Runtime Variables
+          echo "NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in" >> "${ENV_FILE_PATH}"
+          echo "NEXT_PUBLIC_CLERK_SIGN_UP_URL==/sign-up" >> "${ENV_FILE_PATH}"
           echo "GOOGLE_API_KEY="$(GOOGLE_API_KEY) >> "${ENV_FILE_PATH}"
 
           echo ".env file created successfully."
