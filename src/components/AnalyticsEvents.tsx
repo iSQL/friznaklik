@@ -21,7 +21,7 @@ export function AnalyticsEvents() {
       window.gtag('config', GA_MEASUREMENT_ID, {
         page_path: url,
       });
-      console.log(`GA page_view: ${url}`);
+      //console.log(`GA page_view: ${url}`);
     }
   }, [pathname, searchParams]); 
 
