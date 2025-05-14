@@ -29,6 +29,9 @@ importers:
       react:
         specifier: ^19.1.0
         version: 19.1.0
+      react-cookie-consent:
+        specifier: ^9.0.0
+        version: 9.0.0(react@19.1.0)
       react-datepicker:
         specifier: ^8.3.0
         version: 8.3.0(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
@@ -1638,6 +1641,9 @@ packages:
     resolution: {integrity: sha512-rg9zJN+G4n2nfJl5MW3BMygZX56zKPNVEYYqq7adpmMh4Jn2QNEwhvQlFy6jPVdcod7txZtKHWnyZiA3a0zP7A==}
     hasBin: true
 
+  js-cookie@2.2.1:
+    resolution: {integrity: sha512-HvdH2LzI/EAZcUwA8+0nKNtWHqS+ZmijLA30RwZA0bo7ToCckjK5MkGhjED9KoRcXO6BaGI3I9UIzSA1FKFPOQ==}
+
   js-cookie@3.0.5:
     resolution: {integrity: sha512-cEiJEAEoIbWfCZYKWhVwFuvPX1gETRYPw6LlaTKoxD3s2AkXzkCjnp6h0V77ozyqj0jakteJ4YqDJT830+lVGw==}
     engines: {node: '>=14'}
@@ -2021,6 +2027,12 @@ packages:
   raw-body@3.0.0:
     resolution: {integrity: sha512-RmkhL8CAyCRPXCE28MMH0z2PNWQBNk2Q09ZdxM9IOOXwxwZbN+qbWaatPkdkWIKL2ZVDImrN/pK5HTRz2PcS4g==}
     engines: {node: '>= 0.8'}
+
+  react-cookie-consent@9.0.0:
+    resolution: {integrity: sha512-Blyj+m+Zz7SFHYqT18p16EANgnSg2sIyU6Yp3vk83AnOnSW7qnehPkUe4+8+qxztJrNmCH5GP+VHsWzAKVOoZA==}
+    engines: {node: '>=10'}
+    peerDependencies:
+      react: '>=16'
 
   react-datepicker@8.3.0:
     resolution: {integrity: sha512-DhfrIJnTPJTUVRtXU7c7zooug40rD6q+Fc8UTCt19dYEotLpDQgTN98MfocY6Rc4S99oOFFEoxyanOM/TKauuw==}
@@ -4103,6 +4115,8 @@ snapshots:
 
   jiti@2.4.2: {}
 
+  js-cookie@2.2.1: {}
+
   js-cookie@3.0.5: {}
 
   js-tokens@4.0.0: {}
@@ -4443,6 +4457,11 @@ snapshots:
       http-errors: 2.0.0
       iconv-lite: 0.6.3
       unpipe: 1.0.0
+
+  react-cookie-consent@9.0.0(react@19.1.0):
+    dependencies:
+      js-cookie: 2.2.1
+      react: 19.1.0
 
   react-datepicker@8.3.0(react-dom@19.1.0(react@19.1.0))(react@19.1.0):
     dependencies:
