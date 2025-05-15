@@ -2,7 +2,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  //output: 'standalone',
+  //output: 'standalone', // Uncomment if you want to build a docker image
   eslint: {
     ignoreDuringBuilds: false,
   }

@@ -64,6 +64,19 @@ export async function PUT(
   }
 
   try {
+    const ownedVendor = await prisma.vendor.findUnique({
+      where: { ownerId: userId },
+      select: { id: true }
+    });
+        if (!ownedVendor) {
+      console.error(`PUT /api/admin/appointments/${appointmentId}/duration: Admin user ${userId} does not own a vendor.`);
+      return new NextResponse(
+        JSON.stringify({ error: 'Forbidden: Admin not associated with a vendor.' }),
+        { status: 403, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+    const DEFAULT_VENDOR_ID = ownedVendor.id;
+
     const appointment = await prisma.appointment.findUnique({
       where: { id: appointmentId },
     });
@@ -73,6 +86,14 @@ export async function PUT(
       return new NextResponse(
         JSON.stringify({ error: 'Appointment not found' }),
         { status: 404, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+
+      if (appointment.vendorId !== DEFAULT_VENDOR_ID) {
+      console.warn(`PUT /api/admin/appointments/${appointmentId}/duration: Admin ${userId} attempting to modify appointment not belonging to their vendor ${DEFAULT_VENDOR_ID}.`);
+      return new NextResponse(
+        JSON.stringify({ error: "Appointment not found for this vendor's scope" }),
+        { status: 404, headers: { 'Content-Type': 'application/json' } } // Treat as not found for this admin
       );
     }
 

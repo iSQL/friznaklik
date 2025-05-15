@@ -1,5 +1,3 @@
-// src/lib/authUtils.ts
-
 import prisma from '@/lib/prisma';
 import { clerkClient, type User as ClerkUser } from '@clerk/nextjs/server';
 import type { User as PrismaUser } from '@prisma/client';

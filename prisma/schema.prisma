@@ -6,7 +6,7 @@
 
 generator client {
   provider = "prisma-client-js"
-  //output = "../../node_modules/.prisma/client"
+  output = "../../node_modules/.prisma/client"
 }
 
 datasource db {
@@ -14,52 +14,77 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model Vendor {
+              id              String        @id @default(cuid())
+              name            String
+              description     String?
+              ownerId         String        @unique // A user can own only one vendor initially
+              owner           User          @relation("VendorOwner", fields: [ownerId], references: [id])
+              address         String?
+              phoneNumber     String?
+              operatingHours  Json?         // e.g., {"monday": {"open": "09:00", "close": "18:00"}, ...}
+
+              services        Service[]     // Relation to services offered by this vendor
+              //workers         Worker[]      // Relation to workers at this vendor (defined in Phase 2)
+              appointments    Appointment[] // Relation to appointments for this vendor
+
+              createdAt       DateTime      @default(now())
+              updatedAt       DateTime      @updatedAt
+            }
+
 model User {
-  id            String          @id @default(cuid()) // Clerk user ID
-  clerkId       String          @unique // Store Clerk's user ID
-  name          String?
-  email         String          @unique
-  role          String          @default("user") // 'user', 'admin'
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
-  appointments  Appointment[]
-  chatSessions  ChatSession[]
-}
+              id          String    @id @default(cuid())
+              clerkId     String    @unique
+              name        String?
+              email       String    @unique
+              role        String    @default("user") // Will be refined: 'user', 'vendor_owner', 'superadmin'
+              createdAt   DateTime  @default(now())
+              updatedAt   DateTime  @updatedAt
+
+              appointments Appointment[]
+              chatSessions ChatSession[]
+              ownedVendor  Vendor?     @relation("VendorOwner")
+              // Add relation for worker if a user can be a worker (Phase 2)
+              // workerProfile Worker? @relation("WorkerUser")
+            }
 
 model Service {
-  id          String        @id @default(cuid())
-  name        String
-  description String?
-  duration    Int           // Duration in minutes
-  price       Float
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
-  appointments Appointment[]
-}
+              id            String        @id @default(cuid())
+              name          String
+              description   String?
+              duration      Int
+              price         Float
+              createdAt     DateTime      @default(now())
+              updatedAt     DateTime      @updatedAt
 
-model Appointment {
-  id          String    @id @default(cuid())
-  userId      String
-  user        User      @relation(fields: [userId], references: [id])
-  serviceId   String
-  service     Service   @relation(fields: [serviceId], references: [id])
-  startTime   DateTime
-  endTime     DateTime
-  status      String    @default("pending") // 'pending', 'approved', 'rejected', 'cancelled', 'completed'
-  adminNotes  String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-}
+              vendorId      String        // New: Foreign Key
+              vendor        Vendor        @relation(fields: [vendorId], references: [id])
 
-// Optional: For managing specific stylist availability if applicable
-// model AvailabilitySlot {
-//   id          String   @id @default(cuid())
-//   dayOfWeek   Int      // 0 for Sunday, 1 for Monday, etc.
-//   startTime   String   // e.g., "09:00"
-//   endTime     String   // e.g., "17:00"
-//   stylistId   String?  // Link to User if tracking stylist availability
-//   stylist     User?    @relation("StylistAvailability", fields: [stylistId], references: [id])
-// }
+              appointments  Appointment[]
+              // @@index([vendorId]) // Optional: Add index if you query services by vendor often
+            }
+
+ model Appointment {
+              id            String    @id @default(cuid())
+              userId        String
+              user          User      @relation(fields: [userId], references: [id])
+              serviceId     String
+              service       Service   @relation(fields: [serviceId], references: [id])
+              startTime     DateTime
+              endTime       DateTime
+              status        String    @default("pending") // e.g., pending, approved, rejected, cancelled, completed
+              adminNotes    String?
+              createdAt     DateTime  @default(now())
+              updatedAt     DateTime  @updatedAt
+
+              vendorId      String    // New: Foreign Key
+              vendor        Vendor    @relation(fields: [vendorId], references: [id])
+
+              // workerId      String?   // To be added in Phase 2
+              // worker        Worker?   // To be added in Phase 2 @relation(fields: [workerId], references: [id])
+              // @@index([vendorId]) // Optional
+              // @@index([workerId]) // Optional (Phase 2)
+ }
 
 model ChatSession {
   id            String         @id @default(cuid())
