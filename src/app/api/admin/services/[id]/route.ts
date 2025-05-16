@@ -1,179 +1,190 @@
-import { auth } from '@clerk/nextjs/server'; 
-import { NextResponse } from 'next/server';
-import prisma from '@/lib/prisma'; 
-import { isAdminUser } from '@/lib/authUtils'; 
+import { NextRequest, NextResponse } from 'next/server';
+import prisma from '@/lib/prisma';
+import {
+  getCurrentUser,
+  withRoleProtection,
+  AuthenticatedUser,
+} from '@/lib/authUtils';
+import { UserRole, Prisma } from '@prisma/client'; 
+import { z, ZodError } from 'zod'; 
 
-//const DEFAULT_VENDOR_ID = "cmao5ay1d0001hm2kji2qrltf"
-function getServiceIdFromUrl(requestUrl: string): string | undefined {
-  try {
-     const url = new URL(requestUrl);
-     return url.pathname.split('/').pop();
- } catch (urlError) {
-     console.error('Error parsing request URL:', urlError);
-     return undefined;
- }
+const serviceUpdateSchema = z.object({
+  name: z.string().min(1, 'Naziv usluge ne može biti prazan').optional(),
+  description: z.string().optional().nullable(),
+  price: z.number().positive('Cena mora biti pozitivan broj').optional(),
+  duration: z.number().int().positive('Trajanje mora biti pozitivan ceo broj (u minutima)').optional(),
+});
+
+interface RouteHandlerContext {
+  params: Promise<{
+    id: string; 
+  }>;
 }
 
-export async function GET(request: Request) {
-  const { userId } = await auth();
-  if (!userId) {
-    return new NextResponse('Unauthorized', { status: 401 });
-  }
-  const serviceId = getServiceIdFromUrl(request.url);
-  if (!serviceId) {
-      return new NextResponse('Bad Request: Invalid Service ID in URL', { status: 400 });
-  }
-  const isAdmin = await isAdminUser(userId);
-  if (!isAdmin) {
-    return new NextResponse('Forbidden', { status: 403 });
-  }
-
-   const ownedVendor = await prisma.vendor.findUnique({
-    where: { ownerId: userId },
-    select: { id: true }
-  });
-  if (!ownedVendor) {
-    console.error(`Admin user ${userId} does not own a vendor.`);
-    return new NextResponse('Forbidden: Admin not associated with a default vendor.', { status: 403 });
-  }
-  const DEFAULT_VENDOR_ID = ownedVendor.id;
-
-
+/**
+ * Handles GET requests to fetch a specific service by its ID.
+ * SUPER_ADMIN can fetch any service.
+ * VENDOR_OWNER can only fetch services belonging to their vendor.
+ */
+async function GET_handler(req: NextRequest, context: RouteHandlerContext) {
   try {
+    const user: AuthenticatedUser | null = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ message: 'Korisnik nije pronađen nakon autentifikacije' }, { status: 404 });
+    }
+
+    const routeParams = await context.params; 
+    const { id: serviceId } = routeParams;
+
+    if (!serviceId) {
+      return NextResponse.json({ message: 'ID usluge je obavezan' }, { status: 400 });
+    }
+
     const service = await prisma.service.findUnique({
       where: { id: serviceId },
+      include: {
+        vendor: { select: { id: true, name: true }}
+      }
     });
 
     if (!service) {
-      return new NextResponse('Service not found', { status: 404 });
+      return NextResponse.json({ message: 'Usluga nije pronađena' }, { status: 404 });
     }
 
-    if (service.vendorId !== DEFAULT_VENDOR_ID) {
-      console.warn(`Admin ${userId} attempting to access service ${serviceId} not belonging to their vendor ${DEFAULT_VENDOR_ID}.`);
-      return new NextResponse('Service not found for this vendor', { status: 404 });
+    if (user.role === UserRole.VENDOR_OWNER) {
+      if (!user.ownedVendorId || service.vendorId !== user.ownedVendorId) {
+        return NextResponse.json({ message: 'Zabranjeno: Nemate pristup ovoj usluzi' }, { status: 403 });
+      }
     }
 
-    return NextResponse.json(service, { status: 200 });
-  } catch (error) {
-    console.error(`Error fetching service with ID ${serviceId}:`, error);
-    return new NextResponse('Internal Server Error', { status: 500 });
+    return NextResponse.json(service);
+  } catch (error: unknown) {
+    const routeParams = await context.params; 
+    console.error(`Greška pri dobavljanju usluge ${routeParams.id}:`, error);
+    return NextResponse.json({ message: 'Interna greška servera prilikom dobavljanja usluge' }, { status: 500 });
   }
 }
 
-export async function PUT(request: Request) {
-  const { userId } = await auth();
-  if (!userId) {
-    return new NextResponse('Unauthorized', { status: 401 });
-  }
-
-  const serviceId = getServiceIdFromUrl(request.url);
-   if (!serviceId) {
-      return new NextResponse('Bad Request: Invalid Service ID in URL', { status: 400 });
-  }
-  const isAdmin = await isAdminUser(userId);
-  if (!isAdmin) {
-    return new NextResponse('Forbidden', { status: 403 });
-  }
-
-   const ownedVendor = await prisma.vendor.findUnique({
-    where: { ownerId: userId },
-    select: { id: true }
-  });
-  if (!ownedVendor) {
-    console.error(`Admin user ${userId} does not own a vendor.`);
-    return new NextResponse('Forbidden: Admin not associated with a default vendor.', { status: 403 });
-  }
-  const DEFAULT_VENDOR_ID = ownedVendor.id;
-
+/**
+ * Handles PUT requests to update an existing service.
+ * SUPER_ADMIN can update any service.
+ * VENDOR_OWNER can only update services belonging to their vendor.
+ */
+async function PUT_handler(req: NextRequest, context: RouteHandlerContext) {
   try {
+    const user: AuthenticatedUser | null = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ message: 'Korisnik nije pronađen nakon autentifikacije' }, { status: 404 });
+    }
+
+    const routeParams = await context.params; // Await params
+    const { id: serviceId } = routeParams;
+
+    if (!serviceId) {
+      return NextResponse.json({ message: 'ID usluge je obavezan' }, { status: 400 });
+    }
+
     const existingService = await prisma.service.findUnique({
-      where: { id: serviceId }
+      where: { id: serviceId },
     });
 
-    if (!existingService || existingService.vendorId !== DEFAULT_VENDOR_ID) {
-      return new NextResponse('Service not found for this vendor', { status: 404 });
+    if (!existingService) {
+      return NextResponse.json({ message: 'Usluga nije pronađena' }, { status: 404 });
     }
 
-    const body = await request.json();
-    const {name, description, duration, price } = body;
-
-     if (!name || typeof duration !== 'number' || typeof price !== 'number') {
-        console.log(`PUT /api/admin/services/${serviceId}: Invalid request body`);
-        return new NextResponse('Invalid request body', { status: 400 });
+    if (user.role === UserRole.VENDOR_OWNER) {
+      if (!user.ownedVendorId || existingService.vendorId !== user.ownedVendorId) {
+        return NextResponse.json({ message: 'Zabranjeno: Ne možete ažurirati ovu uslugu' }, { status: 403 });
+      }
     }
 
+    const body = await req.json();
+    const parseResult = serviceUpdateSchema.safeParse(body);
+
+    if (!parseResult.success) {
+      return NextResponse.json({ message: 'Nevalidan unos', errors: parseResult.error.flatten().fieldErrors }, { status: 400 });
+    }
+
+    if (Object.keys(parseResult.data).length === 0) {
+        return NextResponse.json({ message: 'Nema podataka za ažuriranje' }, { status: 400 });
+    }
+    
     const updatedService = await prisma.service.update({
       where: { id: serviceId },
-      data: {
-        // vendorId: DEFAULT_VENDOR_ID,
-        name,
-        description,
-        duration,
-        price,
-      },
+      data: parseResult.data,
     });
 
-  return NextResponse.json(updatedService, { status: 200 });
-  } catch (error) {
-    console.error(`Error updating service with ID ${serviceId}:`, error);
-     if (error instanceof Error && error.message.includes('Record to update not found')) {
-         return new NextResponse('Service not found', { status: 404 });
-     }
-    return new NextResponse('Internal Server Error', { status: 500 });
+    return NextResponse.json(updatedService);
+  } catch (error: unknown) {
+    const routeParams = await context.params; 
+    console.error(`Greška pri ažuriranju usluge ${routeParams.id}:`, error);
+    if (error instanceof ZodError) {
+        return NextResponse.json({ message: 'Nevalidan unos', errors: error.flatten().fieldErrors }, { status: 400 });
+    }
+    return NextResponse.json({ message: 'Interna greška servera prilikom ažuriranja usluge' }, { status: 500 });
   }
 }
 
-export async function DELETE(request: Request) {
-    const { userId } = await auth();
-    if (!userId) {
-       return new NextResponse('Unauthorized', { status: 401 });
+/**
+ * Handles DELETE requests to remove a service.
+ * SUPER_ADMIN can delete any service.
+ * VENDOR_OWNER can only delete services belonging to their vendor.
+ */
+async function DELETE_handler(req: NextRequest, context: RouteHandlerContext) {
+  try {
+    const user: AuthenticatedUser | null = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ message: 'Korisnik nije pronađen nakon autentifikacije' }, { status: 404 });
     }
-    const serviceId = getServiceIdFromUrl(request.url);
+
+    const routeParams = await context.params; 
+    const { id: serviceId } = routeParams;
+
     if (!serviceId) {
-         return new NextResponse('Bad Request: Invalid Service ID in URL', { status: 400 });
+      return NextResponse.json({ message: 'ID usluge je obavezan' }, { status: 400 });
     }
-    const isAdmin = await isAdminUser(userId);
-    if (!isAdmin) {
-       return new NextResponse('Forbidden', { status: 403 });
-    }
-    const ownedVendor = await prisma.vendor.findUnique({
-      where: { ownerId: userId },
-      select: { id: true }
+
+    const serviceToDelete = await prisma.service.findUnique({
+      where: { id: serviceId },
     });
 
-    if (!ownedVendor) {
-      console.error(`Admin user ${userId} does not own a vendor for DELETE operation.`);
-      return new NextResponse('Forbidden: Admin not associated with a default vendor.', { status: 403 });
+    if (!serviceToDelete) {
+      return NextResponse.json({ message: 'Usluga nije pronađena' }, { status: 404 });
     }
-    const DEFAULT_VENDOR_ID = ownedVendor.id;
 
-    try {
-      const serviceToDelete = await prisma.service.findUnique({
-        where: { id: serviceId }
-      });
-
-      if (!serviceToDelete || serviceToDelete.vendorId !== DEFAULT_VENDOR_ID) {
-        return new NextResponse('Service not found for this vendor', { status: 404 });
+    if (user.role === UserRole.VENDOR_OWNER) {
+      if (!user.ownedVendorId || serviceToDelete.vendorId !== user.ownedVendorId) {
+        return NextResponse.json({ message: 'Zabranjeno: Ne možete obrisati ovu uslugu' }, { status: 403 });
       }
-       const relatedAppointmentsCount = await prisma.appointment.count({
-           where: { serviceId: serviceId },
-       });
-       if (relatedAppointmentsCount > 0) {
-           return new NextResponse('Cannot delete service: Related appointments exist. Please delete appointments first.', { status: 409 });
-       }
-
-       const deletedService = await prisma.service.delete({
-         where: {
-           id: serviceId,
-         },
-       });
-       return NextResponse.json(deletedService, { status: 200 });
-
-    } catch (error) {
-       console.error(`Error deleting service with ID ${serviceId}:`, error);
-       if (error instanceof Error && error.message.includes('Record to delete not found')) {
-         return new NextResponse('Service not found or not deletable for this vendor', { status: 404 });
-        }
-       return new NextResponse('Internal Server Error', { status: 500 });
     }
+
+    const relatedAppointments = await prisma.appointment.count({
+        where: { serviceId: serviceId }
+    });
+
+    if (relatedAppointments > 0) {
+        return NextResponse.json({ 
+            message: `Ne može se obrisati usluga: Povezana je sa ${relatedAppointments} termin(a). Razmislite o arhiviranju ili preusmeravanju.` 
+        }, { status: 409 });
+    }
+
+    await prisma.service.delete({
+      where: { id: serviceId },
+    });
+
+    return NextResponse.json({ message: 'Usluga uspešno obrisana' }, { status: 200 });
+  } catch (error: unknown) {
+    const routeParams = await context.params;
+    console.error(`Greška pri brisanju usluge ${routeParams.id}:`, error);
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2003' || error.code === 'P2014') { 
+            return NextResponse.json({ message: 'Ne može se obrisati usluga: Još uvek je referencirana od strane drugih zapisa (npr. termina).' }, { status: 409 });
+        }
+    }
+    return NextResponse.json({ message: 'Interna greška servera prilikom brisanja usluge' }, { status: 500 });
+  }
 }
+
+export const GET = withRoleProtection(GET_handler, [UserRole.SUPER_ADMIN, UserRole.VENDOR_OWNER]);
+export const PUT = withRoleProtection(PUT_handler, [UserRole.SUPER_ADMIN, UserRole.VENDOR_OWNER]);
+export const DELETE = withRoleProtection(DELETE_handler, [UserRole.SUPER_ADMIN, UserRole.VENDOR_OWNER]);

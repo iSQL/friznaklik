@@ -1,31 +1,27 @@
-'use client';
-
-import { Appointment, Service, User } from '@prisma/client';
 import AdminAppointmentCard from './AdminAppointmentCard';
-import { CalendarX2 } from 'lucide-react';
-
-export type AppointmentWithDetails = Appointment & {
-  service: Service;
-  user: User;
-  startTime: Date;
-  endTime: Date;
-};
+import { AdminAppointment } from './AdminAppointmentsClient';
+import { UserRole } from '@/lib/types/prisma-enums';
 
 interface AppointmentListProps {
-  appointments: AppointmentWithDetails[];
+  appointments: AdminAppointment[];
+  userRole: UserRole;
+  onApprove: (appointmentId: string) => Promise<void>;
+  onReject: (appointmentId: string, rejectionReason?: string) => Promise<void>;
+  onUpdateDuration: (appointmentId: string, newDuration: number) => Promise<void>;
 }
 
-export default function AppointmentList({ appointments }: AppointmentListProps) {
+export default function AppointmentList({
+  appointments,
+  userRole,
+  onApprove,
+  onReject,
+  onUpdateDuration,
+}: AppointmentListProps) {
   if (!appointments || appointments.length === 0) {
     return (
-      <div className="text-center py-16 bg-base-200 rounded-box shadow"> 
-        <CalendarX2 className="h-16 w-16 mx-auto text-base-content opacity-40 mb-4" />
-        <p className="text-xl font-semibold text-base-content">
-          Nema termina za prikaz.
-        </p>
-        <p className="text-base-content opacity-60 mt-1 px-4"> 
-          Svi termini su obrađeni ili trenutno nema novih termina na čekanju.
-        </p>
+      <div className="text-center py-10">
+        <p className="text-gray-500 dark:text-gray-400 text-lg">Nema zakazanih termina.</p>
+        {/* Može se dodatni tekst ili poziv na akciju ako je potrebno */}
       </div>
     );
   }
@@ -36,6 +32,10 @@ export default function AppointmentList({ appointments }: AppointmentListProps) 
         <AdminAppointmentCard
           key={appointment.id}
           appointment={appointment}
+          userRole={userRole}
+          onApprove={onApprove}
+          onReject={onReject}
+          onUpdateDuration={onUpdateDuration}
         />
       ))}
     </div>

@@ -1,3 +1,6 @@
+// src/lib/errorUtils.ts
+// LINIJA "import 'server-only';" JE UKLONJENA ODOZGO
+
 /**
  * Interface for a structured error object.
  * This can be used to create more detailed error objects before passing to formatErrorMessage.
@@ -16,25 +19,23 @@ export interface FormattedError {
  * @param contextMessage A message describing the context where the error occurred (e.g., "fetching pending appointments").
  * @returns A user-friendly error message string.
  */
-export function formatErrorMessage(error: unknown, contextMessage: string = "An operation failed"): string {
-  let userFriendlyMessage = `Error ${contextMessage.toLowerCase()}.`;
-  let detailedLogMessage = `Context: ${contextMessage}. Error: `;
+export function formatErrorMessage(error: unknown, contextMessage: string = "Operacija nije uspela"): string { // Prevedena podrazumevana poruka
+  let userFriendlyMessage = `Greška: ${contextMessage.toLowerCase()}.`; // Prevod
+  let detailedLogMessage = `Kontekst: ${contextMessage}. Greška: `; // Prevod
 
   if (typeof error === 'object' && error !== null) {
-    // Attempt to cast to FormattedError or a similar structure with a message property
-    const errAsObject = error as Partial<FormattedError & Error>; // Cast to allow checking for common error properties
+    const errAsObject = error as Partial<FormattedError & Error>;
 
-    if (errAsObject.message) { // Prioritize a 'message' property if it exists
-      detailedLogMessage += `Structured Error - Message: ${errAsObject.message}`;
-      userFriendlyMessage += ` Details: ${errAsObject.message}.`;
+    if (errAsObject.message) {
+      detailedLogMessage += `Strukturirana Greška - Poruka: ${errAsObject.message}`;
+      userFriendlyMessage += ` Detalji: ${errAsObject.message}.`;
 
       if (errAsObject.status) {
         detailedLogMessage += `, Status: ${errAsObject.status}`;
       }
       if (errAsObject.details) {
-        detailedLogMessage += `, Details: ${JSON.stringify(errAsObject.details)}`;
+        detailedLogMessage += `, Detalji: ${JSON.stringify(errAsObject.details)}`;
       }
-      // Log originalError if it's distinct and provides more info (e.g., stack trace from an Error instance)
       if (errAsObject.originalError) {
         if (errAsObject.originalError instanceof Error) {
           detailedLogMessage += `, OriginalErrorName: ${errAsObject.originalError.name}, OriginalErrorMessage: ${errAsObject.originalError.message}, OriginalErrorStack: ${errAsObject.originalError.stack}`;
@@ -42,29 +43,24 @@ export function formatErrorMessage(error: unknown, contextMessage: string = "An 
           detailedLogMessage += `, OriginalError: ${JSON.stringify(errAsObject.originalError)}`;
         }
       } else if (error instanceof Error && !errAsObject.originalError) {
-        // If the top-level error is an Error instance and originalError wasn't specifically set
-        detailedLogMessage += `, Name: ${error.name}, Stack: ${error.stack}`;
+        detailedLogMessage += `, Naziv: ${error.name}, Stek: ${error.stack}`;
       }
-    } else if (error instanceof Error) { // Fallback for generic Error instances not matching FormattedError structure
-      detailedLogMessage += `Generic Error - Name: ${error.name}, Message: ${error.message}, Stack: ${error.stack}`;
-      userFriendlyMessage += ` Details: ${error.message}.`;
+    } else if (error instanceof Error) {
+      detailedLogMessage += `Generička Greška - Naziv: ${error.name}, Poruka: ${error.message}, Stek: ${error.stack}`;
+      userFriendlyMessage += ` Detalji: ${error.message}.`;
     } else {
-      // Handle other unknown object types
-      detailedLogMessage += `Unknown Object Error Type - Value: ${JSON.stringify(error)}`;
-      userFriendlyMessage += ' An unexpected error occurred with an object.';
+      detailedLogMessage += `Nepoznat Tip Objektne Greške - Vrednost: ${JSON.stringify(error)}`;
+      userFriendlyMessage += ' Došlo je do neočekivane greške sa objektom.'; // Prevod
     }
   } else if (typeof error === 'string') {
-    // Handle cases where the error is just a string
-    detailedLogMessage += `String Error - Message: ${error}`;
-    userFriendlyMessage += ` Details: ${error}.`;
+    detailedLogMessage += `String Greška - Poruka: ${error}`;
+    userFriendlyMessage += ` Detalji: ${error}.`;
   } else {
-    // Handle other primitive types or null/undefined
-    detailedLogMessage += `Unknown Primitive Error Type - Value: ${String(error)}`;
-    userFriendlyMessage += ' An unexpected error occurred.';
+    detailedLogMessage += `Nepoznat Tip Primitivne Greške - Vrednost: ${String(error)}`;
+    userFriendlyMessage += ' Došlo je do neočekivane greške.'; // Prevod
   }
 
-  // Log the detailed error for debugging (server-side or client-side console)
-  console.error(detailedLogMessage);
+  console.error(detailedLogMessage); // Logovanje detaljne greške ostaje važno
 
   return userFriendlyMessage;
 }

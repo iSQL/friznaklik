@@ -1,70 +1,38 @@
-'use client';
 
-import { Service } from '@prisma/client';
 import ServiceItem from './ServiceItem';
-import { PackageOpen, Settings, Clock, Tag } from 'lucide-react'; 
+import { Service } from './AdminServicesClient'; 
+import { UserRole } from '@/lib/types/prisma-enums'; 
 
 interface ServiceListProps {
   services: Service[];
-  onEditClick: (service: Service) => void;
-  onDeleteClick: (service: Service) => void;
+  onDelete: (serviceId: string) => Promise<void>;
+  userRole: UserRole; 
 }
 
-export default function ServiceList({ services, onEditClick, onDeleteClick }: ServiceListProps) {
-  if (services.length === 0) {
+export default function ServiceList({ services, onDelete, userRole }: ServiceListProps) {
+  if (!services || services.length === 0) {
     return (
-      <div className="text-center py-12 sm:py-16 bg-base-100 border border-base-300 rounded-box shadow-md p-4">
-        <PackageOpen className="h-14 w-14 sm:h-16 sm:w-16 mx-auto text-base-content opacity-40 mb-5" />
-        <p className="text-xl font-semibold text-base-content mb-1">Nema dostupnih usluga.</p>
-        <p className="text-base-content opacity-70">
-          Dodajte novu uslugu da biste započeli sa radom.
-        </p>
+      <div className="text-center py-10">
+        <p className="text-gray-500 text-lg">Nema pronađenih usluga.</p>
+        { (userRole === UserRole.SUPER_ADMIN || userRole === UserRole.VENDOR_OWNER) && (
+            <p className="mt-2 text-sm text-gray-400">
+                Možete dodati novu uslugu koristeći dugme "Dodaj Novu Uslugu".
+            </p>
+        )}
       </div>
     );
   }
 
   return (
-    <div className="overflow-x-auto bg-base-100 border border-base-300 rounded-box shadow-md"> 
-      <table className="table table-zebra w-full table-fixed sm:table-auto"> 
-        <thead className="bg-base-200">
-          <tr>
-            <th className="text-base-content px-3 py-3 sm:px-4 sm:py-3 w-2/5 sm:w-auto"> 
-                <div className="flex items-center gap-2">
-                    <Tag className="h-4 w-4 opacity-70 hidden sm:inline-block" />
-                    Naziv
-                </div>
-            </th>
-            <th className="text-base-content px-3 py-3 sm:px-4 sm:py-3 w-1/5 sm:w-auto">
-                <div className="flex items-center gap-2">
-                    <Clock className="h-4 w-4 opacity-70 hidden sm:inline-block" />
-                    Trajanje
-                </div>
-            </th>
-            <th className="text-base-content px-3 py-3 sm:px-4 sm:py-3 w-1/5 sm:w-auto">
-                <div className="flex items-center gap-2">
-                    <span className="font-bold text-sm opacity-70 hidden sm:inline-block">RSD</span>
-                    Cena
-                </div>
-            </th>
-            <th className="text-right text-base-content px-3 py-3 sm:px-4 sm:py-3 w-1/5 sm:w-auto">
-                <div className="flex items-center justify-end gap-2">
-                    <Settings className="h-4 w-4 opacity-70 hidden sm:inline-block" />
-                    Akcije
-                </div>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {services.map((service) => (
-            <ServiceItem
-              key={service.id}
-              service={service}
-              onEditClick={onEditClick}
-              onDeleteClick={onDeleteClick}
-            />
-          ))}
-        </tbody>
-      </table>
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {services.map((service) => (
+        <ServiceItem 
+          key={service.id} 
+          service={service} 
+          onDelete={onDelete}
+          userRole={userRole}
+        />
+      ))}
     </div>
   );
 }

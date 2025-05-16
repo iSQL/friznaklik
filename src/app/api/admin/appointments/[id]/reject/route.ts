@@ -1,71 +1,120 @@
+import { NextRequest, NextResponse } from 'next/server';
+import prisma from '@/lib/prisma';
+import {
+  getCurrentUser,
+  withRoleProtection,
+  AuthenticatedUser,
+} from '@/lib/authUtils';
+import { UserRole, AppointmentStatus, Prisma } from '@prisma/client';
+import { z } from 'zod';
 
+const rejectAppointmentSchema = z.object({
+  rejectionReason: z.string().min(1, "Razlog odbijanja ne može biti prazan ako je naveden.").optional(),
+});
 
-import { auth } from '@clerk/nextjs/server'; 
-import { NextResponse } from 'next/server';
-import prisma from '@/lib/prisma'; 
-import { isAdminUser } from '@/lib/authUtils'; 
+interface RouteContext {
+  params: Promise<{
+    id: string; 
+  }>;
+}
 
-export async function PUT(
-    request: Request 
+/**
+ * Handles POST requests to reject a PENDING appointment.
+ * Changes the appointment status to REJECTED.
+ * SUPER_ADMIN can reject any appointment.
+ * VENDOR_OWNER can only reject appointments for their vendor.
+ * Optionally includes a rejectionReason in the appointment notes.
+ */
+async function POST_handler(
+  req: NextRequest, 
+  context: RouteContext
 ) {
-  const { userId } = await auth(); 
-
-  if (!userId) {
-    return new NextResponse('Unauthorized', { status: 401 });
-  }
-
-  let appointmentId: string | undefined;
   try {
-      const url = new URL(request.url);
-      // Example URL: /api/admin/appointments/some-id/reject
-      // Split by '/' -> ['', 'api', 'admin', 'appointments', 'some-id', 'reject']
-      // The ID should be the second to last element
-      appointmentId = url.pathname.split('/').at(-2);
-  } catch (urlError) {
-       console.error('PUT /api/admin/appointments/reject: Error parsing request URL:', urlError);
-       return new NextResponse('Internal Server Error', { status: 500 });
-  }
+    const user: AuthenticatedUser | null = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ message: 'Neautorizovan pristup ili korisnik nije pronađen.' }, { status: 401 });
+    }
 
+    const routeParams = await context.params; 
+    const { id: appointmentId } = routeParams;
 
+    if (!appointmentId) {
+      return NextResponse.json({ message: 'ID termina je obavezan.' }, { status: 400 });
+    }
 
-  if (!appointmentId) {
-    return new NextResponse('Bad Request: Invalid Appointment ID in URL', { status: 400 });
-  }
-  const isAdmin = await isAdminUser(userId);
-  if (!isAdmin) {
-    return new NextResponse('Forbidden', { status: 403 });
-  }
+    let rejectionReason: string | undefined;
+    try {
+      const body = await req.json();
+      const parseResult = rejectAppointmentSchema.safeParse(body);
+      if (!parseResult.success) {
+        return NextResponse.json({ message: 'Nevalidan unos za razlog odbijanja.', errors: parseResult.error.flatten().fieldErrors }, { status: 400 });
+      }
+      rejectionReason = parseResult.data.rejectionReason;
+    } catch (e) {
+      
+      console.log('Telo zahteva za odbijanje je prazno ili nije validan JSON.');
+    }
 
-  try {
-    const ownedVendor = await prisma.vendor.findUnique({
-      where: { ownerId: userId }, 
-      select: { id: true }
+    const existingAppointment = await prisma.appointment.findUnique({
+        where: { id: appointmentId },
+        select: { notes: true, status: true, vendorId: true }
     });
 
-    if (!ownedVendor) {
-      console.error(`PUT /api/admin/appointments/${appointmentId}/reject: Admin user ${userId} does not own a vendor.`);
-      return new NextResponse(
-        JSON.stringify({ error: 'Forbidden: Admin not associated with a vendor.' }),
-        { status: 403, headers: { 'Content-Type': 'application/json' } }
+    if (!existingAppointment) {
+        return NextResponse.json({ message: 'Termin nije pronađen.' }, { status: 404 });
+    }
+
+    if (user.role === UserRole.VENDOR_OWNER) {
+      if (!user.ownedVendorId || existingAppointment.vendorId !== user.ownedVendorId) {
+        return NextResponse.json({ message: 'Zabranjeno: Nemate dozvolu da odbijete ovaj termin.' }, { status: 403 });
+      }
+    }
+
+    if (existingAppointment.status !== AppointmentStatus.PENDING) {
+      return NextResponse.json(
+        { message: `Termin se ne može odbiti. Trenutni status: ${existingAppointment.status}` },
+        { status: 409 } // Conflict
       );
     }
-    const DEFAULT_VENDOR_ID = ownedVendor.id;
+
+    const currentNotes = existingAppointment.notes || "";
+    const newNotes = rejectionReason 
+      ? `Odbijen od strane salona: ${rejectionReason}. Originalne napomene: ${currentNotes}`.trim() 
+      : `Termin odbijen od strane salona. Originalne napomene: ${currentNotes}`.trim();
 
     const updatedAppointment = await prisma.appointment.update({
-      where: { id: appointmentId, status: 'pending', vendorId: DEFAULT_VENDOR_ID }, 
+      where: { 
+        id: appointmentId,
+      },
       data: {
-        status: 'rejected', //TODO: check about adding rejected reason
+        status: AppointmentStatus.REJECTED,
+        notes: newNotes,
       },
     });
-    
-    // TODO: Trigger notification (e.g., email) to the user about the rejection
-    return NextResponse.json(updatedAppointment, { status: 200 });
 
-  } catch (error) {
-    console.error(`Error rejecting appointment with ID ${appointmentId}:`, error);
-     if (error instanceof Error && error.message.includes('Record to update not found')) {
-       return new NextResponse('Appointment not found or not pending', { status: 404 });
-     }
-    return new NextResponse('Internal Server Error', { status: 500 });
+    // TODO: Opciono: Poslati notifikaciju korisniku da je njegov termin odbijen.
+
+    return NextResponse.json(updatedAppointment);
+
+  } catch (error: unknown) {
+    const errorParams = await context.params; 
+    console.error(`Greška prilikom odbijanja termina ${errorParams?.id || 'unknown'}:`, error);
+
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+      return NextResponse.json(
+        { message: 'Termin nije pronađen, nije na čekanju, ili ne pripada Vašem salonu (ili je izmenjen tokom obrade).' },
+        { status: 404 }
+      );
+    }
+    if (error instanceof z.ZodError) { 
+        return NextResponse.json({ message: 'Nevalidan unos za razlog odbijanja.', errors: error.flatten().fieldErrors }, { status: 400 });
+    }
+    
+    return NextResponse.json({ message: 'Interna greška servera prilikom odbijanja termina.' }, { status: 500 });
   }
 }
+
+export const POST = withRoleProtection(
+  POST_handler,
+  [UserRole.SUPER_ADMIN, UserRole.VENDOR_OWNER]
+);

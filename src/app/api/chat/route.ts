@@ -1,11 +1,10 @@
 // src/app/api/chat/route.ts
 
-import { NextResponse, type NextRequest } from 'next/server'; // Using NextRequest for consistency
-import { auth } from '@clerk/nextjs/server';
+import { NextResponse, type NextRequest } from 'next/server';
 import prisma from '@/lib/prisma';
-import { Prisma, Appointment, Service } from '@prisma/client'; // Import Prisma for specific error types and models
+import { Prisma, Appointment, Service, SenderType, UserRole } from '@prisma/client';
+import { getCurrentUser, AuthenticatedUser } from '@/lib/authUtils';
 
-// Import the necessary types from the SDK
 import {
   GoogleGenerativeAI,
   HarmBlockThreshold,
@@ -14,15 +13,16 @@ import {
   Schema,
   FunctionDeclarationsTool,
   FunctionDeclaration,
-  GenerativeModel, // Added for typing 'model'
-  FunctionCall,    // Added for typing 'toolCalls'
+  GenerativeModel,
+  FunctionCall,
+  Part, 
+  Content, // Importujemo Content tip za istoriju
 } from '@google/generative-ai';
 
-import { parseISO, format, isValid } from 'date-fns';
-import { headers } from 'next/headers';
-import { formatErrorMessage } from '@/lib/errorUtils'; // Import the error utility
+import { parseISO, format, isValid, set } from 'date-fns';
+import { formatErrorMessage } from '@/lib/errorUtils';
 
-// --- Helper Function for Serbian Diacritic Normalization ---
+// --- Pomoćna funkcija za normalizaciju srpskog teksta ---
 function normalizeSerbianText(text: string): string {
   if (!text) return '';
   return text
@@ -34,36 +34,45 @@ function normalizeSerbianText(text: string): string {
     .replace(/ž/g, 'z');
 }
 
-// --- Define Schemas for Tool Parameters ---
-const serviceNameSchema: Schema = { type: SchemaType.STRING, description: "Tačan naziv frizerske usluge (npr. 'Šišanje', 'Pranje kose'). Neosetljivo na velika/mala slova i dijakritičke znake (npr. 'Sisanje' je isto kao 'Šišanje')." };
-const dateSchema: Schema = { type: SchemaType.STRING, description: "Željeni datum za termin u formatu YYYY-MM-DD (npr. '2024-12-31'). AI može zaključiti ovo iz relativnih izraza kao što je 'sutra' na osnovu trenutnog datuma datog u instrukcijama." };
+// --- Definicija Schema za parametre alata ---
+const vendorIdSchema: Schema = { type: SchemaType.STRING, description: "ID salona (vendorId) za koji se vrši provera ili zakazivanje. Ako korisnik ne navede salon, koristi podrazumevani ID koji ti je dat u sistemskim instrukcijama." };
+const serviceNameSchema: Schema = { type: SchemaType.STRING, description: "Tačan naziv frizerske usluge (npr. 'Šišanje', 'Pranje kose'). Neosetljivo na velika/mala slova i dijakritičke znake." };
+const dateSchema: Schema = { type: SchemaType.STRING, description: "Željeni datum za termin u formatu<y_bin_564>-MM-DD (npr. '2024-12-31')." };
 const slotSchema: Schema = { type: SchemaType.STRING, description: "Specifičan termin u HH:mm formatu (npr. '10:00'), dobijen iz dostupnih termina." };
 
-// --- Define ALL Tools ---
+// --- Definicija SVIH Alata ---
+const DEFAULT_VENDOR_ID_FOR_CHAT = process.env.CHAT_DEFAULT_VENDOR_ID || "cmao5ay1d0001hm2kji2qrltf"; 
+
 const listServicesDeclaration: FunctionDeclaration = {
   name: "listAvailableServices",
-  description: "Navodi sve dostupne frizerske usluge, uključujući naziv, opis, trajanje i cenu. Koristite ovu funkciju kada korisnik eksplicitno traži da vidi ili navede sve dostupne usluge.",
+  description: "Navodi sve dostupne aktivne frizerske usluge za određeni salon, uključujući naziv, opis, trajanje i cenu.",
+  parameters: {
+    type: SchemaType.OBJECT,
+    properties: { vendorId: vendorIdSchema },
+    required: ["vendorId"],
+  },
 };
 const checkAvailabilityDeclaration: FunctionDeclaration = {
   name: "checkAppointmentAvailability",
-  description: "Proverava dostupne termine za određenu uslugu na određeni datum. Koristite ovo pre pokušaja zakazivanja termina.",
+  description: "Proverava dostupne termine za određenu uslugu, u određenom salonu, na određeni datum. Koristite ovo pre pokušaja zakazivanja termina.",
   parameters: {
     type: SchemaType.OBJECT,
-    properties: { serviceName: serviceNameSchema, date: dateSchema },
-    required: ["serviceName", "date"],
+    properties: { vendorId: vendorIdSchema, serviceName: serviceNameSchema, date: dateSchema },
+    required: ["vendorId", "serviceName", "date"],
   },
 };
 const bookAppointmentDeclaration: FunctionDeclaration = {
   name: "bookAppointment",
-  description: "Zakazuje termin za korisnika. Zahteva naziv usluge, datum i specifičan termin. **MORA** se pozvati nakon što je dostupnost proverena i korisnik je potvrdio da želi da zakaže.",
+  description: "Zakazuje termin za korisnika u određenom salonu. Zahteva ID salona, naziv usluge, datum i specifičan termin. **MORA** se pozvati nakon što je dostupnost proverena i korisnik je potvrdio da želi da zakaže.",
   parameters: {
     type: SchemaType.OBJECT,
     properties: {
+      vendorId: vendorIdSchema,
       serviceName: serviceNameSchema,
       date: dateSchema,
       slot: slotSchema
     },
-    required: ["serviceName", "date", "slot"],
+    required: ["vendorId", "serviceName", "date", "slot"],
   },
 };
 const allFunctionDeclarations: FunctionDeclaration[] = [
@@ -75,163 +84,140 @@ const tools: FunctionDeclarationsTool[] = [
   { functionDeclarations: allFunctionDeclarations },
 ];
 
-// --- Define specific output types for each tool function ---
+// --- Definicija izlaznih tipova za svaki alat ---
 interface ListServicesToolOutput {
   services: Array<Pick<Service, 'id' | 'name' | 'description' | 'duration' | 'price'>>;
+  vendorId: string;
 }
-
 interface CheckAvailabilityToolOutput {
+  vendorId: string;
   serviceId: string;
   serviceName: string;
   date: string;
-  availableSlots: string[]; // Assuming /api/appointments/available returns string[]
+  availableSlotsData: { availableSlots: string[], message?: string };
 }
-
 interface BookAppointmentToolOutput {
   success: boolean;
-  appointmentDetails: Appointment; // Assuming /api/appointments returns a Prisma Appointment
+  appointmentDetails: Appointment;
+  vendorId: string;
 }
-
-// Union type for all possible tool outputs
 type ToolOutput = ListServicesToolOutput | CheckAvailabilityToolOutput | BookAppointmentToolOutput | null;
 
-// Custom error interface for errors that might have a status property
 interface ErrorWithStatus extends Error {
     status?: number;
 }
 
+export async function POST(request: NextRequest) {
+  console.log('POST /api/chat: Zahtev primljen');
 
-// Handles POST requests to /api/chat
-export async function POST(request: NextRequest) { // Changed to NextRequest for consistency
-  console.log('POST /api/chat: Request received');
-
-  // --- Initialize AI Client *inside* the handler ---
   const aiApiKey = process.env.GOOGLE_API_KEY;
-  let genAI: GoogleGenerativeAI | null = null;
-  let model: GenerativeModel | null = null; // Corrected type from 'any'
+  let model: GenerativeModel;
 
   if (!aiApiKey) {
-    const errorMessage = formatErrorMessage(
-      new Error('GOOGLE_API_KEY environment variable is not set.'),
-      "AI client initialization"
-    );
-    // console.error is called within formatErrorMessage
-    return new NextResponse(JSON.stringify({ error: "AI configuration error: Missing API Key", details: errorMessage }), { status: 500, headers: { 'Content-Type': 'application/json' } });
-  } else {
-    try {
-      genAI = new GoogleGenerativeAI(aiApiKey);
-      model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' }); // Ensure this model name is correct
-      console.log('POST /api/chat: Google AI Client and Model initialized successfully.');
-    } catch (initError: unknown) {
-      const errorMessage = formatErrorMessage(initError, "Google AI Client initialization");
-      return new NextResponse(JSON.stringify({ error: "AI initialization error", details: errorMessage }), { status: 500, headers: { 'Content-Type': 'application/json' } });
-    }
+    const errorMessage = formatErrorMessage(new Error('GOOGLE_API_KEY varijabla okruženja nije postavljena.'), "AI klijent inicijalizacija");
+    return NextResponse.json({ error: "AI konfiguraciona greška: Nedostaje API Ključ", details: errorMessage }, { status: 500, headers: { 'Content-Type': 'application/json' } });
+  }
+  try {
+    const genAI = new GoogleGenerativeAI(aiApiKey);
+    model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    console.log('POST /api/chat: Google AI Klijent i Model uspešno inicijalizovani.');
+  } catch (initError: unknown) {
+    const errorMessage = formatErrorMessage(initError, "Google AI Klijent inicijalizacija");
+    return NextResponse.json({ error: "AI inicijalizaciona greška", details: errorMessage }, { status: 500, headers: { 'Content-Type': 'application/json' } });
   }
 
-  if (!model) {
-    // This case should ideally be caught by the try-catch above, but as a fallback:
-    const errorMessage = formatErrorMessage(new Error('AI model client not initialized after setup attempt.'), "AI model availability check");
-    return new NextResponse(JSON.stringify({ error: "AI model failed to initialize", details: errorMessage }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+  const user: AuthenticatedUser | null = await getCurrentUser();
+  if (!user) {
+    console.warn('POST /api/chat: Korisnik nije autentifikovan, vraćam 401');
+    return NextResponse.json({ error: 'Neautorizovan pristup.' }, { status: 401, headers: { 'Content-Type': 'application/json' } });
   }
-  // --- End AI Client Initialization ---
-
-  const { userId } = await auth();
-  if (!userId) {
-    console.warn('POST /api/chat: User not authenticated, returning 401');
-    return new NextResponse(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
-  }
-  console.log('POST /api/chat: Clerk userId:', userId);
-
+  console.log(`POST /api/chat: Clerk userId: ${user.clerkId}, Prisma userId: ${user.id}`);
 
   try {
-    // --- Database User Check ---
-    const dbUser = await prisma.user.findUnique({
-      where: { clerkId: userId },
-      select: { id: true },
-    });
-    if (!dbUser) {
-      const errorMessage = formatErrorMessage(new Error(`Database user not found for clerkId: ${userId}`), "database user lookup");
-      return new NextResponse(JSON.stringify({ error: 'User not found in database', details: errorMessage }), { status: 404, headers: { 'Content-Type': 'application/json' } });
-    }
-    console.log(`POST /api/chat: Database userId: ${dbUser.id}`);
-
-    // --- Find or Create Chat Session ---
     let chatSession = await prisma.chatSession.findFirst({
-      where: { userId: dbUser.id },
+      where: { userId: user.id },
     });
+
     if (!chatSession) {
-      console.log(`POST /api/chat: No chat session found for user ${dbUser.id}, creating new session.`);
-      chatSession = await prisma.chatSession.create({ data: { userId: dbUser.id } });
-      console.log(`POST /api/chat: New chat session created with ID: ${chatSession.id}`);
+      console.log(`POST /api/chat: Nije pronađena čet sesija za korisnika ${user.id}, kreiram novu.`);
+      chatSession = await prisma.chatSession.create({ 
+        data: { 
+          userId: user.id, 
+          vendorId: DEFAULT_VENDOR_ID_FOR_CHAT
+        } 
+      });
+      console.log(`POST /api/chat: Nova čet sesija kreirana sa ID: ${chatSession.id} i VendorID: ${chatSession.vendorId}`);
     } else {
-      console.log(`POST /api/chat: Found chat session ${chatSession.id}.`);
+      if (!chatSession.vendorId) { 
+        chatSession = await prisma.chatSession.update({
+          where: { id: chatSession.id },
+          data: { vendorId: DEFAULT_VENDOR_ID_FOR_CHAT }
+        });
+        console.log(`POST /api/chat: Postojećoj sesiji ${chatSession.id} dodat podrazumevani vendorId: ${DEFAULT_VENDOR_ID_FOR_CHAT}.`);
+      }
+      console.log(`POST /api/chat: Pronađena čet sesija ${chatSession.id}. VendorID: ${chatSession.vendorId}`);
     }
     const currentSessionId = chatSession.id;
+    const currentVendorIdForAI = chatSession.vendorId || DEFAULT_VENDOR_ID_FOR_CHAT; 
 
-    // --- Parse and Validate User Message ---
-    let userMessageObject: { text: string; id: string; timestamp: string; sender: 'user' };
+    let userMessageObject: { text: string; id: string; timestamp: string; };
     try {
       userMessageObject = await request.json();
-      if (!userMessageObject || typeof userMessageObject.text !== 'string' || !userMessageObject.id || !userMessageObject.timestamp || userMessageObject.sender !== 'user') {
-        throw new Error('Invalid user message object format');
+      if (!userMessageObject || typeof userMessageObject.text !== 'string' || !userMessageObject.id || !userMessageObject.timestamp) {
+        throw new Error('Neispravan format korisničke poruke');
       }
     } catch (parseError: unknown) {
-      const errorMessage = formatErrorMessage(parseError, "parsing user message JSON");
-      return new NextResponse(JSON.stringify({ error: 'Invalid request body', details: errorMessage }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+      const errorMessage = formatErrorMessage(parseError, "parsiranja JSON-a korisničke poruke");
+      return NextResponse.json({ error: 'Neispravno telo zahteva', details: errorMessage }, { status: 400, headers: { 'Content-Type': 'application/json' } });
     }
-    console.log('POST /api/chat: User message object:', userMessageObject);
+    console.log('POST /api/chat: Objekat korisničke poruke:', userMessageObject);
 
-    // --- Save User Message ---
     await prisma.chatMessage.create({
       data: {
         id: userMessageObject.id,
         sessionId: currentSessionId,
-        sender: 'user',
+        senderId: user.id,
+        senderType: SenderType.USER,
         message: userMessageObject.text,
         timestamp: new Date(userMessageObject.timestamp),
       }
     });
-    console.log('POST /api/chat: User message saved.');
+    console.log('POST /api/chat: Korisnička poruka sačuvana.');
 
-    // --- Prepare History for AI ---
     const recentDbMessages = await prisma.chatMessage.findMany({
-      where: { sessionId: currentSessionId }, orderBy: { timestamp: 'desc' }, take: 10
+      where: { sessionId: currentSessionId }, orderBy: { timestamp: 'desc' }, take: 20
     });
     const orderedRecentMessages = recentDbMessages.reverse();
-    const history = orderedRecentMessages.map(msg => ({
-      role: msg.sender === 'user' ? 'user' : 'model',
-      parts: [{ text: msg.message }],
+    // ISPRAVKA TIPA: history treba da bude Content[]
+    const history: Content[] = orderedRecentMessages.map(msg => ({
+      role: msg.senderType === SenderType.USER ? 'user' : 'model', // 'model' za AI odgovore
+      parts: [{ text: msg.message }], 
     }));
-    if (history.length > 0 && history[0].role !== 'user') {
-      history.shift();
-    }
-    console.log(`POST /api/chat: Conversation history sent to AI: ${history.length} messages`);
+    console.log(`POST /api/chat: Istorija razgovora poslata AI: ${history.length} poruka`);
 
-    // --- Interact with AI Model ---
     let aiResponseText = 'Žao mi je, došlo je do problema prilikom obrade vašeg zahteva.';
-    let toolCalls: FunctionCall[] | undefined; // Corrected type from 'any[]'
+    let toolCalls: FunctionCall[] | undefined;
 
-    // --- Generate Dynamic System Instruction ---
     const currentDate = format(new Date(), 'yyyy-MM-dd');
-    const dynamicSystemInstruction = `Vi ste ljubazan i koristan asistent za zakazivanje frizerskih termina u našem salonu. Započnite razgovor pozdravom.
-Današnji datum je ${currentDate}.
+    const dynamicSystemInstruction = `Vi ste ljubazan i koristan asistent za zakazivanje frizerskih termina. Započnite razgovor pozdravom.
+Današnji datum je ${currentDate}. Trenutno komunicirate u ime salona sa ID: ${currentVendorIdForAI}. **Sve akcije (listanje usluga, provera dostupnosti, zakazivanje) se odnose na ovaj salon (vendorId: ${currentVendorIdForAI}). Obavezno prosledite ovaj vendorId ("${currentVendorIdForAI}") svim alatima koji ga zahtevaju.**
 Vaše mogućnosti, koristeći dostupne alate, su:
-1.  Navesti sve dostupne usluge (alat 'listAvailableServices').
-2.  Proveriti dostupne termine za određenu uslugu i datum (alat 'checkAppointmentAvailability'). **Uvek koristite ovaj alat PRE zakazivanja.**
-3.  Zakazati termin za određenu uslugu, datum i vreme (alat 'bookAppointment'). **Ovaj alat se MORA pozvati NAKON što je dostupnost proverena sa 'checkAppointmentAvailability' i korisnik je potvrdio da želi da zakaže taj termin.**
+1.  Navesti sve dostupne aktivne usluge za salon (alat 'listAvailableServices').
+2.  Proveriti dostupne termine za određenu uslugu i datum za salon (alat 'checkAppointmentAvailability'). **Uvek koristite ovaj alat PRE zakazivanja.**
+3.  Zakazati termin za određenu uslugu, datum i vreme za salon (alat 'bookAppointment'). **Ovaj alat se MORA pozvati NAKON što je dostupnost proverena i korisnik je potvrdio.**
 
 Važan proces zakazivanja:
-a) Kada korisnik želi da zakaže, PRVO pozovite 'checkAppointmentAvailability' sa uslugom i datumom.
+a) Kada korisnik želi da zakaže, PRVO pozovite 'checkAppointmentAvailability' sa vendorId ("${currentVendorIdForAI}"), nazivom usluge i datumom.
 b) Predstavite dostupne termine korisniku. Ako je traženi termin dostupan, pitajte korisnika da potvrdi zakazivanje.
-c) Ako korisnik potvrdi ("da", "ok", "može", itd.), ONDA i SAMO ONDA pozovite alat 'bookAppointment' sa tačnim nazivom usluge, datumom i potvrđenim vremenom (slot).
-d) Tek nakon što dobijete USPEŠAN odgovor od alata 'bookAppointment' (output.success === true), potvrdite korisniku da je termin uspešno zakazan.
-e) Ako alat 'bookAppointment' vrati grešku (error field nije null), obavestite korisnika da zakazivanje nije uspelo i navedite razlog greške. Nemojte potvrđivati zakazivanje u slučaju greške.
+c) Ako korisnik potvrdi, ONDA pozovite alat 'bookAppointment' sa vendorId ("${currentVendorIdForAI}"), tačnim nazivom usluge, datumom i potvrđenim vremenom (slot).
+d) Tek nakon USPEŠNOG odgovora od 'bookAppointment' (output.success === true), potvrdite korisniku da je termin uspešno zakazan.
+e) Ako 'bookAppointment' vrati grešku, obavestite korisnika.
 
-Proaktivno ponudite ove opcije korisniku. Zaključite datume kao što je 'sutra' na osnovu današnjeg datuma (${currentDate}). Budite jasni oko informacija koje su vam potrebne (kao što su naziv usluge, datum, vreme).`;
+Proaktivno ponudite opcije. Zaključite datume kao 'sutra' na osnovu ${currentDate}. Budite jasni oko informacija koje su vam potrebne. Normalizujte nazive usluga pre poziva alata (npr. 'sisanje' umesto 'Šišanje').`;
 
-    const chat = model.startChat({
+    const aiChat = model.startChat({
       systemInstruction: { role: "system", parts: [{ text: dynamicSystemInstruction }] },
-      history: history,
+      history: history, // history je sada Content[]
       tools: tools,
       safetySettings: [
         { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
@@ -242,57 +228,62 @@ Proaktivno ponudite ove opcije korisniku. Zaključite datume kao što je 'sutra'
     });
 
     try {
-      const result = await chat.sendMessage(userMessageObject.text);
+      const result = await aiChat.sendMessage(userMessageObject.text);
       const response = result.response;
       toolCalls = response.functionCalls();
 
       if (toolCalls && toolCalls.length > 0) {
-        console.log('POST /api/chat: AI requested tool calls:', JSON.stringify(toolCalls, null, 2));
-        const incomingRequestHeaders = new Headers(await headers());
+        console.log('POST /api/chat: AI zahteva pozive alata:', JSON.stringify(toolCalls, null, 2));
+        const incomingRequestHeaders = new Headers(request.headers);
         const cookieHeader = incomingRequestHeaders.get('Cookie');
         const fetchHeaders: HeadersInit = { 'Content-Type': 'application/json' };
         if (cookieHeader) { fetchHeaders['Cookie'] = cookieHeader; }
 
-        const toolResultPromises = toolCalls.map(async (toolCall) => {
+        const toolResultPromises = toolCalls.map(async (toolCall): Promise<Part> => {
           const functionName = toolCall.name;
-          // toolCall.args is Record<string, any> by SDK definition, explicit typing for args destructuring.
-          const functionArgs = toolCall.args as { serviceName?: string; date?: string; slot?: string };
-          const toolResponsePayload: { output: ToolOutput; error: string | null } = { output: null, error: null }; // Corrected type for 'output'
+          const functionArgs = toolCall.args as { vendorId?: string; serviceName?: string; date?: string; slot?: string };
+          const toolResponsePayload: { output: ToolOutput; error: string | null } = { output: null, error: null };
+          
+          const effectiveVendorId = functionArgs.vendorId || currentVendorIdForAI;
+          if (!effectiveVendorId && (functionName === 'listAvailableServices' || functionName === 'checkAppointmentAvailability' || functionName === 'bookAppointment')) {
+              toolResponsePayload.error = "ID Salona (vendorId) nije specificiran za alat, a obavezan je.";
+              return { functionResponse: { name: functionName, response: { content: toolResponsePayload } } };
+          }
 
           try {
-            // --- Tool Logic ---
             if (functionName === 'listAvailableServices') {
               const allServices = await prisma.service.findMany({
+                where: { vendorId: effectiveVendorId, active: true }, // Koristimo 'active' polje
                 select: { id: true, name: true, description: true, duration: true, price: true }
               });
-              toolResponsePayload.output = { services: allServices };
+              toolResponsePayload.output = { services: allServices, vendorId: effectiveVendorId };
             } else if (functionName === 'checkAppointmentAvailability') {
               const { serviceName, date: dateString } = functionArgs;
               if (!serviceName || !dateString) {
-                                toolResponsePayload.error = "Nedostaje naziv usluge ili datum za proveru dostupnosti.";
+                toolResponsePayload.error = "Nedostaje naziv usluge ili datum za proveru dostupnosti.";
               } else {
-                const normalizedInputName = normalizeSerbianText(serviceName);
                 if (!/^\d{4}-\d{2}-\d{2}$/.test(dateString) || !isValid(parseISO(dateString))) {
                   toolResponsePayload.error = `Nevažeći format datuma: '${dateString}'. Molimo koristite YYYY-MM-DD.`;
                 } else {
-                  const allDbServices = await prisma.service.findMany({ select: { id: true, name: true } });
-                  const matchingServices = allDbServices.filter(dbService => normalizeSerbianText(dbService.name) === normalizedInputName);
-                  if (matchingServices.length === 0) {
-                    toolResponsePayload.error = `Žao mi je, nisam mogao/la pronaći uslugu pod nazivom "${serviceName}".`;
-                  } else if (matchingServices.length > 1) {
-                    toolResponsePayload.error = `Pronađeno je više usluga za "${serviceName}". Molimo budite precizniji.`;
+                  const service = await prisma.service.findFirst({
+                    where: {
+                      name: { equals: serviceName, mode: 'insensitive' },
+                      vendorId: effectiveVendorId,
+                      active: true, // Koristimo 'active' polje
+                    }
+                  });
+                  if (!service) {
+                    toolResponsePayload.error = `Žao mi je, nisam mogao/la pronaći aktivnu uslugu pod nazivom "${serviceName}" u salonu (ID: ${effectiveVendorId}).`;
                   } else {
-                    const service = matchingServices[0];
                     const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
-                    const availabilityApiUrl = `${SITE_URL}/api/appointments/available?serviceId=${service.id}&date=${dateString}`;
+                    const availabilityApiUrl = `${SITE_URL}/api/appointments/available?serviceId=${service.id}&date=${dateString}&vendorId=${effectiveVendorId}`;
                     const availabilityRes = await fetch(availabilityApiUrl, { headers: fetchHeaders });
                     if (!availabilityRes.ok) {
-                      const errorText = await availabilityRes.text();
-                      toolResponsePayload.error = `Greška pri proveri dostupnosti: ${availabilityRes.status} - ${errorText || 'Interna greška'}`;
+                      const errorJson = await availabilityRes.json().catch(() => ({ message: availabilityRes.statusText }));
+                      toolResponsePayload.error = `Greška pri proveri dostupnosti: ${errorJson.message || availabilityRes.statusText}`;
                     } else {
-                      // Assuming availabilityRes.json() returns string[]
-                      const availableSlots: string[] = await availabilityRes.json();
-                      toolResponsePayload.output = { serviceId: service.id, serviceName: service.name, date: dateString, availableSlots };
+                      const availabilityData: { availableSlots: string[], message?: string } = await availabilityRes.json();
+                      toolResponsePayload.output = { vendorId: effectiveVendorId, serviceId: service.id, serviceName: service.name, date: dateString, availableSlotsData: availabilityData };
                     }
                   }
                 }
@@ -300,34 +291,41 @@ Proaktivno ponudite ove opcije korisniku. Zaključite datume kao što je 'sutra'
             } else if (functionName === 'bookAppointment') {
               const { serviceName, date: dateString, slot } = functionArgs;
               if (!serviceName || !dateString || !slot) {
-                                toolResponsePayload.error = "Nedostaje naziv usluge, datum ili vreme za zakazivanje.";
+                toolResponsePayload.error = "Nedostaje naziv usluge, datum ili vreme za zakazivanje.";
               } else {
-                const normalizedInputName = normalizeSerbianText(serviceName);
                 if (!/^\d{4}-\d{2}-\d{2}$/.test(dateString) || !/^\d{2}:\d{2}$/.test(slot)) {
-                  toolResponsePayload.error = `Zakazivanje neuspešno: Nedostaju ili su nevažeći parametri za datum ili vreme.`;
+                  toolResponsePayload.error = `Zakazivanje neuspešno: Nevažeći format za datum ili vreme.`;
                 } else {
-                  const allDbServices = await prisma.service.findMany({ select: { id: true, name: true } });
-                  const matchingServices = allDbServices.filter(dbService => normalizeSerbianText(dbService.name) === normalizedInputName);
-                  if (matchingServices.length === 0) {
-                    toolResponsePayload.error = `Zakazivanje neuspešno: Usluga "${serviceName}" nije pronađena.`;
-                  } else if (matchingServices.length > 1) {
-                    toolResponsePayload.error = `Zakazivanje neuspešno: Pronađeno više usluga za "${serviceName}".`;
+                  const serviceToBook = await prisma.service.findFirst({
+                    where: {
+                      name: { equals: serviceName, mode: 'insensitive' },
+                      vendorId: effectiveVendorId,
+                      active: true, // Koristimo 'active' polje
+                    }
+                  });
+                  if (!serviceToBook) {
+                    toolResponsePayload.error = `Zakazivanje neuspešno: Aktivna usluga "${serviceName}" nije pronađena u salonu (ID: ${effectiveVendorId}).`;
                   } else {
-                    const serviceToBook = matchingServices[0];
                     const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
                     const bookingApiUrl = `${SITE_URL}/api/appointments`;
+                    const [hours, minutes] = slot.split(':').map(Number);
+                    const startTimeDate = set(parseISO(dateString), { hours, minutes, seconds: 0, milliseconds: 0 });
+
                     const bookingRes = await fetch(bookingApiUrl, {
                       method: 'POST',
                       headers: fetchHeaders,
-                      body: JSON.stringify({ serviceId: serviceToBook.id, date: dateString, slot }),
+                      body: JSON.stringify({ 
+                        serviceId: serviceToBook.id, 
+                        vendorId: effectiveVendorId,
+                        startTime: startTimeDate.toISOString(),
+                      }),
                     });
                     if (!bookingRes.ok) {
-                      const errorText = await bookingRes.text();
-                      toolResponsePayload.error = `Zakazivanje neuspešno: ${bookingRes.status} - ${errorText || 'Interna greška API-ja'}`;
+                      const errorJson = await bookingRes.json().catch(() => ({ message: bookingRes.statusText }));
+                      toolResponsePayload.error = `Zakazivanje neuspešno: ${errorJson.message || bookingRes.statusText}`;
                     } else {
-                      // Assuming bookingRes.json() returns a Prisma Appointment
                       const appointmentDetails: Appointment = await bookingRes.json();
-                      toolResponsePayload.output = { success: true, appointmentDetails };
+                      toolResponsePayload.output = { success: true, appointmentDetails, vendorId: effectiveVendorId };
                     }
                   }
                 }
@@ -335,56 +333,51 @@ Proaktivno ponudite ove opcije korisniku. Zaključite datume kao što je 'sutra'
             } else {
               toolResponsePayload.error = `Nepoznat alat zatražen: ${functionName}`;
             }
-          } catch (toolError: unknown) { // Catch unknown for tool execution
-            // Log detailed error via formatErrorMessage, but return a simpler error to AI
-            formatErrorMessage(toolError, `executing tool ${functionName}`);
+          } catch (toolError: unknown) {
+            formatErrorMessage(toolError, `izvršavanja alata ${functionName}`);
             toolResponsePayload.error = `Greška pri izvršavanju alata ${functionName}.`;
           }
-          // The SDK expects the response part to be an object, not just the payload.
           return { functionResponse: { name: functionName, response: { content: toolResponsePayload } } };
         });
 
-        const toolResults = await Promise.all(toolResultPromises);
-        console.log('POST /api/chat: Tool results being sent back to AI:', JSON.stringify(toolResults, null, 2));
-        // Send tool results back to the model
-        // The SDK expects an array of Part objects for history, or a simple string for a single message.
-        // For function responses, we send the array of objects as constructed.
-        const toolResultResponse = await chat.sendMessage(JSON.stringify(toolResults)); // This might need adjustment based on SDK version for sending tool responses.
-                                                                                        // Often it's `chat.sendMessage([{ functionResponse: ... }])`
-                                                                                        // Or the content of toolResults might need to be directly `Part[]`
-                                                                                        // For gemini-1.5-flash with function calling, sending the stringified array of FunctionResponseParts is typical.
+        const toolResultsAsParts: Part[] = await Promise.all(toolResultPromises);
+        console.log('POST /api/chat: Rezultati alata koji se šalju nazad AI (kao Part[]):', JSON.stringify(toolResultsAsParts, null, 2));
+        
+        // Šaljemo Part[] nazad modelu. Ovo je ispravno prema SDK.
+        const toolResultResponse = await aiChat.sendMessage(toolResultsAsParts); 
         aiResponseText = toolResultResponse.response.text();
-        console.log('POST /api/chat: Received final AI response after tool use:', aiResponseText);
+        console.log('POST /api/chat: Primljen konačan AI odgovor nakon upotrebe alata:', aiResponseText);
       } else {
         aiResponseText = response.text();
-        console.log('POST /api/chat: Received AI text response (no tool call):', aiResponseText);
+        console.log('POST /api/chat: Primljen AI tekstualni odgovor (bez poziva alata):', aiResponseText);
       }
-    } catch (aiError: unknown) { // Catch unknown for AI interaction
-      const formattedError = formatErrorMessage(aiError, "interacting with Google AI model");
-      // The formatErrorMessage already logs the detailed error.
-      // For the user, we might want a generic AI error message.
-      aiResponseText = `Žao mi je, došlo je do greške sa AI asistentom. Molimo pokušajte kasnije. (Detalji: ${formattedError})`; // Append original formatted message for context
+    } catch (aiError: unknown) {
+      const formattedError = formatErrorMessage(aiError, "interakcije sa Google AI modelom");
+      aiResponseText = `Žao mi je, došlo je do greške sa AI asistentom. Molimo pokušajte kasnije. (Detalji: ${formattedError})`;
     }
-    // --- End AI Interaction ---
 
     const aiResponseMessage = {
-      id: Date.now().toString() + Math.random().toString(36).substring(2, 9),
+      id: user.clerkId + Date.now().toString() + Math.random().toString(36).substring(2, 9),
       text: aiResponseText,
-      sender: 'ai',
+      sender: SenderType.AI,
+      senderId: "AI_GEMINI_1_5_FLASH",
       timestamp: new Date(),
     } as const;
 
-    // --- Save AI Response & Prune History ---
     try {
       await prisma.$transaction(async (tx) => {
         await tx.chatMessage.create({
           data: {
-            id: aiResponseMessage.id, sessionId: currentSessionId, sender: 'ai',
-            message: aiResponseMessage.text, timestamp: aiResponseMessage.timestamp,
+            id: aiResponseMessage.id, 
+            sessionId: currentSessionId, 
+            senderId: aiResponseMessage.senderId,
+            senderType: aiResponseMessage.sender,
+            message: aiResponseMessage.text, 
+            timestamp: aiResponseMessage.timestamp,
           }
         });
         const messageCount = await tx.chatMessage.count({ where: { sessionId: currentSessionId } });
-        const historyLimit = 20;
+        const historyLimit = 30;
         if (messageCount > historyLimit) {
           const messagesToDeleteCount = messageCount - historyLimit;
           const messagesToDelete = await tx.chatMessage.findMany({
@@ -399,24 +392,20 @@ Proaktivno ponudite ove opcije korisniku. Zaključite datume kao što je 'sutra'
           }
         }
       });
-    } catch (pruneError: unknown) { // Catch unknown for pruning
-      formatErrorMessage(pruneError, "database history pruning"); // Log detailed error
-      // Don't block returning AI response for pruning errors
+    } catch (pruneError: unknown) {
+      formatErrorMessage(pruneError, "skraćivanja istorije baze podataka");
     }
 
     return NextResponse.json(aiResponseMessage, { status: 200 });
 
-  } catch (error: unknown) { // Catch unknown for the main handler
-    const userMessage = formatErrorMessage(error, "/api/chat main handler");
-    // Determine status code based on error type if possible
+  } catch (error: unknown) {
+    const userMessage = formatErrorMessage(error, "/api/chat glavni handler");
     let statusCode = 500;
-    // Refined error status checking
     if (error instanceof Error && typeof (error as ErrorWithStatus).status === 'number') {
         statusCode = (error as ErrorWithStatus).status!;
     } else if (error instanceof Prisma.PrismaClientKnownRequestError || error instanceof Prisma.PrismaClientValidationError) {
-      statusCode = 400; // Or a more specific code based on Prisma error
+      statusCode = 400;
     }
-
-    return new NextResponse(JSON.stringify({ error: "Interna greška servera", details: userMessage }), { status: statusCode, headers: { 'Content-Type': 'application/json' } });
+    return NextResponse.json({ error: "Interna greška servera", details: userMessage }, { status: statusCode, headers: { 'Content-Type': 'application/json' } });
   }
 }

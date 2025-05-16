@@ -1,3 +1,4 @@
+import 'server-only';
 // src/lib/prisma.ts
 
 // Import the PrismaClient from the standard generated path

@@ -1,4 +1,4 @@
-// src/components/Footer/page.tsx
+import 'server-only';
 import Link from 'next/link';
 import React from 'react';
 

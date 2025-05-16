@@ -1,108 +1,139 @@
-import prisma from '@/lib/prisma';
-import { clerkClient, type User as ClerkUser } from '@clerk/nextjs/server';
-import type { User as PrismaUser } from '@prisma/client';
-import { formatErrorMessage } from '@/lib/errorUtils';
+import 'server-only'; // Osigurava da se ovaj modul koristi samo na serveru
 
-/**
- * Proverava da li autentifikovani korisnik ima 'admin' ulogu u bazi podataka.
- * @param userId - Clerk korisnički ID korisnika za proveru.
- * @returns True ako je korisnik admin, inače false.
- */
-export async function isAdminUser(userId: string | null | undefined): Promise<boolean> {
-  if (!userId || typeof userId !== 'string' || userId.trim() === '') {
-    console.log('[isAdminUser] Nevažeći ili nedostajući userId.');
-    return false; 
-  }
+import { NextRequest, NextResponse } from 'next/server';
+import { auth as getClerkAuth } from '@clerk/nextjs/server';
+import prisma from './prisma';
+import { UserRole } from '@prisma/client'; 
 
-  try {
-    const dbUser = await prisma.user.findUnique({
-      where: { clerkId: userId },
-      select: { role: true }, 
-    });
+export interface AuthenticatedUser {
+  id: string; 
+  clerkId: string;
+  email: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  profileImageUrl?: string | null;
+  role: UserRole; 
+  ownedVendorId?: string | null; 
+} 
 
-    if (!dbUser) {
-      console.log(`[isAdminUser] Korisnik sa Clerk ID ${userId} nije pronađen u bazi.`);
-      return false;
-    }
-    return dbUser.role === 'admin';
-  } catch (error) {
-    console.error(`[isAdminUser] Greška pri preuzimanju uloge za Clerk ID ${userId}:`, error);
-    return false;
-  }
-}
+export type NextRouteContext<P extends Record<string, string | string[]> = Record<string, string | string[]>> = {
+  params: Promise<P>;
+};
 
-interface GetOrCreateDbUserResult {
-  user: PrismaUser | null;
-  wasCreated: boolean;
-}
+export type NextApiHandler<
+  P extends Record<string, string | string[]> = Record<string, string | string[]>,
+  Res = unknown
+> = (
+  req: NextRequest,
+  context: NextRouteContext<P>
+) => Promise<NextResponse<Res> | Response>;
 
-/**
- * Pribavlja korisnika iz lokalne baze podataka na osnovu Clerk ID-ja.
- * Ako korisnik ne postoji u lokalnoj bazi, pribavlja podatke sa Clerk-a i kreira ga.
- * @param clerkId ID korisnika sa Clerk-a.
- * @returns Objekat sa PrismaUser objektom (ili null) i boolean vrednošću 'wasCreated'.
- */
-export async function getOrCreateDbUser(clerkId: string): Promise<GetOrCreateDbUserResult> {
+
+export async function getCurrentUser(): Promise<AuthenticatedUser | null> {
+  const { userId: clerkId } = await getClerkAuth(); 
   if (!clerkId) {
-    console.error('[getOrCreateDbUser] Pozvano bez clerkId.');
-    return { user: null, wasCreated: false };
+    return null;
   }
 
   try {
-    let dbUser = await prisma.user.findUnique({
+    const user = await prisma.user.findUnique({
       where: { clerkId },
-    });
-
-    if (dbUser) {
-      return { user: dbUser, wasCreated: false };
-    }
-
-    console.log(`[getOrCreateDbUser] Korisnik ${clerkId} nije pronađen u lokalnoj bazi. Pribavljanje sa Clerk-a...`);
-    let clerkUser: ClerkUser | null = null;
-    try {
-      const client = await clerkClient();
-      clerkUser = await client.users.getUser(clerkId); 
-    } catch (clerkError: unknown) {
-      if ((clerkError as { status: number }).status === 404) 
-      {
-          console.warn(`[getOrCreateDbUser] Korisnik sa Clerk ID ${clerkId} nije pronađen ni na Clerk-u.`);
-          return { user: null, wasCreated: false };
-      }
-      throw clerkError; 
-    }
-
-    if (!clerkUser) {
-      console.warn(`[getOrCreateDbUser] Nije moguće pribaviti Clerk podatke za korisnika ${clerkId}.`);
-      return { user: null, wasCreated: false };
-    }
-
-    const primaryEmailObject = clerkUser.emailAddresses.find(
-      (email) => email.id === clerkUser.primaryEmailAddressId
-    );
-    const emailAddress = primaryEmailObject?.emailAddress || clerkUser.emailAddresses[0]?.emailAddress;
-
-    if (!emailAddress) {
-      console.error(`[getOrCreateDbUser] Nije moguće pronaći email adresu za Clerk korisnika ${clerkId}. Kreiranje nije moguće.`);
-      return { user: null, wasCreated: false };
-    }
-    
-    const name = `${clerkUser.firstName || ''} ${clerkUser.lastName || ''}`.trim() || null;
-
-    console.log(`[getOrCreateDbUser] Kreiranje korisnika ${clerkId} u lokalnoj bazi...`);
-    dbUser = await prisma.user.create({
-      data: {
-        clerkId: clerkUser.id,
-        email: emailAddress,
-        name: name,
+      include: {
+        ownedVendor: {
+          select: {
+            id: true,
+          },
+        },
       },
     });
 
-    console.log(`[getOrCreateDbUser] Korisnik ${clerkId} uspešno kreiran u lokalnoj bazi.`);
-    return { user: dbUser, wasCreated: true };
+    if (!user) {
+      return null;
+    }
 
-  } catch (error: unknown) {
-    const userFriendlyMessage = formatErrorMessage(error, `pribavljanja ili kreiranja korisnika ${clerkId}`);
-    console.error(userFriendlyMessage);
-    return { user: null, wasCreated: false };
+    return {
+      id: user.id,
+      clerkId: user.clerkId,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      profileImageUrl: user.profileImageUrl,
+      role: user.role as UserRole, 
+      ownedVendorId: user.ownedVendor?.id || null,
+    };
+  } catch (error) {
+    console.error('Greška pri dobavljanju korisnika iz Prisma DB:', error);
+    return null;
   }
+}
+
+export async function isSuperAdmin(): Promise<boolean> {
+  const user = await getCurrentUser();
+  return user?.role === UserRole.SUPER_ADMIN;
+}
+
+export async function isVendorOwner(vendorIdToCheck?: string): Promise<boolean> {
+  const user = await getCurrentUser();
+  if (!user || user.role !== UserRole.VENDOR_OWNER) { 
+    return false;
+  }
+  if (vendorIdToCheck) {
+    return user.ownedVendorId === vendorIdToCheck;
+  }
+  return true;
+}
+
+export async function getVendorIdForCurrentOwner(): Promise<string | null> {
+  const user = await getCurrentUser();
+  if (user?.role === UserRole.VENDOR_OWNER && user.ownedVendorId) {
+    return user.ownedVendorId;
+  }
+  return null;
+}
+
+export async function ensureAuthenticated(): Promise<AuthenticatedUser> {
+  const user = await getCurrentUser();
+  if (!user) {
+    throw new Error("Korisnik nije autentifikovan."); 
+  }
+  return user;
+}
+
+export function withRoleProtection<
+  P extends Record<string, string | string[]> = Record<string, string | string[]>,
+  Res = unknown
+>(
+  handler: NextApiHandler<P, Res>,
+  allowedRoles: UserRole[],
+  vendorIdParamName?: string
+): NextApiHandler<P, Res | { message: string }> {
+  return async (req, context) => {
+    const user = await getCurrentUser(); 
+
+    if (!user) {
+      return NextResponse.json({ message: 'Autentifikacija je neophodna.' }, { status: 401 });
+    }
+
+    if (!allowedRoles.includes(user.role)) {
+      return NextResponse.json({ message: 'Zabranjeno: Nedovoljne dozvole.' }, { status: 403 });
+    }
+
+    if (user.role === UserRole.VENDOR_OWNER) { 
+      if (!user.ownedVendorId) {
+        console.error(`VENDOR_OWNER ${user.clerkId || user.id} nema povezan vendorId.`);
+        return NextResponse.json({ message: 'Zabranjeno: Povezanost sa salonom nedostaje.' }, { status: 403 });
+      }
+      if (vendorIdParamName) {
+        const resolvedParams = await context.params;
+        if (resolvedParams && (resolvedParams as Record<string, string>)[vendorIdParamName]) {
+          const pathVendorId = (resolvedParams as Record<string, string>)[vendorIdParamName];
+          if (user.ownedVendorId !== pathVendorId) {
+            return NextResponse.json({ message: 'Zabranjeno: Ne posedujete ovaj resurs salona.' }, { status: 403 });
+          }
+        }
+      }
+    }
+    
+    return handler(req, context);
+  };
 }

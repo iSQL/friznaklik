@@ -1,98 +1,54 @@
-// src/app/api/admin/chat/history/[sessionId]/route.ts
-
-import { NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
+import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { isAdminUser } from '@/lib/authUtils'; // Import the centralized isAdminUser function
+import {
+  
+  withRoleProtection,
+  
+} from '@/lib/authUtils';
+import { UserRole } from '@prisma/client'; 
 
-// Handles GET requests to /api/admin/chat/history/:sessionId
-// Fetches the full message history for a specific chat session.
-// Uses URL parsing to get the sessionId
-export async function GET(
-  request: Request
-  // Removed the second argument: { params }: { params: { sessionId: string } }
-) {
+interface RouteContext {
+  params: Promise<{
+    sessionId: string;
+  }>;
+}
 
-  // 1. Authentication & Authorization
-  const { userId } = await auth(); // Use await for auth()
+async function GET_handler(request: NextRequest, context: RouteContext) {
+  const routeParams = await context.params;
+  const { sessionId } = routeParams;
 
-  if (!userId) {
-    // Logged out before extracting sessionId
-    console.log(`GET /api/admin/chat/history/[sessionId]: User not authenticated, returning 401`);
-    return new NextResponse('Unauthorized', { status: 401 });
-  }
-
-  // Extract sessionId from the URL path
-  let sessionId: string | undefined;
-  try {
-      const url = new URL(request.url);
-      // Example URL: /api/admin/chat/history/some-session-id
-      // Split by '/' -> ['', 'api', 'admin', 'chat', 'history', 'some-session-id']
-      // The ID should be the last element
-      sessionId = url.pathname.split('/').pop(); // Use pop() to get the last segment
-  } catch (urlError) {
-       console.error('GET /api/admin/chat/history/[sessionId]: Error parsing request URL:', urlError);
-       return new NextResponse('Internal Server Error', { status: 500 });
-  }
-
-  // 2. Validate sessionId
   if (!sessionId) {
-      console.log(`GET /api/admin/chat/history/[sessionId]: Missing or could not parse sessionId from URL`);
-      return new NextResponse('Bad Request: Invalid Session ID in URL', { status: 400 });
+    return NextResponse.json({ message: 'ID sesije je obavezan.' }, { status: 400 });
   }
 
-  console.log(`GET /api/admin/chat/history/${sessionId}: Request received for ID`);
-  console.log(`GET /api/admin/chat/history/${sessionId}: Clerk userId:`, userId);
-
-
-  const isAdmin = await isAdminUser(userId);
-  if (!isAdmin) {
-    console.log(`GET /api/admin/chat/history/${sessionId}: User is not admin, returning 403`);
-    return new NextResponse('Forbidden', { status: 403 });
-  }
-
-  console.log(`GET /api/admin/chat/history/${sessionId}: User is admin. Proceeding to fetch history.`);
-
-
-  // 3. Data Fetching
   try {
-    const chatSessionWithHistory = await prisma.chatSession.findUnique({
+    const messages = await prisma.chatMessage.findMany({
       where: {
-        id: sessionId, // Find the session by its ID
+        sessionId: sessionId,
       },
-      include: {
-        // Include the associated user details
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-          },
-        },
-        // Include all messages for this session, ordered chronologically
-        messages: {
-          orderBy: {
-            timestamp: 'asc', // Oldest first for chronological display
-          },
-          // No need for take or select here, we want all message fields
-        },
+      orderBy: {
+        timestamp: 'asc',
       },
+      // Opciono: informacije o pošiljaocu ako je potrebno
+      // include: {
+      //   // Ako senderId referencira User tabelu i želite da prikažete ime pošiljaoca
+      //   // sender: { select: { firstName: true, lastName: true, email: true }}
+      // }
     });
 
-    // Check if the session was found
-    if (!chatSessionWithHistory) {
-      console.log(`GET /api/admin/chat/history/${sessionId}: Chat session not found`);
-      return new NextResponse('Not Found: Chat session not found', { status: 404 });
+    
+    if (messages.length === 0) {
+      return NextResponse.json({ message: 'Nema poruka za ovu sesiju.' }, { status: 404 });
     }
 
-    console.log(`GET /api/admin/chat/history/${sessionId}: Fetched session with ${chatSessionWithHistory.messages.length} messages.`);
-
-    // 4. Response
-    // Return the full session object including the user and messages array
-    return NextResponse.json(chatSessionWithHistory, { status: 200 });
-
+    return NextResponse.json(messages);
   } catch (error) {
-    console.error(`GET /api/admin/chat/history/${sessionId}: Error fetching chat history:`, error);
-    return new NextResponse('Internal Server Error', { status: 500 });
+    console.error(`Greška prilikom preuzimanja istorije četa za sesiju ${sessionId}:`, error);
+    return NextResponse.json({ message: 'Interna greška servera prilikom preuzimanja istorije četa.' }, { status: 500 });
   }
 }
+
+export const GET = withRoleProtection(GET_handler, [
+  UserRole.SUPER_ADMIN,
+  UserRole.VENDOR_OWNER,
+]);

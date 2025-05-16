@@ -1,16 +1,6 @@
-@import "tailwindcss";
-
+@import 'tailwindcss';
 @plugin "daisyui" {
-  themes: nord --default, abyss --prefersdark, dark, light;
-  root: ":root";
-  include: ;
-  exclude: ;
-  prefix: ;
+  themes: nord --default, dark --prefersdark, dark, light;
   logs: true;
 }
-
-body {
-  font-family: Arial, Helvetica, sans-serif;
-}
-
 

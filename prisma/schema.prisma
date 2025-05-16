@@ -15,92 +15,182 @@ datasource db {
 }
 
 model Vendor {
-              id              String        @id @default(cuid())
-              name            String
-              description     String?
-              ownerId         String        @unique // A user can own only one vendor initially
-              owner           User          @relation("VendorOwner", fields: [ownerId], references: [id])
-              address         String?
-              phoneNumber     String?
-              operatingHours  Json?         // e.g., {"monday": {"open": "09:00", "close": "18:00"}, ...}
+  id             String        @id @default(cuid())
+  name           String
+  description    String?
+  ownerId        String        @unique // Prisma User ID vlasnika
+  owner          User          @relation("VendorOwner", fields: [ownerId], references: [id])
+  address        String?
+  phoneNumber    String?
+  operatingHours Json?
+  services       Service[]
+  appointments   Appointment[]
+  workers        Worker[]
+  status         VendorStatus  @default(PENDING_APPROVAL)
+  chatSessions   ChatSession[] @relation("VendorChatSessions") // Sesije vezane za ovaj salon
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
-              services        Service[]     // Relation to services offered by this vendor
-              //workers         Worker[]      // Relation to workers at this vendor (defined in Phase 2)
-              appointments    Appointment[] // Relation to appointments for this vendor
-
-              createdAt       DateTime      @default(now())
-              updatedAt       DateTime      @updatedAt
-            }
-
-model User {
-              id          String    @id @default(cuid())
-              clerkId     String    @unique
-              name        String?
-              email       String    @unique
-              role        String    @default("user") // Will be refined: 'user', 'vendor_owner', 'superadmin'
-              createdAt   DateTime  @default(now())
-              updatedAt   DateTime  @updatedAt
-
-              appointments Appointment[]
-              chatSessions ChatSession[]
-              ownedVendor  Vendor?     @relation("VendorOwner")
-              // Add relation for worker if a user can be a worker (Phase 2)
-              // workerProfile Worker? @relation("WorkerUser")
-            }
-
-model Service {
-              id            String        @id @default(cuid())
-              name          String
-              description   String?
-              duration      Int
-              price         Float
-              createdAt     DateTime      @default(now())
-              updatedAt     DateTime      @updatedAt
-
-              vendorId      String        // New: Foreign Key
-              vendor        Vendor        @relation(fields: [vendorId], references: [id])
-
-              appointments  Appointment[]
-              // @@index([vendorId]) // Optional: Add index if you query services by vendor often
-            }
-
- model Appointment {
-              id            String    @id @default(cuid())
-              userId        String
-              user          User      @relation(fields: [userId], references: [id])
-              serviceId     String
-              service       Service   @relation(fields: [serviceId], references: [id])
-              startTime     DateTime
-              endTime       DateTime
-              status        String    @default("pending") // e.g., pending, approved, rejected, cancelled, completed
-              adminNotes    String?
-              createdAt     DateTime  @default(now())
-              updatedAt     DateTime  @updatedAt
-
-              vendorId      String    // New: Foreign Key
-              vendor        Vendor    @relation(fields: [vendorId], references: [id])
-
-              // workerId      String?   // To be added in Phase 2
-              // worker        Worker?   // To be added in Phase 2 @relation(fields: [workerId], references: [id])
-              // @@index([vendorId]) // Optional
-              // @@index([workerId]) // Optional (Phase 2)
- }
-
-model ChatSession {
-  id            String         @id @default(cuid())
-  userId        String
-  user          User           @relation(fields: [userId], references: [id])
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  messages      ChatMessage[]
+  @@index([ownerId])
 }
 
+enum VendorStatus {
+  PENDING_APPROVAL
+  ACTIVE
+  SUSPENDED
+  REJECTED
+}
+
+model User {
+  id              String        @id @default(cuid())
+  clerkId         String        @unique // From Clerk authentication
+  email           String        @unique
+  firstName       String?
+  lastName        String?
+  profileImageUrl String?
+  role            UserRole      @default(USER)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  appointments    Appointment[]
+  ownedVendor     Vendor?       @relation("VendorOwner")
+  workerProfile   Worker?
+  chatSessions    ChatSession[] @relation("UserChatSessions") // Dodata relacija ka ChatSession
+  messagesSent    ChatMessage[] @relation("UserSentMessages") // Ako želimo da pratimo poruke koje je korisnik poslao
+
+  @@index([clerkId])
+}
+
+enum UserRole {
+  USER
+  VENDOR_OWNER
+  WORKER 
+  SUPER_ADMIN
+}
+
+model Service {
+  id             String        @id @default(cuid())
+  name           String
+  description    String?
+  price          Float
+  duration       Int 
+  active         Boolean       @default(true) // NOVO: Dodato polje za status aktivnosti usluge
+  vendorId       String 
+  vendor         Vendor        @relation(fields: [vendorId], references: [id])
+  appointments   Appointment[]
+  skillsRequired Skill[]       @relation("ServiceSkills")   // Skills required for this service
+  workers        Worker[]      @relation("WorkerServices")  // Workers who can perform this service
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([vendorId])
+}
+
+model Appointment {
+  id          String            @id @default(cuid())
+  userId      String            // Clerk ID of the user who booked
+  user        User              @relation(fields: [userId], references: [id])
+  serviceId   String
+  service     Service           @relation(fields: [serviceId], references: [id])
+  vendorId    String 
+  vendor      Vendor            @relation(fields: [vendorId], references: [id])
+  workerId    String?
+  worker      Worker?           @relation(fields: [workerId], references: [id])
+  startTime   DateTime
+  endTime     DateTime
+  status      AppointmentStatus @default(PENDING)
+  notes       String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@index([userId])
+  @@index([serviceId])
+  @@index([vendorId])
+  @@index([workerId])
+  @@index([startTime])
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED_BY_USER
+  CANCELLED_BY_VENDOR
+  REJECTED
+  COMPLETED
+  NO_SHOW
+}
+
+model Worker {
+  id           String        @id @default(cuid())
+  vendorId     String        
+  vendor       Vendor        @relation(fields: [vendorId], references: [id])
+  userId       String?       @unique // Optional: Link to a User account if the worker can log in
+  user         User?         @relation(fields: [userId], references: [id])
+  name         String        // e.g., "Jane Doe" (if not linked to a User) or derived from User
+  email        String?       @unique // Optional, if worker needs direct notifications/login
+  phoneNumber  String?
+  skills       Skill[]       @relation("WorkerSkills") 
+  services     Service[]     @relation("WorkerServices")
+  appointments Appointment[]
+  workingHours Json?    // Specific working hours for this worker, overrides vendor's if present
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@index([vendorId])
+  @@index([userId])
+}
+
+model Skill {
+  id              String    @id @default(cuid())
+  name            String    @unique // e.g., "Men's Haircut", "Coloring", "Beard Trim"
+  description     String?
+  services        Service[] @relation("ServiceSkills")
+  workers         Worker[]  @relation("WorkerSkills")
+  // category     String? // e.g., "Hair Styling", "Beard Care"
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+model ChatSession {
+  id        String     @id @default(cuid())
+  userId    String     // Trebalo bi da bude Prisma User ID za direktnu relaciju
+  user      User       @relation("UserChatSessions", fields: [userId], references: [id]) // Definisana relacija ka User
+  
+  adminId   String?    // Može biti Prisma User ID admina koji je poslednji odgovorio
+  // admin     User?   // Ako adminId referencira User.id, može se dodati i ova relacija
+  
+  vendorId  String?    // ID salona sa kojim je sesija povezana
+  vendor    Vendor?    @relation("VendorChatSessions", fields: [vendorId], references: [id]) // Relacija ka Vendor
+
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  messages  ChatMessage[]
+
+  @@index([userId])
+  @@index([vendorId])
+  @@index([adminId]) // Ako adminId postoji i želite da ga indeksirate
+}
+
+
+// Model for Chat Messages
 model ChatMessage {
-  id            String       @id @default(cuid())
-  sessionId     String
-  session       ChatSession  @relation(fields: [sessionId], references: [id])
-  sender        String       // 'user', 'ai', 'admin'
-  message       String
-  timestamp     DateTime     @default(now())
-  isReadByAdmin Boolean      @default(false) // To indicate if admin has seen the message
+  id          String      @id @default(cuid())
+  sessionId   String
+  session     ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  
+  senderId    String     // Može biti Prisma User ID ili specijalni identifikator kao "AI"
+  sender      User?       @relation("UserSentMessages", fields: [senderId], references: [id], onDelete: Restrict, onUpdate: Cascade) // Opciona relacija ako senderId uvek referencira User.id
+                                                                                                                                    // Ako senderId može biti npr. "AI", onda ova direktna relacija nije moguća na ovaj način
+  senderType  SenderType // USER, ADMIN, ili AI
+  message     String
+  timestamp   DateTime    @default(now())
+  isRead      Boolean     @default(false)
+
+  @@index([sessionId])
+  @@index([senderId]) // Ako je senderId često korišćen u pretragama
+}
+
+enum SenderType {
+  USER
+  ADMIN 
+  AI
 }

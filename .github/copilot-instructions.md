@@ -59,6 +59,10 @@
 * `src/store/`: Zustand state management stores.
 * `prisma/`: Prisma schema (`schema.prisma`) and migrations.
 
-* When generating literal, instead of " use &quot;. 
+## Misc
+-  When generating literal, instead of " use &quot;. 
+-  use PNPM for package management.
+-  Use Zod for TypeScript-first schema declaration and validation library
+
 
 By following these instructions, you can provide more accurate, consistent, and helpful code suggestions and modifications for the FrizNaKlik project.

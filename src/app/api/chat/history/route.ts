@@ -1,86 +1,67 @@
-// src/app/api/chat/history/route.ts
 
-import { auth } from '@clerk/nextjs/server'; // Import auth helper for server-side authentication
-import { NextResponse } from 'next/server'; // Import NextResponse for sending responses
-import prisma from '@/lib/prisma'; // Import your Prisma client utility
+import { NextRequest, NextResponse } from 'next/server';
+import prisma from '@/lib/prisma';
+import { getCurrentUser, AuthenticatedUser } from '@/lib/authUtils'; 
+import { SenderType } from '@prisma/client'; 
 
-// Handles GET requests to /api/chat/history
-// This will fetch the chat history for the currently logged-in user.
-export async function GET() {
-  console.log('GET /api/chat/history: Request received'); // Debug log
+interface FrontendChatMessage {
+  id: string;
+  text: string; 
+  sender: SenderType; 
+  senderId: string;  
+  timestamp: Date;
+}
 
-  // Check authentication status using Clerk
-  const { userId } = await auth(); // User must be logged in to fetch their chat history
-   console.log('GET /api/chat/history: Clerk userId:', userId); // Debug log
+export async function GET(request: NextRequest) {
+  console.log('GET /api/chat/history: Zahtev primljen');
 
+  const user: AuthenticatedUser | null = await getCurrentUser();
 
-  if (!userId) {
-    console.log('GET /api/chat/history: User not authenticated, returning 401'); // Debug log
-    return new NextResponse('Unauthorized', { status: 401 });
+  if (!user) {
+    console.log('GET /api/chat/history: Korisnik nije autentifikovan, vraćam 401');
+    return NextResponse.json({ message: 'Neautorizovan pristup.' }, { status: 401 });
   }
 
   try {
-    // Find the database user ID based on the Clerk userId
-    const dbUser = await prisma.user.findUnique({
-        where: { clerkId: userId },
-        select: { id: true }, // Only fetch the database user ID
-    });
-
-    if (!dbUser) {
-        console.error('GET /api/chat/history: Database user not found for clerkId:', userId); // Debug log
-         // This indicates a mismatch between Clerk and your DB - webhook is crucial
-        return new NextResponse('User not found in database', { status: 404 });
-    }
-
-    console.log(`GET /api/chat/history: Database userId: ${dbUser.id}`); // Debug log
-
-    // Find the user's chat session using findFirst (more suitable for non-ID unique fields)
     let chatSession = await prisma.chatSession.findFirst({
-        where: { userId: dbUser.id }, // Use userId in the where clause
+      where: { userId: user.clerkId },
     });
 
-    // If no session exists for this user, create a new one
     if (!chatSession) {
-        console.log(`GET /api/chat/history: No chat session found for user ${dbUser.id}, creating new session.`); // Debug log
-        chatSession = await prisma.chatSession.create({
-            data: { userId: dbUser.id },
-            // Removed include here, will fetch messages in a separate step
-        });
-         console.log(`GET /api/chat/history: New chat session created with ID: ${chatSession.id}`); // Debug log
+      console.log(`GET /api/chat/history: Nije pronađena čet sesija za korisnika ${user.id}, kreiram novu.`);
+      chatSession = await prisma.chatSession.create({
+        data: {
+          userId: user.clerkId,
+          // vendorId se može postaviti ako je čet uvek vezan za podrazumevani salon za nove korisnike,
+          // ili ako korisnik bira salon pre započinjanja četa. Za sada ostavljamo null.
+          // vendorId: "default_vendor_id_if_applicable", 
+          // TODO: Korisnik bira salon pre započinjanja četa, pa ćemo ovde postaviti vendorId
+          // vendorId: user.selectedVendorId ili neka vrednost koja se odabere na frontend-u
+        },
+      });
+      console.log(`GET /api/chat/history: Nova čet sesija kreirana sa ID: ${chatSession.id}`);
+      return NextResponse.json([], { status: 200 });
     }
 
-    // Now fetch the session again, explicitly including the messages
-    const chatSessionWithMessages = await prisma.chatSession.findUnique({
-        where: { id: chatSession.id }, // Use the session ID to find unique
-        include: { messages: { orderBy: { timestamp: 'asc' } } }, // Include messages, ordered by timestamp
+    const messagesFromDb = await prisma.chatMessage.findMany({
+      where: { sessionId: chatSession.id },
+      orderBy: { timestamp: 'asc' },
     });
 
-     // Ensure we got the session with messages (should not be null after findUnique by ID)
-     if (!chatSessionWithMessages) {
-         console.error(`GET /api/chat/history: Failed to fetch chat session with messages after creation/finding.`); // Debug log
-         return new NextResponse('Internal Server Error: Could not retrieve chat session messages.', { status: 500 });
-     }
+    console.log(`GET /api/chat/history: Pronađena čet sesija ${chatSession.id} sa ${messagesFromDb.length} poruka.`);
 
-    console.log(`GET /api/chat/history: Found chat session ${chatSessionWithMessages.id} with ${chatSessionWithMessages.messages.length} messages.`); // Debug log
-
-
-    // Map database messages to the frontend ChatMessage interface format (adjusting 'message' to 'text')
-    const historyMessages = chatSessionWithMessages.messages.map(msg => ({
-        id: msg.id,
-        text: msg.message, // Map database 'message' field to frontend 'text'
-        sender: msg.sender,
-        timestamp: msg.timestamp,
-        // isReadByAdmin is not needed on the frontend
+    const historyMessages: FrontendChatMessage[] = messagesFromDb.map(msg => ({
+      id: msg.id,
+      text: msg.message,         // Mapiramo 'message' iz baze u 'text' za frontend
+      sender: msg.senderType,    // Koristimo 'senderType' iz baze kao 'sender' za frontend
+      senderId: msg.senderId,    // Prosleđujemo senderId
+      timestamp: msg.timestamp,
     }));
 
-
-    // Return the chat history as a JSON response
     return NextResponse.json(historyMessages, { status: 200 });
 
   } catch (error) {
-    console.error('Error fetching chat history:', error); // Debug log
-    return new NextResponse('Internal Server Error', { status: 500 });
+    console.error('Greška prilikom dobavljanja istorije četa:', error);
+    return NextResponse.json({ message: 'Interna greška servera prilikom dobavljanja istorije četa.' }, { status: 500 });
   }
 }
-
-// Note: POST requests for new messages are handled in /api/chat/route.ts

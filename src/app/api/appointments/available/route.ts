@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import {
     parseISO,
@@ -8,144 +8,158 @@ import {
     startOfDay,
     endOfDay,
     isValid,
-    setHours, 
+    setHours,
     setMinutes,
     setSeconds,
-    setMilliseconds
+    setMilliseconds,
 } from 'date-fns';
-import { auth } from '@clerk/nextjs/server'; 
+import { getCurrentUser, AuthenticatedUser } from '@/lib/authUtils';
+import { AppointmentStatus, VendorStatus } from '@prisma/client'; 
 
-const BUSINESS_START_HOUR = 9; 
-const BUSINESS_END_HOUR = 17; 
-const BASE_SLOT_INTERVAL = 15;
-const DEFAULT_VENDOR_ID =  "cmao5ay1d0001hm2kji2qrltf" //FrizNaKlik vendor ID
+const BASE_SLOT_INTERVAL = 15; 
 
-export async function GET(request: Request) {
-  console.log('GET /api/appointments/available: Request received');
-
-   const { userId } = await auth(); 
-   if (!userId) {
-       console.log('GET /api/appointments/available: User not authenticated');
-       return new NextResponse('Unauthorized', { status: 401 });
-   }
-   console.log('GET /api/appointments/available: User authenticated:', userId);
-
-  try {
-    const { searchParams } = new URL(request.url);
-    const serviceId = searchParams.get('serviceId');
-    const dateString = searchParams.get('date'); // Date received as YYYY-MM-DD string
-
-    console.log('GET /api/appointments/available: serviceId:', serviceId, 'dateString:', dateString);
-
-    if (!serviceId || !dateString) {
-      console.log('GET /api/appointments/available: Missing serviceId or date');
-      return new NextResponse('Missing serviceId or date', { status: 400 });
+// Helper funkcija za parsiranje radnog vremena iz JSON-a
+function getBusinessHoursForDay(operatingHours: any, date: Date): { open: Date, close: Date } | null {
+    if (!operatingHours || typeof operatingHours !== 'object') {
+        console.log('Nema definisanog radnog vremena za salon.');
+        return null;
     }
 
-    let selectedDate = parseISO(dateString);
-    if (!isValid(selectedDate)) {
-       console.log('GET /api/appointments/available: Invalid date format');
-       return new NextResponse('Invalid date format', { status: 400 });
+    const dayOfWeek = format(date, 'eeee').toLowerCase(); // npr. 'monday'
+    const hoursForDay = operatingHours[dayOfWeek];
+
+    if (!hoursForDay || !hoursForDay.open || !hoursForDay.close) {
+        console.log(`Salon ne radi na dan: ${dayOfWeek}`);
+        return null;
     }
 
-    selectedDate = startOfDay(selectedDate);
-    const service = await prisma.service.findUnique({
-      where: { id: serviceId },
-      select: { duration: true, name: true }, 
-    });
+    try {
+        const [openHour, openMinute] = hoursForDay.open.split(':').map(Number);
+        const [closeHour, closeMinute] = hoursForDay.close.split(':').map(Number);
 
-    if (!service) {
-       console.log('GET /api/appointments/available: Service not found');
-       return new NextResponse('Service not found', { status: 404 });
+        if (isNaN(openHour) || isNaN(openMinute) || isNaN(closeHour) || isNaN(closeMinute)) {
+            console.error('Neispravan format vremena u operatingHours:', hoursForDay);
+            return null;
+        }
+        
+        const openTime = setMilliseconds(setSeconds(setMinutes(setHours(startOfDay(date), openHour), openMinute), 0), 0);
+        const closeTime = setMilliseconds(setSeconds(setMinutes(setHours(startOfDay(date), closeHour), closeMinute), 0), 0);
+        
+        return { open: openTime, close: closeTime };
+
+    } catch (e) {
+        console.error('Greška pri parsiranju radnog vremena:', e);
+        return null;
+    }
+}
+
+
+export async function GET(request: NextRequest) {
+
+    const user: AuthenticatedUser | null = await getCurrentUser();
+    if (!user) {
+        return NextResponse.json({ message: 'Neautorizovan pristup.' }, { status: 401 });
     }
 
-    const serviceDuration = service.duration; 
-    console.log(`GET /api/appointments/available: Checking for service "${service.name}" with duration ${serviceDuration} minutes.`);
+    try {
+        const { searchParams } = new URL(request.url);
+        const serviceId = searchParams.get('serviceId');
+        const dateString = searchParams.get('date'); // Datum u formatu YYYY-MM-DD
+        const vendorId = searchParams.get('vendorId');
 
-    const dayStart = selectedDate; 
-    const dayEnd = endOfDay(selectedDate);
 
-    const existingAppointments = await prisma.appointment.findMany({
-      where: {
-         vendorId: DEFAULT_VENDOR_ID,
-         startTime: {
-            lt: dayEnd 
-         },
-         endTime: {
-            gt: dayStart 
-         },
-         status: {
-          in: ['pending', 'approved'], 
-        },
-      },
-      select: { startTime: true, endTime: true }, 
-    });
-
-    console.log(`GET /api/appointments/available: Found ${existingAppointments.length} existing appointments for date ${dateString}:`, existingAppointments);
-
-    const availableSlots: string[] = [];
-    let potentialSlotStart = setMilliseconds(setSeconds(setMinutes(setHours(selectedDate, BUSINESS_START_HOUR), 0), 0), 0);
-    const businessEndTime = setMilliseconds(setSeconds(setMinutes(setHours(selectedDate, BUSINESS_END_HOUR), 0), 0), 0);
-    console.log(`GET /api/appointments/available: Business hours: ${format(potentialSlotStart, 'yyyy-MM-dd HH:mm')} - ${format(businessEndTime, 'yyyy-MM-dd HH:mm')}`);
-
-    while (isBefore(potentialSlotStart, businessEndTime)) {
-        const potentialSlotEnd = addMinutes(potentialSlotStart, serviceDuration);
-
-        const now = new Date(); 
-        console.log(`\n[Slot Check Loop] Checking Slot Start: ${format(potentialSlotStart, 'yyyy-MM-dd HH:mm')}`);
-        console.log(`[Slot Check Loop] Calculated Slot End:   ${format(potentialSlotEnd, 'yyyy-MM-dd HH:mm')}`);
-        console.log(`[Slot Check Loop] Business End Time:     ${format(businessEndTime, 'yyyy-MM-dd HH:mm')}`);
-        console.log(`[Slot Check Loop] Current Time (Now):    ${format(now, 'yyyy-MM-dd HH:mm')}`);
-
-        const endsAfterBusinessHours = !isBefore(potentialSlotEnd, businessEndTime) && potentialSlotEnd.getTime() !== businessEndTime.getTime();
-        if (endsAfterBusinessHours) {
-            console.log(`[Slot Check Loop] -> Slot ends at or after business end time. Breaking loop.`);
-            break; 
-        } else {
-            console.log(`[Slot Check Loop] -> Slot ends within business hours.`);
+        if (!serviceId || !dateString || !vendorId) {
+            return NextResponse.json({ message: 'Nedostaju obavezni parametri: serviceId, date, vendorId.' }, { status: 400 });
         }
 
-        const isPastSlot = isBefore(potentialSlotStart, now);
-        console.log(`[Slot Check Loop] -> isBefore(potentialSlotStart, now) [${format(potentialSlotStart, 'yyyy-MM-dd HH:mm:ss')}, ${format(now, 'yyyy-MM-dd HH:mm:ss')}] resulted in: ${isPastSlot}`);
-        if (isPastSlot) {
-            console.log(`[Slot Check Loop] -> Slot is in the past. Skipping.`);
-        } else {
-             console.log(`[Slot Check Loop] -> Slot is not in the past.`);
+        let selectedDate = parseISO(dateString);
+        if (!isValid(selectedDate)) {
+            return NextResponse.json({ message: 'Neispravan format datuma. Očekivani format je YYYY-MM-DD.' }, { status: 400 });
+        }
+        selectedDate = startOfDay(selectedDate);
+
+        const vendor = await prisma.vendor.findUnique({
+            where: { id: vendorId },
+            select: { operatingHours: true, status: true, name: true }
+        });
+
+        if (!vendor) {
+            return NextResponse.json({ message: 'Traženi salon nije pronađen.' }, { status: 404 });
         }
 
-        let isOverlap = false;
-        if (!isPastSlot) {
-            isOverlap = existingAppointments.some(appointment => {
-                const overlap = isBefore(potentialSlotStart, appointment.endTime) && isBefore(appointment.startTime, potentialSlotEnd);
-                // if (overlap) { // Keep commented unless needed for intense debugging
-                //     console.log(`[Slot Check Loop] -> Overlap detected with existing appointment: ${format(appointment.startTime, 'HH:mm')}-${format(appointment.endTime, 'HH:mm')}.`);
-                // }
-                return overlap;
-            });
-             if (isOverlap) {
-                 console.log(`[Slot Check Loop] -> Overlap found. Skipping.`);
-             } else {
-                  console.log(`[Slot Check Loop] -> No overlap found.`);
-             }
+        if (vendor.status !== VendorStatus.ACTIVE) { // Koristimo enum
+            return NextResponse.json({ availableSlots: [], message: `Salon "${vendor.name}" trenutno nije aktivan.` }, { status: 200 }); 
+        }
+        
+        const businessHours = getBusinessHoursForDay(vendor.operatingHours, selectedDate);
+        if (!businessHours) {
+            return NextResponse.json({ availableSlots: [], message: `Salon ne radi na odabrani dan (${format(selectedDate, 'dd.MM.yyyy')}) ili radno vreme nije podešeno.` }, { status: 200 });
+        }
+        const { open: businessStartTime, close: businessEndTime } = businessHours;
+
+        const service = await prisma.service.findUnique({
+            where: { 
+                id: serviceId, 
+                vendorId: vendorId, 
+                active: true      
+            }, 
+            select: { duration: true, name: true },
+        });
+
+        if (!service) {
+            return NextResponse.json({ message: 'Aktivna usluga nije pronađena ili ne pripada odabranom salonu.' }, { status: 404 });
+        }
+        const serviceDuration = service.duration;
+
+        const dayStartQuery = startOfDay(selectedDate);
+        const dayEndQuery = endOfDay(selectedDate);
+
+        const existingAppointments = await prisma.appointment.findMany({
+            where: {
+                vendorId: vendorId,
+                OR: [
+                    { startTime: { gte: dayStartQuery, lt: dayEndQuery } },
+                    { endTime: { gt: dayStartQuery, lte: dayEndQuery } },
+                    { startTime: { lt: dayStartQuery }, endTime: { gt: dayEndQuery } }
+                ],
+                status: {
+                    in: [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED],
+                },
+            },
+            select: { startTime: true, endTime: true },
+        });
+
+        const availableSlots: string[] = [];
+        let potentialSlotStart = businessStartTime;
+        const now = new Date();
+
+        while (isBefore(potentialSlotStart, businessEndTime)) {
+            const potentialSlotEnd = addMinutes(potentialSlotStart, serviceDuration);
+
+            if (isBefore(businessEndTime, potentialSlotEnd)) {
+                break;
+            }
+
+            const isPastSlot = isBefore(potentialSlotStart, now);
+            if (isPastSlot) {
+                potentialSlotStart = addMinutes(potentialSlotStart, BASE_SLOT_INTERVAL);
+                continue;
+            }
+
+            const isOverlap = existingAppointments.some(appointment =>
+                isBefore(potentialSlotStart, appointment.endTime) && isBefore(appointment.startTime, potentialSlotEnd)
+            );
+
+            if (!isOverlap) {
+                availableSlots.push(format(potentialSlotStart, 'HH:mm'));
+            }
+
+            potentialSlotStart = addMinutes(potentialSlotStart, BASE_SLOT_INTERVAL);
         }
 
-        // Add if valid
-        if (!isOverlap && !isPastSlot) {
-            availableSlots.push(format(potentialSlotStart, 'HH:mm'));
-            console.log(`[Slot Check Loop] -> SUCCESS: Added available slot: ${format(potentialSlotStart, 'HH:mm')}`);
-        } else {
-             console.log(`[Slot Check Loop] -> SKIPPED: Slot not added (Past: ${isPastSlot}, Overlap: ${isOverlap}).`);
-        }
+        return NextResponse.json({ availableSlots }, { status: 200 });
 
-        potentialSlotStart = addMinutes(potentialSlotStart, BASE_SLOT_INTERVAL);
+    } catch (error) {
+        return NextResponse.json({ message: 'Interna greška servera.' }, { status: 500 });
     }
-
-    console.log('GET /api/appointments/available: Calculated available slots:', availableSlots);
-
-    return NextResponse.json(availableSlots, { status: 200 });
-
-  } catch (error) {
-    console.error('Error fetching available slots:', error);
-    return new NextResponse('Internal Server Error', { status: 500 });
-  }
 }

@@ -1,18 +1,20 @@
-
 'use client';
 
 import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Appointment, Service } from '@prisma/client';
+import { Appointment, Service } from '@prisma/client'; 
+import { AppointmentStatus } from '@/lib/types/prisma-enums';
+
+
 import { format, isPast } from 'date-fns';
 import { sr } from 'date-fns/locale'; 
 import { formatErrorMessage } from '@/lib/errorUtils';
-import { CalendarOff, AlertTriangle, CheckCircle2, Clock, HelpCircle, XCircle } from 'lucide-react';
+import { CalendarOff, AlertTriangle, CheckCircle2, Clock, HelpCircle, XCircle, MessageSquareText } from 'lucide-react'; 
 
 interface AppointmentItemProps {
   appointment: Appointment & {
-    service: Service;
-    startTime: Date;
+    service: Service; 
+    startTime: Date; 
     endTime: Date;
   };
 }
@@ -66,7 +68,7 @@ export default function AppointmentItem({ appointment }: AppointmentItemProps) {
         throw errorData; 
       }
       handleCloseCancelModal(); 
-      router.refresh();
+      router.refresh(); 
     } catch (err: unknown) {
       const userFriendlyError = formatErrorMessage(err, `otkazivanja termina za ${appointment.service.name}`);
       setError(userFriendlyError);
@@ -75,44 +77,50 @@ export default function AppointmentItem({ appointment }: AppointmentItemProps) {
     }
   };
 
-  
-  const canCancel = ['pending', 'approved'].includes(appointment.status.toLowerCase()) && !isPast(new Date(appointment.startTime));
+  const canCancel = 
+    (appointment.status === AppointmentStatus.PENDING || appointment.status === AppointmentStatus.CONFIRMED) && 
+    !isPast(new Date(appointment.startTime));
 
- 
-  const getStatusBadgeClass = (status: string): string => {
-    switch (status.toLowerCase()) {
-      case 'approved': return 'badge-success';   
-      case 'pending': return 'badge-warning';     
-      case 'cancelled': return 'badge-error';    
-      case 'rejected': return 'badge-neutral text-base-content opacity-80'; 
-      case 'completed': return 'badge-info';     
+  
+  const getStatusBadgeClass = (status: AppointmentStatus): string => {
+    switch (status) {
+      case AppointmentStatus.CONFIRMED: return 'badge-success';   
+      case AppointmentStatus.PENDING: return 'badge-warning';     
+      case AppointmentStatus.CANCELLED_BY_USER:
+      case AppointmentStatus.CANCELLED_BY_VENDOR: return 'badge-error';    
+      case AppointmentStatus.REJECTED: return 'badge-neutral text-base-content opacity-80'; 
+      case AppointmentStatus.COMPLETED: return 'badge-info';      
+      case AppointmentStatus.NO_SHOW: return 'badge-ghost'; 
       default: return 'badge-ghost';          
     }
   };
 
-  const getTranslatedStatus = (status: string): string => {
-    const lowerStatus = status.toLowerCase();
-    switch (lowerStatus) {
-      case 'approved': return 'Odobren';
-      case 'pending': return 'Na čekanju';
-      case 'cancelled': return 'Otkazan';
-      case 'rejected': return 'Odbijen';
-      case 'completed': return 'Završen';
-      default: return status.charAt(0).toUpperCase() + status.slice(1);
+  const getTranslatedStatus = (status: AppointmentStatus): string => {
+    switch (status) {
+      case AppointmentStatus.CONFIRMED: return 'Odobren';
+      case AppointmentStatus.PENDING: return 'Na čekanju';
+      case AppointmentStatus.CANCELLED_BY_USER: return 'Otkazao korisnik';
+      case AppointmentStatus.CANCELLED_BY_VENDOR: return 'Otkazao salon';
+      case AppointmentStatus.REJECTED: return 'Odbijen'; 
+      case AppointmentStatus.COMPLETED: return 'Završen';
+      case AppointmentStatus.NO_SHOW: return 'Nije se pojavio'; 
+      default: 
+        // Fallback za nepoznate statuse
+        const s = status as string;
+        return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase().replace(/_/g, ' ');
     }
   };
   
-  const StatusIcon = ({ status }: { status: string }) => {
-    const lowerStatus = status.toLowerCase();
-    switch (lowerStatus) {
-      case 'approved': return <CheckCircle2 className="h-4 w-4 mr-1.5" />;
-      case 'pending': return <Clock className="h-4 w-4 mr-1.5" />;
-      case 'cancelled':
-      case 'rejected': return <XCircle className="h-4 w-4 mr-1.5" />;
+  const StatusIcon = ({ status }: { status: AppointmentStatus }) => {
+    switch (status) {
+      case AppointmentStatus.CONFIRMED: return <CheckCircle2 className="h-4 w-4 mr-1.5" />;
+      case AppointmentStatus.PENDING: return <Clock className="h-4 w-4 mr-1.5" />;
+      case AppointmentStatus.CANCELLED_BY_USER:
+      case AppointmentStatus.CANCELLED_BY_VENDOR:
+      case AppointmentStatus.REJECTED: return <XCircle className="h-4 w-4 mr-1.5" />;
       default: return <HelpCircle className="h-4 w-4 mr-1.5" />;
     }
   };
-
 
   return (
     <>
@@ -128,14 +136,17 @@ export default function AppointmentItem({ appointment }: AppointmentItemProps) {
               </p>
               <p className="text-sm text-base-content opacity-80">
                 Vreme: {format(new Date(appointment.startTime), 'HH:mm')} - {format(new Date(appointment.endTime), 'HH:mm')}
-                {isPast(new Date(appointment.endTime)) && appointment.status.toLowerCase() !== 'completed' && appointment.status.toLowerCase() !== 'cancelled' && (
+                {isPast(new Date(appointment.endTime)) && 
+                 appointment.status !== AppointmentStatus.COMPLETED && 
+                 appointment.status !== AppointmentStatus.CANCELLED_BY_USER &&
+                 appointment.status !== AppointmentStatus.CANCELLED_BY_VENDOR && (
                   <span className="text-xs text-warning ml-2">(Prošao)</span>
                 )}
               </p>
               <div className="mt-2">
-                <span className={`badge ${getStatusBadgeClass(appointment.status)} badge-md font-medium items-center`}>
-                  <StatusIcon status={appointment.status} />
-                  {getTranslatedStatus(appointment.status)}
+                <span className={`badge ${getStatusBadgeClass(appointment.status as AppointmentStatus)} badge-md font-medium items-center`}>
+                  <StatusIcon status={appointment.status as AppointmentStatus} />
+                  {getTranslatedStatus(appointment.status as AppointmentStatus)}
                 </span>
               </div>
             </div>
@@ -152,12 +163,15 @@ export default function AppointmentItem({ appointment }: AppointmentItemProps) {
               </button>
             )}
           </div>
-           {appointment.adminNotes && (
+          {appointment.notes && ( 
             <div className="mt-3 pt-3 border-t border-base-300/50">
-                <p className="text-xs font-semibold text-base-content/70">Napomena administratora:</p>
-                <p className="text-sm text-base-content/90 italic">{appointment.adminNotes}</p>
+              <div className="flex items-center text-xs font-semibold text-base-content/70 mb-1">
+                <MessageSquareText className="h-4 w-4 mr-1.5" />
+                Napomene:
+              </div>
+              <p className="text-sm text-base-content/90 italic whitespace-pre-wrap break-words">{appointment.notes}</p>
             </div>
-           )}
+          )}
         </div>
       </div>
 

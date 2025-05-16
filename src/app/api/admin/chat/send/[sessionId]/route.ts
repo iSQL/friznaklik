@@ -1,109 +1,88 @@
-// src/app/api/admin/chat/send/[sessionId]/route.ts
-
-import { NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
+import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { isAdminUser } from '@/lib/authUtils'; // Import the centralized isAdminUser function
+import {
+  getCurrentUser,
+  withRoleProtection,
+  AuthenticatedUser,
+} from '@/lib/authUtils';
+import { UserRole, SenderType, ChatMessage } from '@prisma/client'; 
+import { z } from 'zod';
 
-// Handles POST requests to /api/admin/chat/send/:sessionId
-// Allows an admin to send a message to a specific chat session.
-// Uses URL parsing to get the sessionId
-export async function POST(
-  request: Request
-  // Removed second argument: { params }: { params: { sessionId: string } }
-) {
+interface RouteContext {
+  params: Promise<{
+    sessionId: string;
+  }>;
+}
+const sendMessageSchema = z.object({
+  message: z.string().min(1, 'Poruka ne može biti prazna.'),
+});
 
-  // 1. Authentication & Authorization
-  const { userId } = await auth(); // Use await for auth()
+async function POST_handler(request: NextRequest, context: RouteContext) {
+  const adminUser: AuthenticatedUser | null = await getCurrentUser();
 
-  if (!userId) {
-    // Logged out before extracting sessionId
-    console.log(`POST /api/admin/chat/send/[sessionId]: User not authenticated, returning 401`);
-    return new NextResponse('Unauthorized', { status: 401 });
+  if (!adminUser) {
+    return NextResponse.json({ message: 'Niste autorizovani ili korisnik nije pronađen.' }, { status: 401 });
   }
 
-  // Extract sessionId from the URL path
-  let sessionId: string | undefined;
-  try {
-      const url = new URL(request.url);
-      // Example URL: /api/admin/chat/send/some-session-id
-      // Split by '/' -> ['', 'api', 'admin', 'chat', 'send', 'some-session-id']
-      // The ID should be the last element
-      sessionId = url.pathname.split('/').pop(); // Use pop() to get the last segment
-  } catch (urlError) {
-       console.error('POST /api/admin/chat/send/[sessionId]: Error parsing request URL:', urlError);
-       return new NextResponse('Internal Server Error', { status: 500 });
-  }
+  const routeParams = await context.params; 
+  const { sessionId } = routeParams;
 
-   // 2. Validate sessionId
   if (!sessionId) {
-      console.log(`POST /api/admin/chat/send/[sessionId]: Missing or could not parse sessionId from URL`);
-      return new NextResponse('Bad Request: Invalid Session ID in URL', { status: 400 });
+    return NextResponse.json({ message: 'ID sesije je obavezan.' }, { status: 400 });
   }
 
-  console.log(`POST /api/admin/chat/send/${sessionId}: Request received for ID`);
-  console.log(`POST /api/admin/chat/send/${sessionId}: Clerk userId:`, userId);
-
-
-  const isAdmin = await isAdminUser(userId);
-  if (!isAdmin) {
-    console.log(`POST /api/admin/chat/send/${sessionId}: User is not admin, returning 403`);
-    return new NextResponse('Forbidden', { status: 403 });
-  }
-
-  console.log(`POST /api/admin/chat/send/${sessionId}: User is admin. Proceeding to send message.`);
-
-
-  // 3. Parse Request Body & Validate Message
-  let messageText: string;
   try {
-      const body = await request.json();
-      // Add type assertion if necessary, or define an interface for the body
-      messageText = (body as { message?: string }).message ?? ''; // Use optional chaining and nullish coalescing
+    const body = await request.json();
+    const parseResult = sendMessageSchema.safeParse(body);
 
-      if (!messageText || typeof messageText !== 'string' || messageText.trim() === '') {
-          console.log(`POST /api/admin/chat/send/${sessionId}: Invalid or empty message in request body`);
-          return new NextResponse('Bad Request: Message text is required and cannot be empty.', { status: 400 });
-      }
-       console.log(`POST /api/admin/chat/send/${sessionId}: Received message text: "${messageText}"`);
-  } catch (error) {
-      console.error(`POST /api/admin/chat/send/${sessionId}: Error parsing request body:`, error);
-      return new NextResponse('Bad Request: Invalid JSON body.', { status: 400 });
-  }
+    if (!parseResult.success) {
+      return NextResponse.json({ message: 'Nevalidan unos za poruku.', errors: parseResult.error.flatten().fieldErrors }, { status: 400 });
+    }
 
-  // 4. Data Creation (Save Admin Message)
-  try {
-      // First, verify the chat session exists
-      const chatSessionExists = await prisma.chatSession.findUnique({
-          where: { id: sessionId },
-          select: { id: true } // Only need to check existence
-      });
+    const { message } = parseResult.data;
 
-      if (!chatSessionExists) {
-          console.log(`POST /api/admin/chat/send/${sessionId}: Chat session not found`);
-          return new NextResponse('Not Found: Chat session not found', { status: 404 });
-      }
+    const chatSession = await prisma.chatSession.findUnique({
+      where: { id: sessionId },
+    });
 
-      // Create the new message with sender set to 'admin'
-      const newAdminMessage = await prisma.chatMessage.create({
-          data: {
-              sessionId: sessionId,
-              sender: 'admin', // Set sender explicitly
-              message: messageText.trim(), // Trim whitespace
-              timestamp: new Date(),
-              // id will be auto-generated by Prisma based on schema (cuid)
-              // isReadByAdmin is not relevant for admin messages
-          }
-      });
+    if (!chatSession) {
+      return NextResponse.json({ message: `Čet sesija sa ID ${sessionId} nije pronađena.` }, { status: 404 });
+    }
 
-      console.log(`POST /api/admin/chat/send/${sessionId}: Admin message saved successfully:`, newAdminMessage);
+  
+    const newChatMessage: ChatMessage = await prisma.chatMessage.create({
+      data: {
+        sessionId: sessionId,
+        senderId: adminUser.id,
+        senderType: SenderType.ADMIN,
+        message: message,
+        // timestamp se podrazumevano postavlja
+        // isRead će biti false po defaultu za primaoca
+      },
+    });
+    
+    await prisma.chatSession.update({
+        where: { id: sessionId },
+        data: { 
+            updatedAt: new Date(),
+            adminId: adminUser.id 
+        }
+    });
 
-      // 5. Response
-      // Return the newly created message object
-      return NextResponse.json(newAdminMessage, { status: 201 }); // 201 Created
+    // TODO: Implementirati mehanizam za slanje notifikacije korisniku (npr. Pusher, WebSockets)
 
-  } catch (error) {
-      console.error(`POST /api/admin/chat/send/${sessionId}: Error saving admin message:`, error);
-      return new NextResponse('Internal Server Error', { status: 500 });
+    return NextResponse.json(newChatMessage, { status: 201 });
+
+  } catch (error: unknown) {
+    console.error(`Greška prilikom slanja poruke u sesiju ${sessionId}:`, error);
+    if (error instanceof z.ZodError) {
+        return NextResponse.json({ message: 'Nevalidan unos za poruku.', errors: error.flatten().fieldErrors }, { status: 400 });
+    }
+    return NextResponse.json({ message: 'Interna greška servera prilikom slanja poruke.' }, { status: 500 });
   }
 }
+
+export const POST = withRoleProtection(POST_handler, [
+  UserRole.SUPER_ADMIN,
+  UserRole.VENDOR_OWNER,
+]);

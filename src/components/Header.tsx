@@ -1,3 +1,4 @@
+// src/components/Header.tsx
 'use client';
 
 import { UserButton, useAuth } from "@clerk/nextjs";
@@ -6,18 +7,23 @@ import Image from 'next/image';
 import { Menu as MenuIcon, LogIn, UserPlus, LayoutDashboard, MessageCircle, CalendarPlus, ListOrdered, X, ShieldCheck } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { usePathname } from 'next/navigation';
+// ISPRAVKA IMPORTA: Uvozimo tip iz novog fajla sa tipovima
+import type { AuthenticatedUser } from '@/lib/types/auth'; 
 
 interface HeaderProps {
-  isUserAdminFromServer: boolean; 
+  user: AuthenticatedUser | null;
+  isAdmin: boolean;
 }
 
-export default function Header({ isUserAdminFromServer }: HeaderProps) {
-  const { userId, isLoaded } = useAuth();
+export default function Header({ user, isAdmin }: HeaderProps) {
+  const { isLoaded, userId: clerkUserIdClient } = useAuth(); 
+  
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const dropdownContainerRef = useRef<HTMLDivElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const pathname = usePathname();
-  const isUserAdmin = isUserAdminFromServer;
+
+  const isUserAdmin = isAdmin; 
 
   const navLinks = [
     { href: "/services", label: "Usluge", icon: ListOrdered },
@@ -26,7 +32,7 @@ export default function Header({ isUserAdminFromServer }: HeaderProps) {
   ];
 
   const userNavLinks = [];
-  if (userId) {
+  if (user) {
     userNavLinks.push({ href: "/dashboard", label: "Kontrolna tabla", icon: LayoutDashboard });
     if (isUserAdmin) { 
       userNavLinks.push({ href: "/admin", label: "Admin Panel", icon: ShieldCheck });
@@ -104,7 +110,7 @@ export default function Header({ isUserAdminFromServer }: HeaderProps) {
             {isMobileMenuOpen ? <X className="h-5 w-5" /> : <MenuIcon className="h-5 w-5" />}
           </button>
           <ul
-            tabIndex={-1}
+            tabIndex={isMobileMenuOpen ? 0 : -1}
             className="menu menu-sm dropdown-content mt-3 z-[51] p-2 shadow-lg bg-base-100 text-base-content rounded-box w-64"
           >
             {navLinks.map((link) => (
@@ -124,7 +130,7 @@ export default function Header({ isUserAdminFromServer }: HeaderProps) {
               </li>
             ))}
             <div className="divider my-2 px-2 text-xs">Korisnik</div>
-            {!userId ? (
+            {!user ? (
               <>
                 <li>
                   <Link href="/sign-in" onClick={closeMobileMenu} className="flex items-center gap-2 p-2 rounded-md hover:bg-base-300">
@@ -173,7 +179,7 @@ export default function Header({ isUserAdminFromServer }: HeaderProps) {
       </div>
 
       <div className="navbar-end">
-        {userId ? (
+        {user ? (
           <>
             <ul className="menu menu-horizontal px-1 space-x-1 hidden lg:flex">
               {userNavLinks.map((link) => (

@@ -1,82 +1,145 @@
-import { auth } from '@clerk/nextjs/server'; 
-import { NextResponse } from 'next/server'; 
-import prisma from '@/lib/prisma'; 
-import { parseISO, setHours, setMinutes, isValid, addMinutes, isBefore } from 'date-fns'; 
+import { NextRequest, NextResponse } from 'next/server';
+import prisma from '@/lib/prisma';
+import { 
+    ensureAuthenticated, 
+    getCurrentUser,      
+    withRoleProtection, 
+    AuthenticatedUser 
+} from '@/lib/authUtils';
+import { UserRole, AppointmentStatus } from '@prisma/client';
+import { z } from 'zod';
+import { Prisma } from '@prisma/client';
 
-const DEFAULT_VENDOR_ID = "cmao5ay1d0001hm2kji2qrltf"
-export async function POST(request: Request) {
-  console.log('POST /api/appointments: Request received'); 
+const createAppointmentSchema = z.object({
+  serviceId: z.string().cuid('Invalid service ID'),
+  vendorId: z.string().cuid('Invalid vendor ID'), 
+  workerId: z.string().cuid('Invalid worker ID').optional(), 
+  startTime: z.string().datetime('Invalid start time format'),
+  notes: z.string().optional(),
+});
 
-  const { userId } = await auth(); 
-  if (!userId) {
-    console.log('POST /api/appointments: User not authenticated, returning 401'); 
-    return new NextResponse('Unauthorized', { status: 401 });
-  }
 
+// GET handler for fetching appointments (for Admin Panel)
+// SUPER_ADMIN sees all appointments.
+// VENDOR_OWNER sees appointments for their vendor only.
+async function GET_handler(req: NextRequest) {
   try {
-    const body = await request.json();
-    const { serviceId, date: dateString, slot: slotString } = body; // dateString (YYYY-MM-DD), slotString (HH:mm)
-    console.log('POST /api/appointments: Booking details:', { serviceId, dateString, slotString }); 
-
-    if (!serviceId || !dateString || !slotString) {
-      console.log('POST /api/appointments: Missing required fields in body'); 
-      return new NextResponse('Missing required fields (serviceId, date, or slot)', { status: 400 });
+    const user: AuthenticatedUser | null = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ message: 'Authentication required' }, { status: 401 });
     }
 
-    const [hours, minutes] = slotString.split(':').map(Number);
-    const selectedDate = parseISO(dateString);
-    const startTime = setMinutes(setHours(selectedDate, hours), minutes);
+    const queryParams = req.nextUrl.searchParams;
+    const statusFilter = queryParams.get('status') as AppointmentStatus | null;
+    const page = parseInt(queryParams.get('page') || '1', 10);
+    const limit = parseInt(queryParams.get('limit') || '10', 10);
+    const skip = (page - 1) * limit;
 
-    if (!isValid(startTime)) {
-        console.log('POST /api/appointments: Invalid date or time format'); 
-        return new NextResponse('Invalid date or time format', { status: 400 });
+    const whereClause: Prisma.AppointmentWhereInput = {}; 
+
+    if (statusFilter) {
+        whereClause.status = statusFilter;
     }
 
-    const now = new Date();
-    if (isBefore(startTime, now)) { 
-        console.log('POST /api/appointments: Cannot book in the past'); 
-        return new NextResponse('Cannot book appointments in the past', { status: 400 });
+    if (user.role === UserRole.SUPER_ADMIN) {
+    } else if (user.role === UserRole.VENDOR_OWNER) {
+      if (!user.ownedVendorId) {
+        return NextResponse.json({ message: 'Vendor owner does not have an associated vendor.' }, { status: 403 });
+      }
+      whereClause.vendorId = user.ownedVendorId; 
+    } else {
+      return NextResponse.json({ message: 'Forbidden: Insufficient permissions' }, { status: 403 });
     }
+    
+    const appointments = await prisma.appointment.findMany({
+      where: whereClause,
+      include: {
+        user: { // User who booked
+          select: { firstName: true, lastName: true, email: true },
+        },
+        service: { // Service booked
+          select: { name: true, duration: true },
+        },
+        vendor: { // Vendor for the appointment
+            select: { name: true, id: true }
+        },
+        worker: { // Worker assigned (if any)
+            select: { name: true }
+        }
+      },
+      orderBy: {
+        startTime: 'desc', 
+      },
+      skip: skip,
+      take: limit,
+    });
+
+    const totalAppointments = await prisma.appointment.count({ where: whereClause });
+
+    return NextResponse.json({
+        appointments,
+        totalPages: Math.ceil(totalAppointments / limit),
+        currentPage: page,
+        totalAppointments
+    });
+
+  } catch (error) {
+    console.error('Error fetching appointments (admin):', error);
+    return NextResponse.json({ message: 'Internal server error while fetching appointments' }, { status: 500 });
+  }
+}
+
+async function POST_handler(req: NextRequest) {
+  try {
+    const bookingUser = await ensureAuthenticated(); 
+
+    const body = await req.json();
+    const parseResult = createAppointmentSchema.safeParse(body);
+
+    if (!parseResult.success) {
+      return NextResponse.json({ message: 'Invalid input', errors: parseResult.error.flatten().fieldErrors }, { status: 400 });
+    }
+
+    const { serviceId, vendorId, workerId, startTime, notes } = parseResult.data;
+    const parsedStartTime = new Date(startTime);
 
     const service = await prisma.service.findUnique({
-        where: { id: serviceId },
-        select: { duration: true },
+      where: { id: serviceId, vendorId: vendorId }, 
     });
 
     if (!service) {
-        console.log('POST /api/appointments: Service not found'); 
-        return new NextResponse('Service not found', { status: 404 });
+      return NextResponse.json({ message: 'Service not found or does not belong to the specified vendor.' }, { status: 404 });
     }
+    
+    // TODO: Add more validation logic here:
+    // 1. Check if the time slot is available (no overlapping appointments for the vendor/worker).
+    // 2. Check against vendor operating hours and worker working hours (if applicable in later phases).
+    // 3. Ensure the selected worker (if any) can perform the selected service.
 
-    const endTime = addMinutes(startTime, service.duration);
-
-    const dbUser = await prisma.user.findUnique({
-        where: { clerkId: userId },
-        select: { id: true },
-    });
-
-    if (!dbUser) {
-        console.error('POST /api/appointments: Database user not found for clerkId:', userId); 
-        return new NextResponse('User not found in database', { status: 404 });
-    }
+    const endTime = new Date(parsedStartTime.getTime() + service.duration * 60000); 
 
     const newAppointment = await prisma.appointment.create({
       data: {
-        vendorId: DEFAULT_VENDOR_ID,
-        userId: dbUser.id, 
-        serviceId: serviceId,
-        startTime: startTime,
-        endTime: endTime,
-        status: 'pending',
+        userId: bookingUser.id, 
+        serviceId,
+        vendorId,
+        workerId: workerId || null, 
+        startTime: parsedStartTime,
+        endTime,
+        status: AppointmentStatus.PENDING, 
+        notes,
       },
     });
 
-    console.log('POST /api/appointments: Pending appointment created:', newAppointment); 
     return NextResponse.json(newAppointment, { status: 201 });
-
-  } catch (error) {
-    console.error('Error creating appointment:', error); 
-    // TODO: Handle specific errors, e.g., unique constraint violation if re-checking availability
-    return new NextResponse('Internal Server Error', { status: 500 });
+  } catch (error: unknown) {
+    console.error('Error creating appointment:', error);
+    if (error instanceof z.ZodError) {
+      return NextResponse.json({ message: 'Invalid input', errors: error.flatten().fieldErrors }, { status: 400 });
+    }
+    return NextResponse.json({ message: 'Internal server error while creating appointment' }, { status: 500 });
   }
 }
+
+export const GET = withRoleProtection(GET_handler, [UserRole.SUPER_ADMIN, UserRole.VENDOR_OWNER]);
+export const POST = POST_handler;
