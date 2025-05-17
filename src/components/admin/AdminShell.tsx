@@ -1,3 +1,4 @@
+// src/components/admin/AdminShell.tsx
 'use client';
 
 import { Fragment, useState, useEffect } from 'react';
@@ -11,21 +12,22 @@ import {
   ListOrdered,
   MessageSquare,
   Store,
-  Users,
+  Users, // Default Users icon
+  Users2, // Icon for Workers/Staff
   Settings,
   Building,
   Menu,
   X,
   ShieldCheck,
 } from 'lucide-react';
-import { UserRole } from '@/lib/types/prisma-enums'; 
-import type { AuthenticatedUser } from '@/lib/authUtils'; 
+import { UserRole } from '@/lib/types/prisma-enums';
+import type { AuthenticatedUser } from '@/lib/authUtils';
 
 interface NavItem {
   name: string;
   href: string;
   icon: React.ElementType;
-  roles: UserRole[]; 
+  roles: UserRole[];
   disabled?: boolean;
 }
 
@@ -33,8 +35,11 @@ const allNavLinks: NavItem[] = [
   { name: 'Kontrolna tabla', href: '/admin', icon: Home, roles: [UserRole.SUPER_ADMIN, UserRole.VENDOR_OWNER] },
   { name: 'Termini', href: '/admin/appointments', icon: CalendarDays, roles: [UserRole.SUPER_ADMIN, UserRole.VENDOR_OWNER] },
   { name: 'Usluge', href: '/admin/services', icon: ListOrdered, roles: [UserRole.SUPER_ADMIN, UserRole.VENDOR_OWNER] },
+  { name: 'Radnici', href: '/admin/workers', icon: Users2, roles: [UserRole.VENDOR_OWNER] }, // New link for VENDOR_OWNER
   { name: 'Chat', href: '/admin/chat', icon: MessageSquare, roles: [UserRole.SUPER_ADMIN, UserRole.VENDOR_OWNER] },
   { name: 'Saloni', href: '/admin/vendors', icon: Store, roles: [UserRole.SUPER_ADMIN] },
+  // Example of a SUPER_ADMIN specific link for all workers (if needed later)
+  // { name: 'Svi Radnici', href: '/admin/all-workers', icon: Users, roles: [UserRole.SUPER_ADMIN], disabled: true },
 ];
 
 interface AdminShellProps {
@@ -48,8 +53,8 @@ export default function AdminShell({ children, user }: AdminShellProps) {
   const [visibleNavLinks, setVisibleNavLinks] = useState<NavItem[]>([]);
 
   useEffect(() => {
-    if (user?.role) { 
-      const filteredLinks = allNavLinks.filter(link => link.roles.includes(user.role));
+    if (user?.role) {
+      const filteredLinks = allNavLinks.filter(link => link.roles.includes(user.role as UserRole));
       setVisibleNavLinks(filteredLinks);
     } else {
       setVisibleNavLinks([]);
@@ -125,7 +130,10 @@ export default function AdminShell({ children, user }: AdminShellProps) {
                             group flex items-center px-2 py-2 text-base font-medium rounded-md
                           `}
                           aria-current={pathname === item.href ? 'page' : undefined}
-                          onClick={item.disabled ? (e) => e.preventDefault() : undefined}
+                          onClick={(e) => {
+                            if (item.disabled) e.preventDefault();
+                            else setSidebarOpen(false); // Close sidebar on link click
+                          }}
                         >
                           <item.icon
                             className="mr-4 h-6 w-6 flex-shrink-0"
@@ -193,6 +201,7 @@ export default function AdminShell({ children, user }: AdminShellProps) {
             </button>
             <div className="flex flex-1 justify-between px-4">
               <div className="flex flex-1">
+                {/* Optional: Search bar or other header content */}
               </div>
               <div className="ml-4 flex items-center md:ml-6">
                 <div className="ml-3 relative">

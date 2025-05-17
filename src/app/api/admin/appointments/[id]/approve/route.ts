@@ -1,3 +1,4 @@
+// src/app/api/admin/appointments/[id]/approve/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import {
@@ -5,85 +6,98 @@ import {
   withRoleProtection,
   AuthenticatedUser,
 } from '@/lib/authUtils';
-import { UserRole, AppointmentStatus, Prisma } from '@prisma/client'; 
+import { Prisma } from '@prisma/client';
+import { UserRole, AppointmentStatus } from '@/lib/types/prisma-enums';
 
-
-/**
- * Handles POST requests to approve a PENDING appointment.
- * Changes the appointment status to CONFIRMED.
- * SUPER_ADMIN can approve any appointment.
- * VENDOR_OWNER can only approve appointments for their vendor.
- */
 async function POST_handler(
-  _req: NextRequest, 
-  context: { params: Promise<{ id: string }> } 
+  _req: NextRequest,
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
     const user: AuthenticatedUser | null = await getCurrentUser();
     if (!user) {
-      return NextResponse.json({ message: 'Authentication required' }, { status: 401 });
+      return NextResponse.json({ message: 'Niste autorizovani.' }, { status: 401 });
     }
 
-    const routeParams = await context.params; 
-    const { id: appointmentId } = routeParams;
-
+    const { id: appointmentId } = await context.params;
     if (!appointmentId) {
-      return NextResponse.json({ message: 'Appointment ID is required' }, { status: 400 });
+      return NextResponse.json({ message: 'ID termina je obavezan.' }, { status: 400 });
     }
 
-    let vendorIdForUpdate: string | undefined = undefined;
+    const appointmentToApprove = await prisma.appointment.findUnique({
+      where: { id: appointmentId },
+      select: { status: true, vendorId: true, workerId: true }, // Select workerId to check if already assigned
+    });
+
+    if (!appointmentToApprove) {
+      return NextResponse.json({ message: 'Termin nije pronađen.' }, { status: 404 });
+    }
+
     if (user.role === UserRole.VENDOR_OWNER) {
-      if (!user.ownedVendorId) {
-        console.error(`POST /api/admin/appointments/${appointmentId}/approve: VENDOR_OWNER user ${user.id} does not own a vendor.`);
-        return NextResponse.json({ message: 'Forbidden: Admin not associated with a vendor.' }, { status: 403 });
+      if (!user.ownedVendorId || appointmentToApprove.vendorId !== user.ownedVendorId) {
+        return NextResponse.json({ message: 'Zabranjeno: Nemate dozvolu da odobrite ovaj termin.' }, { status: 403 });
       }
-      vendorIdForUpdate = user.ownedVendorId;
     }
 
-    // This ensures we only update if the appointment exists, is PENDING,
-    // and (for VENDOR_OWNER) belongs to their vendor.
-    const updateWhereClause: Prisma.AppointmentWhereUniqueInput & { status: AppointmentStatus, vendorId?: string } = {
-        id: appointmentId,
-        status: AppointmentStatus.PENDING,
+    if (appointmentToApprove.status !== AppointmentStatus.PENDING) {
+      return NextResponse.json(
+        { message: `Termin se ne može odobriti. Trenutni status: ${appointmentToApprove.status}` },
+        { status: 409 }
+      );
+    }
+
+    let dataToUpdate: Prisma.AppointmentUpdateInput = {
+      status: AppointmentStatus.CONFIRMED,
     };
 
-    if (vendorIdForUpdate) {
-        updateWhereClause.vendorId = vendorIdForUpdate;
+    // Automatic assignment logic if no worker is assigned yet
+    if (!appointmentToApprove.workerId) {
+      const workersOfVendor = await prisma.worker.findMany({
+        where: { vendorId: appointmentToApprove.vendorId },
+        select: { id: true },
+        // Add orderBy if you have a preference for "first"
+        // orderBy: { createdAt: 'asc' } // Example: oldest worker first
+      });
+
+      if (workersOfVendor.length > 0) {
+        // Correct way to update a foreign key via relation
+        dataToUpdate.worker = {
+          connect: {
+            id: workersOfVendor[0].id,
+          },
+        };
+        console.log(`Termin ${appointmentId} automatski dodeljen radniku ${workersOfVendor[0].id} prilikom odobravanja.`);
+      } else {
+        console.log(`Nema dostupnih radnika u salonu ${appointmentToApprove.vendorId} za automatsku dodelu terminu ${appointmentId}.`);
+        // Optionally, you could prevent approval if no worker can be assigned, or leave it as is.
+        // If you want to explicitly set workerId to null if no workers are found (though it's already null):
+        // dataToUpdate.workerId = null; // Or worker: { disconnect: true } if it was previously connected
+      }
     }
 
     const updatedAppointment = await prisma.appointment.update({
-      where: updateWhereClause,
-      data: {
-        status: AppointmentStatus.CONFIRMED, 
-      },
+      where: { id: appointmentId },
+      data: dataToUpdate,
+      include: { // Return worker details
+          worker: { select: {id: true, name: true}}
+      }
     });
-
-    // TODO: Optional: Send a notification to the user that their appointment is confirmed.
 
     return NextResponse.json(updatedAppointment);
 
   } catch (error: unknown) {
-    const errorParams = await context.params;
-    console.error(`Error approving appointment ${errorParams.id}:`, error);
-
-    // P2025: An operation failed because it depends on one or more records that were required but not found. {cause}
+    const { id: appointmentId } = await context.params; // Re-access params in catch
+    console.error(`Greška pri odobravanju termina ${appointmentId || 'unknown'}:`, error);
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
-      // This error means the `where` condition in `prisma.appointment.update` was not met.
-      // This could be because:
-      // 1. The appointmentId does not exist.
-      // 2. The appointment status was not PENDING.
-      // 3. For a VENDOR_OWNER, the appointment did not belong to their vendorId.
       return NextResponse.json(
-        { message: 'Appointment not found, not pending, or does not belong to your vendor.' },
+        { message: 'Termin nije pronađen ili nije na čekanju.' },
         { status: 404 }
       );
     }
-    
-    return NextResponse.json({ message: 'Internal server error while approving appointment' }, { status: 500 });
+    return NextResponse.json({ message: 'Interna greška servera.' }, { status: 500 });
   }
 }
 
-// Only SUPER_ADMIN and VENDOR_OWNER can approve appointments.
 export const POST = withRoleProtection(
   POST_handler,
   [UserRole.SUPER_ADMIN, UserRole.VENDOR_OWNER]

@@ -3,7 +3,7 @@ import 'server-only'; // Osigurava da se ovaj modul koristi samo na serveru
 import { NextRequest, NextResponse } from 'next/server';
 import { auth as getClerkAuth } from '@clerk/nextjs/server';
 import prisma from './prisma';
-import { UserRole } from '@prisma/client'; 
+import { UserRole } from '@/lib/types/prisma-enums'; 
 
 export interface AuthenticatedUser {
   id: string; 

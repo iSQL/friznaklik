@@ -26,7 +26,7 @@
 * **Clerk:** Use `auth()` from `@clerk/nextjs/server` for authentication checks in Server Components/API routes and `useAuth()` from `@clerk/nextjs` in Client Components. Handle loading states (`isLoaded`).
 * **Prisma:** Use Prisma Client (`@/lib/prisma`) for all database interactions. Follow Prisma schema definitions.
 * **Admin Role Check:**
-    * On the **server-side** (Layouts, Pages, API Routes), use the `isAdmin` function imported from `src/lib/authUtils.ts` to check if a user has administrative privileges.
+    * On the **server-side** (Layouts, Pages, API Routes), use the functions imported from `src/lib/authUtils.ts` to check if a user has administrative privileges.
     * Avoid relying solely on client-side checks or JWT claims (`sessionClaims`) for critical authorization logic. If admin status is needed in a Client Component, fetch it or pass it down as a prop from a Server Component parent (like `RootLayout` passing `isUserAdminFromServer` to `Header`).
 * **Error Handling:** Utilize `formatErrorMessage` from `src/lib/errorUtils.ts` where applicable. Implement proper error handling (try/catch) in API calls and data fetching. Display user-friendly error messages.
 * **State Management:** Use Zustand stores (`bookingStore`, `chatStore`) for relevant client-side state.

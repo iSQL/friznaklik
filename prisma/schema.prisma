@@ -126,6 +126,8 @@ model Worker {
   userId       String?       @unique // Optional: Link to a User account if the worker can log in
   user         User?         @relation(fields: [userId], references: [id])
   name         String        // e.g., "Jane Doe" (if not linked to a User) or derived from User
+  bio         String?
+  photoUrl    String?
   email        String?       @unique // Optional, if worker needs direct notifications/login
   phoneNumber  String?
   skills       Skill[]       @relation("WorkerSkills") 

@@ -6,16 +6,16 @@ import {
   withRoleProtection,
   AuthenticatedUser,
 } from '@/lib/authUtils';
-import { UserRole, VendorStatus } from '@prisma/client';
+import { UserRole, VendorStatus } from '@prisma/client'; 
 import { z } from 'zod';
 
 const vendorSchema = z.object({
   name: z.string().min(1, 'Naziv salona je obavezan.'),
   description: z.string().optional().nullable(),
-  ownerId: z.string().cuid('ID vlasnika mora biti validan CUID.'),
+  ownerId: z.string().min(1, 'ID vlasnika (Clerk ID) je obavezan.'), 
   address: z.string().optional().nullable(),
   phoneNumber: z.string().optional().nullable(),
-  operatingHours: z.any().optional().nullable(), // Može biti JSON, za sada 'any'
+  operatingHours: z.any().optional().nullable(),
 });
 
 /**
@@ -26,7 +26,7 @@ async function GET_handler(req: NextRequest) {
   try {
     const vendors = await prisma.vendor.findMany({
       include: {
-        owner: { 
+        owner: {
           select: {
             id: true,
             clerkId: true,
@@ -35,7 +35,7 @@ async function GET_handler(req: NextRequest) {
             email: true,
           },
         },
-        _count: { 
+        _count: {
             select: { services: true, appointments: true }
         }
       },
@@ -63,24 +63,23 @@ async function POST_handler(req: NextRequest) {
       return NextResponse.json({ message: 'Nevalidan unos', errors: parseResult.error.flatten().fieldErrors }, { status: 400 });
     }
 
-    const { name, description, ownerId, address, phoneNumber, operatingHours } = parseResult.data;
+    const { name, description, ownerId: ownerClerkId, address, phoneNumber, operatingHours } = parseResult.data;
 
     const ownerUser = await prisma.user.findUnique({
-      where: { clerkId: ownerId },
+      where: { clerkId: ownerClerkId }, 
     });
 
     if (!ownerUser) {
-      return NextResponse.json({ message: `Korisnik (vlasnik) sa Clerk ID ${ownerId} nije pronađen.` }, { status: 404 });
+      return NextResponse.json({ message: `Korisnik (vlasnik) sa Clerk ID ${ownerClerkId} nije pronađen.` }, { status: 404 });
     }
-    
+
     const existingVendorForOwner = await prisma.vendor.findUnique({
         where: { ownerId: ownerUser.id } 
     });
 
     if (existingVendorForOwner) {
-        return NextResponse.json({ message: `Korisnik ${ownerUser.email} već poseduje salon: ${existingVendorForOwner.name}.` }, { status: 409 }); 
+        return NextResponse.json({ message: `Korisnik ${ownerUser.email} već poseduje salon: ${existingVendorForOwner.name}.` }, { status: 409 });
     }
-
 
     const newVendor = await prisma.vendor.create({
       data: {
@@ -89,12 +88,12 @@ async function POST_handler(req: NextRequest) {
         ownerId: ownerUser.id, 
         address,
         phoneNumber,
-        operatingHours: operatingHours || Prisma.JsonNull, // Ako je null, koristi Prisma.JsonNull
-        status: VendorStatus.ACTIVE, 
+        operatingHours: operatingHours || Prisma.JsonNull,
+        status: VendorStatus.ACTIVE,
       },
     });
 
-    if (ownerUser.role !== UserRole.SUPER_ADMIN) {
+    if (ownerUser.role !== UserRole.SUPER_ADMIN && ownerUser.role !== UserRole.VENDOR_OWNER) {
         await prisma.user.update({
             where: { id: ownerUser.id },
             data: { role: UserRole.VENDOR_OWNER },
@@ -105,10 +104,9 @@ async function POST_handler(req: NextRequest) {
 
   } catch (error: unknown) {
     console.error('Greška pri kreiranju salona:', error);
-    if (error instanceof z.ZodError) { 
+    if (error instanceof z.ZodError) {
         return NextResponse.json({ message: 'Nevalidan unos', errors: error.flatten().fieldErrors }, { status: 400 });
     }
-    // TODO: Detaljnije rukovanje Prisma greškama (npr. unique constraint)
     return NextResponse.json({ message: 'Interna greška servera prilikom kreiranja salona.' }, { status: 500 });
   }
 }

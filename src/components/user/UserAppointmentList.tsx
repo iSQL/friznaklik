@@ -1,26 +1,21 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-// Tipovi Appointment i Service iz Prisma su OK za korišćenje u props interfejsima
 import type { Appointment as PrismaAppointment, Service as PrismaService } from '@prisma/client';
-// Uvozimo naš lokalno definisani AppointmentStatus enum
 import { AppointmentStatus } from '@/lib/types/prisma-enums';
 import { parseISO, isPast } from 'date-fns';
 import Link from 'next/link';
-import AppointmentItem from '@/app/dashboard/AppointmentItem'; // Pretpostavka da je putanja tačna
+import AppointmentItem from '@/app/dashboard/AppointmentItem'; 
 import { CalendarPlus, ListFilter, Inbox } from 'lucide-react';
 
-// Tip za termin koji komponenta prima kao prop
-// Osigurava da service postoji i da su vremena Date objekti
+
 export interface AppointmentWithServiceDetails extends PrismaAppointment {
   service: PrismaService;
-  startTime: Date; // Očekujemo Date objekat ovde
-  endTime: Date;   // Očekujemo Date objekat ovde
-  // status polje je tipa Prisma.AppointmentStatus (string enum)
+  startTime: Date; 
+  endTime: Date;   
 }
 
-// Interni tip za obrađeni termin unutar komponente
-// status je sada naš lokalni AppointmentStatus enum
+
 type ProcessedAppointment = Omit<AppointmentWithServiceDetails, 'status'> & {
   status: AppointmentStatus; // Koristimo naš lokalni enum
 };
@@ -168,8 +163,7 @@ export default function UserAppointmentList({ appointments: initialAppointments 
       ) : (
         <div className="space-y-4">
           {filteredAndSortedAppointments.map((appointment) => (
-            // Prosleđujemo ProcessedAppointment komponenti AppointmentItem
-            // AppointmentItemProps treba da bude kompatibilan sa ProcessedAppointment
+
             <AppointmentItem key={appointment.id} appointment={appointment} />
           ))}
         </div>
