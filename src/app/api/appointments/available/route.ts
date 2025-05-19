@@ -15,9 +15,11 @@ import {
     setMilliseconds,
 } from 'date-fns';
 import { getCurrentUser, AuthenticatedUser } from '@/lib/authUtils';
-import { AppointmentStatus, VendorStatus, Prisma, Worker } from '@prisma/client';
+// Ensure Enums are imported from your custom path if they exist there
+import { AppointmentStatus, VendorStatus } from '@/lib/types/prisma-enums';
+import { Prisma } from '@prisma/client'; // Worker type not needed here directly
 
-const BASE_SLOT_INTERVAL = 15;
+const BASE_SLOT_INTERVAL = 15; // Or your desired slot interval
 
 interface WorkerInfo {
     id: string;
@@ -30,22 +32,23 @@ interface SlotWithWorkers {
 
 function getBusinessHoursForDay(operatingHours: any, date: Date): { open: Date, close: Date } | null {
     if (!operatingHours || typeof operatingHours !== 'object') {
-        // console.log('Nema definisanog radnog vremena za salon.');
         return null;
     }
-    const dayOfWeek = format(date, 'eeee').toLowerCase();
+    const dayOfWeek = format(date, 'eeee').toLowerCase(); // e.g., 'monday'
     const hoursForDay = operatingHours[dayOfWeek];
+
     if (!hoursForDay || !hoursForDay.open || !hoursForDay.close) {
-        // console.log(`Salon ne radi na dan: ${dayOfWeek}`);
         return null;
     }
     try {
         const [openHour, openMinute] = hoursForDay.open.split(':').map(Number);
         const [closeHour, closeMinute] = hoursForDay.close.split(':').map(Number);
+
         if (isNaN(openHour) || isNaN(openMinute) || isNaN(closeHour) || isNaN(closeMinute)) {
             console.error('Neispravan format vremena u operatingHours:', hoursForDay);
             return null;
         }
+
         const openTime = setMilliseconds(setSeconds(setMinutes(setHours(startOfDay(date), openHour), openMinute), 0), 0);
         const closeTime = setMilliseconds(setSeconds(setMinutes(setHours(startOfDay(date), closeHour), closeMinute), 0), 0);
         return { open: openTime, close: closeTime };
@@ -56,8 +59,8 @@ function getBusinessHoursForDay(operatingHours: any, date: Date): { open: Date, 
 }
 
 export async function GET(request: NextRequest) {
-    console.log("--- /api/appointments/available ---");
-    const user: AuthenticatedUser | null = await getCurrentUser();
+    console.log("--- /api/appointments/available (Phase 3 Updated) ---");
+    const user: AuthenticatedUser | null = await getCurrentUser(); // Assuming this route is protected
     if (!user) {
         return NextResponse.json({ message: 'Neautorizovan pristup.' }, { status: 401 });
     }
@@ -79,7 +82,6 @@ export async function GET(request: NextRequest) {
             return NextResponse.json({ message: 'Neispravan format datuma. Očekivani format je YYYY-MM-DD.' }, { status: 400 });
         }
         selectedDate = startOfDay(selectedDate);
-        console.log(`Selected Date (start of day): ${selectedDate.toISOString()}`);
 
         const vendor = await prisma.vendor.findUnique({
             where: { id: vendorId },
@@ -87,8 +89,15 @@ export async function GET(request: NextRequest) {
                 operatingHours: true,
                 status: true,
                 name: true,
-                workers: {
-                    select: { id: true, name: true },
+                workers: { // Fetch all workers and their assigned services
+                    select: {
+                        id: true,
+                        name: true,
+                        services: { // Services this worker can perform
+                            where: { active: true }, // Only consider active services
+                            select: { id: true }
+                        }
+                    }
                 }
             }
         });
@@ -96,19 +105,25 @@ export async function GET(request: NextRequest) {
         if (!vendor) {
             return NextResponse.json({ message: 'Traženi salon nije pronađen.' }, { status: 404 });
         }
-        console.log(`Vendor: ${vendor.name}, Status: ${vendor.status}, Workers count: ${vendor.workers.length}`);
         if (vendor.status !== VendorStatus.ACTIVE) {
             return NextResponse.json({ availableSlots: [], message: `Salon "${vendor.name}" trenutno nije aktivan.` }, { status: 200 });
         }
-        if (vendor.workers.length === 0) {
-            return NextResponse.json({ availableSlots: [], message: `Salon "${vendor.name}" trenutno nema definisanih radnika.` }, { status: 200 });
+
+        // Filter workers who can perform the selected service
+        const qualifiedWorkers = vendor.workers.filter(worker =>
+            worker.services.some(s => s.id === serviceId)
+        );
+
+        if (qualifiedWorkers.length === 0) {
+            return NextResponse.json({ availableSlots: [], message: `Nema dostupnih radnika u salonu "${vendor.name}" koji mogu da izvrše odabranu uslugu.` }, { status: 200 });
         }
+        console.log(`Qualified workers for service ${serviceId}: ${qualifiedWorkers.length}`, qualifiedWorkers.map(w=>w.name));
+
 
         const businessHours = getBusinessHoursForDay(vendor.operatingHours, selectedDate);
         if (!businessHours) {
             return NextResponse.json({ availableSlots: [], message: `Salon ne radi na odabrani dan (${format(selectedDate, 'dd.MM.yyyy')}) ili radno vreme nije podešeno.` }, { status: 200 });
         }
-        console.log(`Business Hours for ${format(selectedDate, 'dd.MM.yyyy')}: Open: ${businessHours.open.toISOString()}, Close: ${businessHours.close.toISOString()}`);
         
         const service = await prisma.service.findUnique({
             where: { id: serviceId, vendorId: vendorId, active: true },
@@ -116,10 +131,10 @@ export async function GET(request: NextRequest) {
         });
 
         if (!service) {
+            // This check might be redundant if qualifiedWorkers logic implies service existence, but good for safety.
             return NextResponse.json({ message: 'Aktivna usluga nije pronađena ili ne pripada odabranom salonu.' }, { status: 404 });
         }
         const serviceDuration = service.duration;
-        console.log(`Service: ${service.name}, Duration: ${serviceDuration} min`);
 
         const dayStartQuery = startOfDay(selectedDate);
         const dayEndQuery = endOfDay(selectedDate);
@@ -127,77 +142,55 @@ export async function GET(request: NextRequest) {
         const existingAppointments = await prisma.appointment.findMany({
             where: {
                 vendorId: vendorId,
-                startTime: { // Check appointments that start within the selected day
-                    gte: dayStartQuery,
-                    lt: dayEndQuery,
-                },
-                status: {
-                    in: [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED],
-                },
-                workerId: { not: null },
+                startTime: { gte: dayStartQuery, lt: dayEndQuery },
+                status: { in: [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED] },
+                workerId: { in: qualifiedWorkers.map(w => w.id) } // Only consider appointments of qualified workers
             },
             select: { startTime: true, endTime: true, workerId: true },
         });
-        console.log(`Existing appointments for vendor ${vendorId} on ${dateString}: ${existingAppointments.length}`, existingAppointments);
+        console.log(`Existing appointments for qualified workers on ${dateString}: ${existingAppointments.length}`);
 
         const availableSlotsWithWorkers: SlotWithWorkers[] = [];
         let potentialSlotStart = businessHours.open;
-        const now = new Date();
-
-        console.log(`Starting slot generation. Current time: ${now.toISOString()}`);
+        const now = new Date(); // Ensure appointments are not in the past
 
         while (isBefore(potentialSlotStart, businessHours.close)) {
             const potentialSlotEnd = addMinutes(potentialSlotStart, serviceDuration);
 
-            if (isBefore(businessHours.close, potentialSlotEnd)) {
-                // console.log(`Slot ${format(potentialSlotStart, 'HH:mm')} - ${format(potentialSlotEnd, 'HH:mm')} ends after closing time ${format(businessHours.close, 'HH:mm')}. Breaking.`);
-                break;
-            }
-
-            if (isBefore(potentialSlotStart, now)) {
-                // console.log(`Slot ${format(potentialSlotStart, 'HH:mm')} is in the past. Skipping.`);
+            if (isBefore(businessHours.close, potentialSlotEnd)) break;
+            if (isBefore(potentialSlotStart, now)) { // Ensure slot is not in the past
                 potentialSlotStart = addMinutes(potentialSlotStart, BASE_SLOT_INTERVAL);
                 continue;
             }
-            // console.log(`Checking slot: ${format(potentialSlotStart, 'HH:mm')} - ${format(potentialSlotEnd, 'HH:mm')}`);
 
             const freeWorkersAtThisSlot: WorkerInfo[] = [];
-            for (const worker of vendor.workers) {
-                const isWorkerBusy = existingAppointments.some(appointment => {
-                    const overlap = appointment.workerId === worker.id &&
-                                  isBefore(appointment.startTime, potentialSlotEnd) &&
-                                  isBefore(potentialSlotStart, appointment.endTime);
-                    // if (overlap && appointment.workerId === worker.id) {
-                    //     console.log(`  Worker ${worker.name} (ID: ${worker.id}) is BUSY due to appointment: ${appointment.startTime.toISOString()} - ${appointment.endTime.toISOString()}`);
-                    // }
-                    return overlap;
-                });
+            // Iterate only through workers qualified for the service
+            for (const worker of qualifiedWorkers) {
+                const isWorkerBusy = existingAppointments.some(appointment =>
+                    appointment.workerId === worker.id &&
+                    isBefore(appointment.startTime, potentialSlotEnd) &&
+                    isBefore(potentialSlotStart, appointment.endTime)
+                );
 
                 if (!isWorkerBusy) {
-                    // console.log(`  Worker ${worker.name} (ID: ${worker.id}) is FREE for this slot.`);
                     freeWorkersAtThisSlot.push({ id: worker.id, name: worker.name });
-                } else {
-                    // console.log(`  Worker ${worker.name} (ID: ${worker.id}) is BUSY for this slot.`);
                 }
             }
 
             if (freeWorkersAtThisSlot.length > 0) {
-                // console.log(`  Slot ${format(potentialSlotStart, 'HH:mm')} is AVAILABLE with workers:`, freeWorkersAtThisSlot.map(w=>w.name));
                 availableSlotsWithWorkers.push({
                     time: format(potentialSlotStart, 'HH:mm'),
                     availableWorkers: freeWorkersAtThisSlot,
                 });
-            } else {
-                // console.log(`  Slot ${format(potentialSlotStart, 'HH:mm')} has NO free workers.`);
             }
-
             potentialSlotStart = addMinutes(potentialSlotStart, BASE_SLOT_INTERVAL);
         }
-        console.log(`Total available slots with worker details for ${dateString}: ${availableSlotsWithWorkers.length}`);
+        
+        console.log(`Total available slots with worker details for ${dateString} (service ${serviceId}): ${availableSlotsWithWorkers.length}`);
         return NextResponse.json({ availableSlots: availableSlotsWithWorkers }, { status: 200 });
 
     } catch (error) {
-        console.error('Greška pri dobavljanju dostupnih termina:', error);
+        console.error('Greška pri dobavljanju dostupnih termina (Phase 3):', error);
         let errorMessage = 'Interna greška servera.';
         if (error instanceof Prisma.PrismaClientKnownRequestError) {
              errorMessage = 'Greška pri komunikaciji sa bazom podataka.';

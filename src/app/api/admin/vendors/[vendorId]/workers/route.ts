@@ -1,3 +1,4 @@
+// src/app/api/admin/vendors/[vendorId]/workers/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import {
@@ -5,7 +6,8 @@ import {
   withRoleProtection,
   AuthenticatedUser,
 } from '@/lib/authUtils';
-import { UserRole, Prisma } from '@prisma/client';
+import { UserRole } from '@/lib/types/prisma-enums';
+import {  Prisma } from '@prisma/client';
 import { z } from 'zod';
 
 // Zod schema for creating a worker
@@ -38,8 +40,10 @@ async function GET_handler(req: NextRequest, context: RouteContext) {
     const workers = await prisma.worker.findMany({
       where: { vendorId: vendorId },
       orderBy: { name: 'asc' },
-      // Optionally include user details if linked
-      // include: { user: { select: { email: true, firstName: true, lastName: true } } }
+      include: {
+        user: { select: { email: true, firstName: true, lastName: true } }, // Include basic user info if linked
+        services: { select: { id: true, name: true } } // Include services worker can perform
+      }
     });
     return NextResponse.json(workers);
   } catch (error) {
@@ -60,7 +64,6 @@ async function POST_handler(req: NextRequest, context: RouteContext) {
   if (user.role === UserRole.VENDOR_OWNER && user.ownedVendorId !== vendorId) {
     return NextResponse.json({ message: 'Zabranjeno: Ne možete dodavati radnike za ovaj salon.' }, { status: 403 });
   }
-  // SUPER_ADMIN can add workers to any vendor
 
   try {
     const body = await req.json();
@@ -81,7 +84,6 @@ async function POST_handler(req: NextRequest, context: RouteContext) {
       if (!linkedUser) {
         return NextResponse.json({ message: `Korisnik sa Clerk ID ${userClerkId} nije pronađen.` }, { status: 404 });
       }
-      // Optional: Check if this user is already a worker for THIS vendor
       const existingWorkerLink = await prisma.worker.findFirst({
           where: { vendorId: vendorId, userId: linkedUser.id }
       });
@@ -89,9 +91,23 @@ async function POST_handler(req: NextRequest, context: RouteContext) {
           return NextResponse.json({ message: `Korisnik ${userClerkId} je već radnik u ovom salonu.`}, { status: 409 });
       }
       prismaUserId = linkedUser.id;
-      // Optional: if a USER becomes a WORKER, update their role if necessary
-      // For now, linking doesn't automatically change UserRole, but you might add that
+      // Optionally, if a USER becomes a WORKER, you might want to update their role to WORKER
+      // For now, we are not changing the UserRole here, but it's a consideration.
+      // if (linkedUser.role === UserRole.USER) {
+      //   await prisma.user.update({ where: { id: linkedUser.id }, data: { role: UserRole.WORKER }});
+      // }
     }
+
+    // Fetch all active services for the vendor
+    const vendorServices = await prisma.service.findMany({
+        where: {
+            vendorId: vendorId,
+            active: true,
+        },
+        select: {
+            id: true,
+        },
+    });
 
     const newWorker = await prisma.worker.create({
       data: {
@@ -100,7 +116,13 @@ async function POST_handler(req: NextRequest, context: RouteContext) {
         photoUrl,
         vendorId: vendorId,
         userId: prismaUserId,
+        services: { // Connect to all vendor's active services by default
+            connect: vendorServices.map(service => ({ id: service.id }))
+        }
       },
+      include: { // Include services in the response
+        services: { select: { id: true, name: true }}
+      }
     });
 
     return NextResponse.json(newWorker, { status: 201 });
@@ -111,15 +133,14 @@ async function POST_handler(req: NextRequest, context: RouteContext) {
       return NextResponse.json({ message: 'Nevalidan unos.', errors: error.flatten().fieldErrors }, { status: 400 });
     }
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
-      // Handle potential unique constraint violation if a user is already a worker globally (due to @unique on userId in Worker model)
-      if (error.code === 'P2002' && error.meta?.target === 'Worker_userId_key') {
-         return NextResponse.json({ message: 'Ovaj korisnik je već registrovan kao radnik negde drugde.' }, { status: 409 });
+      if (error.code === 'P2002' && error.meta?.target === 'Worker_userId_key' || (error.meta?.target as string[])?.includes('unique_vendor_user_worker')) {
+         // Adjusted to check for the named unique constraint as well
+         return NextResponse.json({ message: 'Ovaj korisnik (User) je već registrovan kao radnik za ovaj salon ili globalno ako je userId unikatan.' }, { status: 409 });
       }
     }
     return NextResponse.json({ message: 'Interna greška servera prilikom kreiranja radnika.' }, { status: 500 });
   }
 }
 
-// Apply role protection
 export const GET = withRoleProtection(GET_handler, [UserRole.SUPER_ADMIN, UserRole.VENDOR_OWNER]);
 export const POST = withRoleProtection(POST_handler, [UserRole.SUPER_ADMIN, UserRole.VENDOR_OWNER]);

@@ -7,7 +7,7 @@ import type { Service, Vendor } from '@prisma/client';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { formatErrorMessage, type FormattedError } from '@/lib/errorUtils';
-import { CalendarDays, Clock, ShoppingBag, AlertTriangle, CheckCircle2, ArrowLeft, Loader2, X, Store, Users, MessageSquare } from 'lucide-react'; // Added MessageSquare
+import { CalendarDays, Clock, ShoppingBag, AlertTriangle, CheckCircle2, ArrowLeft, Loader2, X, Store, Users, MessageSquare, Building2, Info } from 'lucide-react';
 
 import DatePicker, { registerLocale } from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
@@ -38,7 +38,7 @@ function BookingForm() {
     availableSlotsData,
     selectedSlotTime,
     selectedWorkerForBookingId,
-    bookingNotes, // Get notes from store
+    bookingNotes,
     bookingStatus,
     bookingError,
     selectVendor,
@@ -47,11 +47,11 @@ function BookingForm() {
     setAvailableSlotsData,
     selectSlotTime,
     selectWorkerForBooking,
-    setBookingNotes, // Get action for notes
+    setBookingNotes,
     setBookingStatus,
     setBookingError,
-    resetBookingState,
-    resetServiceAndBelow,
+    resetBookingState, // Used for full reset on success or explicit reset
+    resetServiceAndBelow, // Used when vendor changes
   } = useBookingStore();
 
   const [currentStep, setCurrentStep] = useState<BookingStep>('SELECT_VENDOR');
@@ -69,12 +69,13 @@ function BookingForm() {
 
   const [workersForSelectedSlot, setWorkersForSelectedSlot] = useState<WorkerInfo[]>([]);
 
+  // Effect to fetch vendors and handle initial vendor selection from URL
   useEffect(() => {
-    const fetchVendors = async () => {
+    const fetchVendorsAndSetInitial = async () => {
       setIsLoadingVendors(true);
       setVendorsError(null);
       try {
-        const response = await fetch(`${SITE_URL}/api/vendors`);
+        const response = await fetch(`${SITE_URL}/api/vendors`); // This API now returns active vendors with their services
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
           throw { message: `Neuspešno preuzimanje salona: ${response.status}`, status: response.status, details: errorData.message || response.statusText } as FormattedError;
@@ -83,78 +84,85 @@ function BookingForm() {
         setVendors(data);
 
         const vendorIdFromUrl = searchParams.get('vendorId');
+        const serviceIdFromUrl = searchParams.get('serviceId'); // Keep for later pre-selection
+
         if (vendorIdFromUrl && data.some(v => v.id === vendorIdFromUrl)) {
-          if (selectedVendorId !== vendorIdFromUrl) selectVendor(vendorIdFromUrl);
+          if (selectedVendorId !== vendorIdFromUrl) {
+            selectVendor(vendorIdFromUrl); // This will also reset service and below
+          }
           setCurrentStep('SELECT_SERVICE');
-        } else if (!selectedVendorId && data.length > 0) {
-           if (data.length === 1) {
-             // selectVendor(data[0].id);
-             // setCurrentStep('SELECT_SERVICE');
-           }
         } else if (selectedVendorId && data.some(v => v.id === selectedVendorId)) {
-            setCurrentStep('SELECT_SERVICE');
-        } else if (selectedVendorId && !data.some(v => v.id === selectedVendorId)) {
-            resetBookingState();
-            setCurrentStep('SELECT_VENDOR');
+          // Vendor already selected in store, proceed accordingly
+          setCurrentStep('SELECT_SERVICE');
+        } else if (data.length === 1 && !vendorIdFromUrl) {
+          // If only one vendor and no specific one from URL, auto-select it.
+          // selectVendor(data[0].id); // Store action will reset dependent states
+          // setCurrentStep('SELECT_SERVICE');
+          // Commented out auto-selection of single vendor to always show selection step if not from URL
+           setCurrentStep('SELECT_VENDOR');
+        } else {
+          setCurrentStep('SELECT_VENDOR');
         }
       } catch (err: unknown) {
         setVendorsError(formatErrorMessage(err, "preuzimanja salona"));
+        setCurrentStep('SELECT_VENDOR'); // Fallback to vendor selection on error
       } finally {
         setIsLoadingVendors(false);
       }
     };
-    fetchVendors();
+    fetchVendorsAndSetInitial();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams]);
+  }, [searchParams, selectVendor]); // selectedVendorId removed to avoid loop if store updates before URL param is processed fully
 
-
+  // Effect to fetch services when a vendor is selected
   useEffect(() => {
-    if (selectedVendorId && currentStep !== 'SELECT_VENDOR') {
+    if (selectedVendorId && (currentStep === 'SELECT_SERVICE' || currentStep === 'SELECT_DATETIME' || currentStep === 'CONFIRM')) {
       const fetchServicesForVendor = async () => {
         setIsLoadingServices(true);
         setServicesError(null);
-        setServices([]);
+        setServices([]); // Clear previous services
         try {
+          // API /api/services already supports ?vendorId=
           const response = await fetch(`${SITE_URL}/api/services?vendorId=${selectedVendorId}`);
           if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));
-            throw { message: `Neuspešno preuzimanje usluga za salon: ${response.status}`, status: response.status, details: errorData.message || response.statusText } as FormattedError;
+            throw { message: `Neuspešno preuzimanje usluga: ${response.status}`, status: response.status, details: errorData.message || response.statusText } as FormattedError;
           }
           const data: Service[] = await response.json();
           setServices(data);
 
           const serviceIdFromUrl = searchParams.get('serviceId');
-          const serviceNameFromUrl = searchParams.get('serviceName'); // For pre-selection if ID matches
-          
-          if (serviceIdFromUrl && data.some(s => s.id === serviceIdFromUrl)) {
-            if(selectedServiceId !== serviceIdFromUrl) selectService(serviceIdFromUrl);
+          if (currentStep === 'SELECT_SERVICE' && serviceIdFromUrl && data.some(s => s.id === serviceIdFromUrl)) {
+            if(selectedServiceId !== serviceIdFromUrl) selectService(serviceIdFromUrl); // This resets date and below
             setCurrentStep('SELECT_DATETIME');
           } else if (data.length === 0) {
             setServicesError("Odabrani salon trenutno nema dostupnih aktivnih usluga.");
           }
         } catch (err: unknown) {
-          setServicesError(formatErrorMessage(err, "preuzimanja usluga za salon"));
+          setServicesError(formatErrorMessage(err, "preuzimanja usluga za odabrani salon"));
         } finally {
           setIsLoadingServices(false);
         }
       };
       fetchServicesForVendor();
     } else if (!selectedVendorId) {
-      setServices([]);
-      if (selectedServiceId) selectService(null);
+      setServices([]); // Clear services if no vendor is selected
+      if(currentStep !== 'SELECT_VENDOR') setCurrentStep('SELECT_VENDOR'); // Go back to vendor selection
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedVendorId, currentStep, searchParams]);
+  }, [selectedVendorId, currentStep, searchParams, selectService]); // selectedServiceId removed to avoid loops
 
-  useEffect(() => {
+  // Effect to fetch available slots
+   useEffect(() => {
     if (selectedVendorId && selectedServiceId && selectedDate && currentStep === 'SELECT_DATETIME') {
       const fetchAvailableSlots = async () => {
         setIsLoadingSlots(true);
         setSlotsError(null);
-        setAvailableSlotsData([]);
+        setAvailableSlotsData([]); // Reset previous slots
         setWorkersForSelectedSlot([]);
         try {
           const formattedDate = format(selectedDate, 'yyyy-MM-dd');
+          // API /api/appointments/available now requires vendorId
           const response = await fetch(`${SITE_URL}/api/appointments/available?vendorId=${selectedVendorId}&serviceId=${selectedServiceId}&date=${formattedDate}`);
           if (!response.ok) {
             const errorData = await response.json().catch(() => ({ message: `Termini nisu dostupni: ${response.statusText}` }));
@@ -167,7 +175,7 @@ function BookingForm() {
             setAvailableSlotsData([]);
           } else {
             let slotsData = data.availableSlots;
-            const currentMinBookingTime = addHours(new Date(), 1); // Allow booking 1 hour from now
+            const currentMinBookingTime = addHours(new Date(), 1);
             if (isSameDay(selectedDate, new Date())) {
               slotsData = slotsData.filter(slot => {
                 const [hours, minutes] = slot.time.split(':').map(Number);
@@ -191,25 +199,34 @@ function BookingForm() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedVendorId, selectedServiceId, selectedDate, currentStep]);
 
+
   const handleVendorSelect = (vendorId: string) => {
-    selectVendor(vendorId);
+    if (selectedVendorId !== vendorId) {
+        selectVendor(vendorId); // This action should reset service, date, slot, worker, notes
+    }
     setCurrentStep('SELECT_SERVICE');
-    setServicesError(null); setSlotsError(null); setBookingError(null);
+    setServicesError(null);
+    setSlotsError(null);
+    setBookingError(null);
   };
 
   const handleServiceSelect = (serviceId: string) => {
-    selectService(serviceId);
+    if (selectedServiceId !== serviceId) {
+        selectService(serviceId); // This action should reset date, slot, worker, notes
+    }
     setCurrentStep('SELECT_DATETIME');
-    setSlotsError(null); setBookingError(null);
+    setSlotsError(null);
+    setBookingError(null);
   };
 
   const handleDateSelect = (date: Date | null) => {
     if (date && isBefore(date, startOfToday()) && !isSameDay(date, startOfToday())) {
       selectDate(startOfToday());
     } else {
-      selectDate(date);
+      selectDate(date); // This action should reset slot, worker, notes
     }
-    setSlotsError(null); setBookingError(null);
+    setSlotsError(null);
+    setBookingError(null);
     setWorkersForSelectedSlot([]);
   };
 
@@ -220,14 +237,13 @@ function BookingForm() {
         const slotDateTime = setMinutes(setHours(selectedDate, hours), minutes);
         if (isBefore(slotDateTime, currentMinBookingTime)) {
             setBookingError("Odabrani termin je unutar narednih sat vremena i ne može se rezervisati.");
-            selectSlotTime(null);
+            selectSlotTime(null); // Resets selectedSlotTime and worker
             setWorkersForSelectedSlot([]);
             return;
         }
     }
-    selectSlotTime(slotData.time);
+    selectSlotTime(slotData.time); // This action will also set a default worker
     setWorkersForSelectedSlot(slotData.availableWorkers || []);
-    // Default worker selection is handled in the store's selectSlotTime action
     setCurrentStep('CONFIRM');
     setBookingError(null);
   };
@@ -255,8 +271,8 @@ function BookingForm() {
           vendorId: selectedVendorId,
           serviceId: selectedServiceId,
           startTime: startTime.toISOString(),
-          workerId: selectedWorkerForBookingId,
-          notes: bookingNotes, // Send notes
+          workerId: selectedWorkerForBookingId, // Will be null if "any" or if store logic sets it
+          notes: bookingNotes,
         }),
       });
       if (!response.ok) {
@@ -266,7 +282,8 @@ function BookingForm() {
         };
         try {
           const errorData = await response.json();
-          errorPayload.details = errorData.message || errorData.error || errorPayload.details || JSON.stringify(errorData);
+          errorPayload.message = errorData.message || errorData.error || errorPayload.message; // Use detailed message from API if available
+          errorPayload.details = errorData.details || JSON.stringify(errorData);
         } catch {
           errorPayload.details = await response.text();
         }
@@ -274,9 +291,10 @@ function BookingForm() {
       }
       setBookingStatus('success');
       successModalRef.current?.showModal();
-      useBookingStore.getState().resetServiceAndBelow(); // Resets service, date, slot, worker, notes
+      // Reset for a new booking, keep vendor selected
+      useBookingStore.getState().resetServiceAndBelow();
       setWorkersForSelectedSlot([]);
-      setCurrentStep('SELECT_SERVICE');
+      setCurrentStep('SELECT_SERVICE'); // Go back to service selection for the same vendor
 
     } catch (err: unknown) {
       setBookingStatus('error');
@@ -286,12 +304,14 @@ function BookingForm() {
 
   const selectedVendorName = vendors.find(v => v.id === selectedVendorId)?.name || 'Salon';
   const selectedServiceName = services.find(s => s.id === selectedServiceId)?.name || 'Usluga';
-  const selectedWorkerName = workersForSelectedSlot.find(w => w.id === selectedWorkerForBookingId)?.name || 'Bilo koji dostupan';
+  const selectedWorkerToDisplay = selectedWorkerForBookingId
+    ? workersForSelectedSlot.find(w => w.id === selectedWorkerForBookingId)?.name || `Radnik (ID: ...${selectedWorkerForBookingId.slice(-4)})`
+    : 'Bilo koji dostupan';
 
 
   const isWeekday = (date: Date) => {
     const day = getDay(date);
-    return day !== 0 && day !== 6;
+    return day !== 0 && day !== 6; // Sunday is 0, Saturday is 6
   };
 
   const getDayClassName = (date: Date): string => {
@@ -303,9 +323,9 @@ function BookingForm() {
     }
     return "";
   };
-
+  
   const isSlotDisabled = (slotTime: string): boolean => {
-    const currentMinBookingTime = addHours(new Date(), 1);
+    const currentMinBookingTime = addHours(new Date(), 1); // Minimum 1 hour from now
     if (selectedDate && isSameDay(selectedDate, new Date())) {
         const [hours, minutes] = slotTime.split(':').map(Number);
         const slotDateTime = setMinutes(setHours(selectedDate, hours), minutes);
@@ -325,7 +345,7 @@ function BookingForm() {
         <button
             onClick={onClick}
             disabled={!isEnabled || isActive}
-            className={`step ${isActive || isCompleted ? 'step-primary' : ''} ${!isEnabled && !isActive ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+            className={`step ${isActive || isCompleted ? 'step-primary' : ''} ${!isEnabled && !isActive && !isCompleted ? 'opacity-50 cursor-not-allowed step-neutral' : 'cursor-pointer'}`}
         >
             {title}
         </button>
@@ -334,14 +354,19 @@ function BookingForm() {
 
   const handleGoToStep = (step: BookingStep) => {
     if (step === 'SELECT_VENDOR') {
-        selectVendor(null); // This will reset service, date, slot, worker, notes via store logic
+        // This will trigger useEffect to refetch vendors if necessary,
+        // and store's selectVendor(null) will reset dependent states
+        selectVendor(null);
     } else if (step === 'SELECT_SERVICE') {
-        selectService(null); // This will reset date, slot, worker, notes
+        // selectService(null) will reset date, slot, worker, notes
+        selectService(null);
     } else if (step === 'SELECT_DATETIME') {
-        selectDate(null); // This will reset slot, worker, notes
+        // selectDate(null) will reset slot, worker, notes
+        selectDate(null);
         setWorkersForSelectedSlot([]);
     }
     setCurrentStep(step);
+    setBookingError(null); // Clear booking error when navigating steps
   }
 
 
@@ -358,22 +383,23 @@ function BookingForm() {
         <StepIndicator step="SELECT_VENDOR" title="1. Salon" current={currentStep} onClick={() => handleGoToStep('SELECT_VENDOR')} isEnabled={true} />
         <StepIndicator step="SELECT_SERVICE" title="2. Usluga" current={currentStep} onClick={() => handleGoToStep('SELECT_SERVICE')} isEnabled={!!selectedVendorId} />
         <StepIndicator step="SELECT_DATETIME" title="3. Vreme" current={currentStep} onClick={() => handleGoToStep('SELECT_DATETIME')} isEnabled={!!selectedServiceId} />
-        <StepIndicator step="CONFIRM" title="4. Potvrda" current={currentStep} onClick={() => handleGoToStep('CONFIRM')} isEnabled={!!selectedSlotTime} />
+        <StepIndicator step="CONFIRM" title="4. Potvrda" current={currentStep} onClick={() => { /* Allow going to confirm only if slot is selected */ if(selectedSlotTime) setCurrentStep('CONFIRM'); }} isEnabled={!!selectedSlotTime} />
       </ul>
 
+      {/* Step 1: Select Vendor */}
       {currentStep === 'SELECT_VENDOR' && (
         <section id="select-vendor" className="mb-8 p-4 sm:p-6 card bg-base-200 shadow-xl border border-base-300/50">
           <h2 className="text-xl sm:text-2xl font-semibold mb-4 card-title text-primary flex items-center">
-            <Store className="h-6 w-6 mr-2" /> 1. Odaberite Salon
+            <Building2 className="h-6 w-6 mr-2" /> 1. Odaberite Salon
           </h2>
           {isLoadingVendors ? (
             <div className="flex justify-center items-center h-32"> <Loader2 className="h-12 w-12 animate-spin text-primary" /> </div>
           ) : vendorsError ? (
             <div role="alert" className="alert alert-error"> <AlertTriangle className="h-6 w-6" /> <span>{vendorsError}</span> </div>
           ) : vendors.length === 0 ? (
-            <div role="alert" className="alert alert-info"> <AlertTriangle className="h-6 w-6" /> <span>Trenutno nema aktivnih salona. Molimo pokušajte kasnije.</span> </div>
+            <div role="alert" className="alert alert-info"> <Info className="h-6 w-6" /> <span>Trenutno nema aktivnih salona. Molimo pokušajte kasnije.</span> </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {vendors.map((vendor) => (
                 <div
                   key={vendor.id}
@@ -396,6 +422,7 @@ function BookingForm() {
         </section>
       )}
 
+      {/* Step 2: Select Service */}
       {currentStep === 'SELECT_SERVICE' && selectedVendorId && (
         <section id="select-service" className="mb-8 p-4 sm:p-6 card bg-base-200 shadow-xl border border-base-300/50">
           <h2 className="text-xl sm:text-2xl font-semibold mb-4 card-title text-primary flex items-center">
@@ -406,7 +433,7 @@ function BookingForm() {
           ) : servicesError ? (
             <div role="alert" className="alert alert-error"> <AlertTriangle className="h-6 w-6" /> <span>{servicesError}</span> </div>
           ) : services.length === 0 ? (
-            <div role="alert" className="alert alert-info"> <AlertTriangle className="h-6 w-6" /> <span>Ovaj salon trenutno nema dostupnih aktivnih usluga.</span> </div>
+            <div role="alert" className="alert alert-info"> <Info className="h-6 w-6" /> <span>Ovaj salon trenutno nema dostupnih aktivnih usluga.</span> </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {services.map((service) => (
@@ -431,6 +458,7 @@ function BookingForm() {
         </section>
       )}
 
+       {/* Step 3: Select Date & Time */}
       {currentStep === 'SELECT_DATETIME' && selectedVendorId && selectedServiceId && (
         <section id="select-datetime" className="mb-8 p-4 sm:p-6 card bg-base-200 shadow-xl border border-base-300/50">
           <h2 className="text-xl sm:text-2xl font-semibold mb-6 card-title text-primary flex items-center">
@@ -492,6 +520,7 @@ function BookingForm() {
         </section>
       )}
 
+      {/* Step 4: Confirm Booking */}
       {currentStep === 'CONFIRM' && selectedVendorId && selectedServiceId && selectedDate && selectedSlotTime && (
         <section id="confirm-booking" className="mt-8 p-4 sm:p-6 card bg-base-200 shadow-xl border border-base-300/50">
           <h2 className="text-xl sm:text-2xl font-semibold mb-4 card-title text-primary flex items-center">
@@ -506,13 +535,13 @@ function BookingForm() {
             {workersForSelectedSlot.length > 0 && (
                 <div className="form-control w-full max-w-md mt-3">
                     <label className="label" htmlFor="workerSelect">
-                        <span className="label-text font-semibold flex items-center"><Users className="h-4 w-4 mr-2"/>Odaberite Radnika:</span>
+                        <span className="label-text font-semibold flex items-center"><Users className="h-4 w-4 mr-2"/>Odaberite Radnika (opciono):</span>
                     </label>
                     <select
                         id="workerSelect"
                         className="select select-bordered select-sm"
-                        value={selectedWorkerForBookingId || ""}
-                        onChange={(e) => selectWorkerForBooking(e.target.value || null)}
+                        value={selectedWorkerForBookingId || ""} // Default to "" for "Bilo koji"
+                        onChange={(e) => selectWorkerForBooking(e.target.value || null) /* Pass null if "" selected */ }
                     >
                         <option value="">Bilo koji dostupan radnik</option>
                         {workersForSelectedSlot.map(worker => (
@@ -523,7 +552,8 @@ function BookingForm() {
                     </select>
                 </div>
             )}
-             <p className="text-sm mt-1"><span className="font-semibold">Izabrani radnik:</span> {selectedWorkerName}</p>
+            <p className="text-sm mt-1"><span className="font-semibold">Izabrani radnik:</span> {selectedWorkerToDisplay}</p>
+
 
             <div className="form-control w-full mt-3">
                 <label className="label" htmlFor="bookingNotes">
@@ -538,6 +568,17 @@ function BookingForm() {
                 ></textarea>
             </div>
           </div>
+
+          {bookingStatus === 'error' && bookingError && (
+            <div role="alert" className="alert alert-error mt-0 mb-4">
+                <AlertTriangle className="h-6 w-6" />
+                <div>
+                    <h3 className="font-bold">Zakazivanje Neuspešno!</h3>
+                    <div className="text-xs">{bookingError}</div>
+                </div>
+            </div>
+          )}
+
           <button
             onClick={handleBookingSubmit}
             className={`btn btn-success btn-lg w-full sm:w-auto ${ bookingStatus === 'submitting' ? 'btn-disabled' : '' }`}
@@ -547,19 +588,17 @@ function BookingForm() {
               <> <Loader2 className="h-5 w-5 mr-2 animate-spin" /> Slanje Zahteva... </>
             ) : ( 'Pošalji Zahtev za Termin' )}
           </button>
-          {bookingStatus === 'error' && bookingError && (
-            <div role="alert" className="alert alert-error mt-4"> <AlertTriangle className="h-6 w-6" /> <div> <h3 className="font-bold">Zakazivanje Neuspešno!</h3> <div className="text-xs">{bookingError}</div> </div> </div>
-          )}
         </section>
       )}
 
+      {/* Back Button Logic */}
       {(currentStep !== 'SELECT_VENDOR' || vendorsError || servicesError || slotsError) && (
          <div className="mt-12 text-center">
             <button onClick={() => {
                 if (currentStep === 'SELECT_SERVICE') { handleGoToStep('SELECT_VENDOR'); }
                 else if (currentStep === 'SELECT_DATETIME') { handleGoToStep('SELECT_SERVICE'); }
                 else if (currentStep === 'CONFIRM') { handleGoToStep('SELECT_DATETIME'); }
-                else { router.back(); }
+                else { router.push('/'); } // Fallback, or could go to /vendors
             }} className="btn btn-ghost">
             <ArrowLeft className="h-5 w-5 mr-2" /> Nazad
             </button>
@@ -573,15 +612,16 @@ function BookingForm() {
           <p className="py-4 text-base text-base-content">Vaš zahtev za termin je uspešno poslat. Dobićete potvrdu kada bude odobren.</p>
           <div className="modal-action justify-center">
             <form method="dialog">
-              <button className="btn btn-primary" onClick={() => { resetBookingState(); setCurrentStep('SELECT_VENDOR');}}>Odlično!</button>
+              <button className="btn btn-primary" onClick={() => {setCurrentStep('SELECT_SERVICE');}}>Odlično!</button>
             </form>
           </div>
         </div>
         <form method="dialog" className="modal-backdrop">
-            <button onClick={() => { resetBookingState(); setCurrentStep('SELECT_VENDOR');}}>zatvori</button>
+            <button onClick={() => {setCurrentStep('SELECT_SERVICE');}}>zatvori</button>
         </form>
       </dialog>
 
+      {/* Style for react-datepicker - same as before */}
       <style jsx global>{`
         .react-datepicker-wrapper { display: inline-block; }
         .react-datepicker {
@@ -662,6 +702,7 @@ function BookingForm() {
 
 export default function BookingPage() {
   return (
+    // Wrap with Suspense for searchParams usage in BookingForm
     <Suspense fallback={<BookingPageSkeleton />}>
       <BookingForm />
     </Suspense>
@@ -691,14 +732,6 @@ function BookingPageSkeleton() {
                         </div>
                     ))}
                 </div>
-            </div>
-            <div className="mb-8 p-6 card bg-base-200 opacity-50">
-                <div className="h-8 bg-base-300 rounded w-2/5 mb-6"></div>
-                 <div className="h-20 bg-base-100 rounded"></div>
-            </div>
-             <div className="mb-8 p-6 card bg-base-200 opacity-50">
-                <div className="h-8 bg-base-300 rounded w-2/5 mb-6"></div>
-                 <div className="h-20 bg-base-100 rounded"></div>
             </div>
             <div className="mt-12 text-center">
                 <div className="h-10 bg-base-300 rounded w-1/4 mx-auto"></div>
