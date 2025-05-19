@@ -4,32 +4,30 @@
 import { useState, useEffect, FormEvent } from 'react';
 import { WorkerAvailability, WorkerScheduleOverride } from '@prisma/client';
 import { AlertTriangle, CalendarPlus, Trash2, Clock, Save, X } from 'lucide-react';
-import { format, parse, isValid, parseISO, isBefore } from 'date-fns'; // Added isBefore and ensured all used functions are imported
+import { format, parse, isValid, parseISO, isBefore } from 'date-fns';
 
-// Types for form data manipulation
 interface AvailabilityData {
-  dayOfWeek: number; // 0 (Sunday) to 6 (Saturday)
+  dayOfWeek: number; 
   startTime: string; // "HH:mm"
   endTime: string;   // "HH:mm"
   isAvailable: boolean;
 }
 
 interface OverrideData {
-  id?: string; // Keep original ID if editing an existing one from DB
-  date: string; // YYYY-MM-DD for input
-  startTime: string | null; // "HH:mm" or null if isDayOff is true
-  endTime: string | null;   // "HH:mm" or null if isDayOff is true
+  id?: string; 
+  date: string; // Always yyyy-MM-dd for input
+  startTime: string | null; 
+  endTime: string | null;   
   isDayOff: boolean;
   notes: string;
 }
 
-// This is the type for the data structure the onSubmit prop expects
 interface OnSubmitOverrideData {
-    date: string; // Should be YYYY-MM-DD
+    date: string; // yyyy-MM-DD
     startTime: string | null;
     endTime: string | null;
     isDayOff: boolean;
-    notes: string | null; // Allow notes to be null as well if empty
+    notes: string | null;
 }
 
 interface WorkerScheduleFormProps {
@@ -37,7 +35,7 @@ interface WorkerScheduleFormProps {
   onClose: () => void;
   onSubmit: (formData: {
     availabilities: AvailabilityData[];
-    overrides: OnSubmitOverrideData[]; // Use the refined type here
+    overrides: OnSubmitOverrideData[];
   }) => Promise<void>;
   workerName: string | null;
   initialAvailabilities?: WorkerAvailability[];
@@ -47,13 +45,10 @@ interface WorkerScheduleFormProps {
 }
 
 const daysOfWeek = [
-  { value: 1, label: 'Ponedeljak' }, // Monday
-  { value: 2, label: 'Utorak' },
-  { value: 3, label: 'Sreda' },
-  { value: 4, label: 'Četvrtak' },
-  { value: 5, label: 'Petak' },
-  { value: 6, label: 'Subota' },
-  { value: 0, label: 'Nedelja' }, // Sunday
+  { value: 1, label: 'Ponedeljak' }, { value: 2, label: 'Utorak' },
+  { value: 3, label: 'Sreda' }, { value: 4, label: 'Četvrtak' },
+  { value: 5, label: 'Petak' }, { value: 6, label: 'Subota' },
+  { value: 0, label: 'Nedelja' }, 
 ];
 
 export default function WorkerScheduleForm({
@@ -71,7 +66,6 @@ export default function WorkerScheduleForm({
   const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Initialize weekly availabilities
     const initialWeekly: AvailabilityData[] = daysOfWeek.map(day => {
       const existing = initialAvailabilities.find(a => a.dayOfWeek === day.value);
       return {
@@ -83,7 +77,6 @@ export default function WorkerScheduleForm({
     });
     setWeeklyAvailabilities(initialWeekly);
 
-    // Initialize date overrides
     const initialDateOverridesData: OverrideData[] = initialOverrides.map((override, index) => ({
       id: override.id || `temp-${index}-${Date.now()}`,
       date: format(parseISO(override.date as unknown as string), 'yyyy-MM-dd'),
@@ -141,8 +134,8 @@ export default function WorkerScheduleForm({
   const validateTimes = (): boolean => {
     for (const avail of weeklyAvailabilities) {
       if (avail.isAvailable) {
-        if (!avail.startTime || !avail.endTime) {
-          setFormError(`Molimo unesite početno i krajnje vreme za ${daysOfWeek.find(d=>d.value === avail.dayOfWeek)?.label || 'dan'}.`);
+        if (!avail.startTime || !avail.endTime || !/^[0-2]\d:[0-5]\d$/.test(avail.startTime) || !/^[0-2]\d:[0-5]\d$/.test(avail.endTime)) {
+          setFormError(`Molimo unesite ispravno početno i krajnje vreme (HH:mm) za ${daysOfWeek.find(d=>d.value === avail.dayOfWeek)?.label || 'dan'}.`);
           return false;
         }
         const start = parse(avail.startTime, 'HH:mm', new Date());
@@ -155,8 +148,8 @@ export default function WorkerScheduleForm({
     }
     for (const override of dateOverrides) {
       if (!override.isDayOff) {
-        if (!override.startTime || !override.endTime) {
-          setFormError(`Molimo unesite početno i krajnje vreme za izuzetak datuma ${override.date}.`);
+        if (!override.startTime || !override.endTime || !/^[0-2]\d:[0-5]\d$/.test(override.startTime) || !/^[0-2]\d:[0-5]\d$/.test(override.endTime)) {
+          setFormError(`Molimo unesite ispravno početno i krajnje vreme (HH:mm) za izuzetak datuma ${override.date}.`);
           return false;
         }
         const start = parse(override.startTime, 'HH:mm', new Date());
@@ -166,7 +159,7 @@ export default function WorkerScheduleForm({
           return false;
         }
       }
-      if (!override.date || !isValid(parseISO(override.date))) { // Validate date string format
+      if (!override.date || !isValid(parseISO(override.date))) { 
           setFormError(`Neispravan format datuma za izuzetak: ${override.date}. Koristite YYYY-MM-DD.`);
           return false;
       }
@@ -175,18 +168,17 @@ export default function WorkerScheduleForm({
     return true;
   };
 
-
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     if (!validateTimes()) {
       return;
     }
     const payloadOverrides: OnSubmitOverrideData[] = dateOverrides.map(({ id, ...rest }) => ({
-        date: rest.date, // Already YYYY-MM-DD string
-        startTime: rest.isDayOff ? null : rest.startTime,
-        endTime: rest.isDayOff ? null : rest.endTime,
+        date: rest.date, 
+        startTime: rest.isDayOff ? null : (rest.startTime || null), // Ensure null if empty
+        endTime: rest.isDayOff ? null : (rest.endTime || null),   // Ensure null if empty
         isDayOff: rest.isDayOff,
-        notes: rest.notes || null, // Send null if notes are empty string
+        notes: rest.notes || null, 
     }));
 
     onSubmit({
@@ -205,7 +197,6 @@ export default function WorkerScheduleForm({
         <p className="text-xs text-base-content/70 mb-4">Podesite nedeljnu dostupnost i specifične izuzetke.</p>
         
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Weekly Availability Section */}
           <div className="p-4 border border-base-300 rounded-lg bg-base-100/30">
             <h4 className="text-lg font-semibold mb-3 text-primary">Nedeljna Dostupnost</h4>
             <div className="space-y-3">
@@ -230,17 +221,19 @@ export default function WorkerScheduleForm({
                     <input
                       type="time"
                       className={`input input-bordered input-sm w-full ${!avail.isAvailable ? 'input-disabled' : ''}`}
-                      value={avail.startTime}
+                      value={avail.startTime} // Should be "HH:mm"
                       onChange={(e) => handleWeeklyChange(index, 'startTime', e.target.value)}
                       disabled={!avail.isAvailable || isProcessing}
+                      step="900" // 15 minute intervals, optional
                     />
                     <span className={`${!avail.isAvailable ? 'text-base-content/30' : ''}`}>-</span>
                     <input
                       type="time"
                       className={`input input-bordered input-sm w-full ${!avail.isAvailable ? 'input-disabled' : ''}`}
-                      value={avail.endTime}
+                      value={avail.endTime} // Should be "HH:mm"
                       onChange={(e) => handleWeeklyChange(index, 'endTime', e.target.value)}
                       disabled={!avail.isAvailable || isProcessing}
+                      step="900" // 15 minute intervals, optional
                     />
                   </div>
                 </div>
@@ -248,7 +241,6 @@ export default function WorkerScheduleForm({
             </div>
           </div>
 
-          {/* Date Overrides Section */}
           <div className="p-4 border border-base-300 rounded-lg bg-base-100/30">
             <div className="flex justify-between items-center mb-3">
                 <h4 className="text-lg font-semibold text-secondary">Specifični Izuzeci (Praznici, Slobodni dani)</h4>
@@ -265,7 +257,7 @@ export default function WorkerScheduleForm({
                     <input
                       type="date"
                       className="input input-bordered input-sm w-full"
-                      value={override.date} // Should be YYYY-MM-DD string
+                      value={override.date} 
                       onChange={(e) => handleOverrideChange(index, 'date', e.target.value)}
                       disabled={isProcessing}
                     />
@@ -286,20 +278,22 @@ export default function WorkerScheduleForm({
                     <input
                       type="time"
                       className="input input-bordered input-sm w-full"
-                      value={override.startTime || ''} // Handle null for input
+                      value={override.startTime || ''} 
                       onChange={(e) => handleOverrideChange(index, 'startTime', e.target.value)}
                       disabled={override.isDayOff || isProcessing}
+                      step="900"
                     />
                     <span>-</span>
                     <input
                       type="time"
                       className="input input-bordered input-sm w-full"
-                      value={override.endTime || ''} // Handle null for input
+                      value={override.endTime || ''} 
                       onChange={(e) => handleOverrideChange(index, 'endTime', e.target.value)}
                       disabled={override.isDayOff || isProcessing}
+                      step="900"
                     />
                   </div>
-                   <div className="form-control md:col-span-2"> {/* Adjusted to md:col-span-2 for notes */}
+                   <div className="form-control md:col-span-2">
                      <label className="label py-0"><span className="label-text text-xs">Napomena</span></label>
                     <input
                       type="text"
@@ -310,7 +304,7 @@ export default function WorkerScheduleForm({
                       disabled={isProcessing}
                     />
                   </div>
-                  <div className="md:col-span-1 flex justify-end md:justify-start pt-2 md:pt-0"> {/* Ensure button aligns well */}
+                  <div className="md:col-span-1 flex justify-end md:justify-start pt-2 md:pt-0">
                     <button type="button" onClick={() => removeOverride(index)} className="btn btn-error btn-xs btn-outline" disabled={isProcessing}>
                       <Trash2 size={14}/>
                     </button>

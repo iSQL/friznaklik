@@ -7,13 +7,15 @@ import { ShieldAlert, CalendarDays, Briefcase, UserCircle, Clock, Building, Aler
 import WorkerDashboardClient from '@/components/worker/WorkerDashboardClient';
 import { formatErrorMessage } from '@/lib/errorUtils';
 import type { Metadata } from 'next';
-import { headers } from 'next/headers'; // Import headers
+import { headers as nextHeaders } from 'next/headers'; // Renamed to avoid conflict, and will be awaited
 
 export const metadata: Metadata = {
   title: 'Moj Raspored - FrizNaKlik',
   description: 'Pregledajte vaš radni raspored i predstojeće termine.',
 };
 
+// Define the expected shape of the data from the API
+// This should match the `responseData` from `/api/worker/my-schedule/route.ts`
 interface WorkerScheduleData {
   workerId: string;
   workerName: string;
@@ -23,8 +25,8 @@ interface WorkerScheduleData {
   } | null;
   upcomingAppointments: Array<{
     id: string;
-    startTime: string; 
-    endTime: string;   
+    startTime: string; // ISO string
+    endTime: string;   // ISO string
     service: { name?: string | null; duration?: number | null };
     user: { 
       firstName?: string | null;
@@ -39,8 +41,9 @@ interface WorkerScheduleData {
     notes?: string | null;
     status: string; 
   }>;
-  weeklyAvailability: Array<{
+  weeklyAvailability: Array<{ // This should match Prisma's WorkerAvailability more closely
     id: string;
+    workerId: string; // Added workerId as it's part of the Prisma model
     dayOfWeek: number;
     startTime: string;
     endTime: string;
@@ -48,6 +51,7 @@ interface WorkerScheduleData {
   }>;
   scheduleOverrides: Array<{
     id: string;
+    workerId: string; // Added workerId
     date: string; 
     startTime: string | null;
     endTime: string | null;
@@ -62,27 +66,27 @@ async function getWorkerScheduleData(): Promise<WorkerScheduleData | { error: st
     const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
     
     // Get current request's headers to forward cookies for authentication
-    const requestHeaders = headers();
+    const currentRequestHeaders = nextHeaders(); // Use the imported and renamed function
     const forwardedHeaders = new Headers();
-    if (requestHeaders.has('cookie')) {
-      forwardedHeaders.set('cookie', requestHeaders.get('cookie')!);
+    
+    const cookie = (await currentRequestHeaders).get('cookie'); // Directly get cookie string
+    if (cookie) {
+      forwardedHeaders.set('cookie', cookie);
     }
     // Add any other headers you might need to forward
 
     const response = await fetch(`${baseUrl}/api/worker/my-schedule`, {
       method: 'GET',
-      headers: forwardedHeaders, // Forward the necessary headers
+      headers: forwardedHeaders, 
       cache: 'no-store', 
     });
 
     if (!response.ok) {
-      // Try to parse error message from API if available
       let errorResponseMessage = `Nije moguće preuzeti podatke o rasporedu (Status: ${response.status})`;
       try {
         const errorData = await response.json();
         errorResponseMessage = errorData.message || errorData.details || errorResponseMessage;
       } catch (e) {
-        // If parsing JSON fails, use the status text
         errorResponseMessage = `Nije moguće preuzeti podatke o rasporedu: ${response.statusText} (Status: ${response.status})`;
       }
       console.error("API Error in getWorkerScheduleData:", errorResponseMessage);
