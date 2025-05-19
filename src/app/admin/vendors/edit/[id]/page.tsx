@@ -1,16 +1,60 @@
+// src/app/admin/vendors/edit/[id]/page.tsx
 import { getCurrentUser, AuthenticatedUser } from '@/lib/authUtils';
 import prisma from '@/lib/prisma';
 import VendorForm from '@/components/admin/vendors/VendorForm';
-import { UserRole, Vendor, User as PrismaUser } from '@prisma/client';
+import { UserRole as PrismaUserRole, Vendor, User as PrismaUser, Prisma } from '@prisma/client'; // Import Prisma's UserRole
+import { UserRole as LocalUserRole } from '@/lib/types/prisma-enums'; // Import local UserRole
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { ShieldAlert } from 'lucide-react';
+import { ShieldAlert, Edit2 } from 'lucide-react'; 
+import type { Metadata } from 'next';
 
-type VendorFormInitialData = Vendor & {
-    owner?: AuthenticatedUser;
+// Tip koji VendorForm očekuje za initialData
+// owner.role treba da koristi LocalUserRole
+type VendorFormInitialDataForForm = Omit<Vendor, 'operatingHours'> & {
+    operatingHours?: Prisma.JsonValue | null;
+    owner?: { 
+        id: string;
+        clerkId: string;
+        email: string;
+        firstName?: string | null;
+        lastName?: string | null;
+        role: LocalUserRole; // Koristi lokalni enum ovde
+    };
 };
 
-async function getVendorWithOwnerById(vendorId: string): Promise<(Vendor & { owner: AuthenticatedUser | null }) | null> {
+export async function generateMetadata({ params: paramsPromise }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const routeParams = await paramsPromise;
+  const vendor = await prisma.vendor.findUnique({
+    where: { id: routeParams.id },
+    select: { name: true }
+  });
+  if (!vendor) {
+    return {
+      title: 'Salon Nije Pronađen - FrizNaKlik Admin',
+    };
+  }
+  return {
+    title: `Izmena Salona: ${vendor.name} - FrizNaKlik Admin`,
+    description: `Administratorska forma za izmenu detalja salona ${vendor.name}.`,
+  };
+}
+
+// Tip koji vraća getVendorWithOwnerById (owner.role je PrismaUserRole)
+type VendorWithPrismaOwnerRole = Omit<Vendor, 'operatingHours'> & {
+    operatingHours?: Prisma.JsonValue | null;
+    owner: ({
+        id: string;
+        clerkId: string;
+        email: string;
+        firstName: string | null;
+        lastName: string | null;
+        role: PrismaUserRole; // Prisma enum
+    }) | null;
+};
+
+
+async function getVendorWithOwnerById(vendorId: string): Promise<VendorWithPrismaOwnerRole | null> {
   try {
     const vendor = await prisma.vendor.findUnique({
       where: { id: vendorId },
@@ -22,16 +66,13 @@ async function getVendorWithOwnerById(vendorId: string): Promise<(Vendor & { own
             email: true,
             firstName: true,
             lastName: true,
-            role: true,
+            role: true, 
           },
         },
       },
     });
     
-    if (vendor) {
-        return vendor as Vendor & { owner: AuthenticatedUser | null };
-    }
-    return null;
+    return vendor as VendorWithPrismaOwnerRole | null;
   } catch (error) {
     console.error(`Greška pri dobavljanju salona sa ID ${vendorId}:`, error);
     return null;
@@ -44,13 +85,16 @@ export default async function EditVendorPage(
   const routeParams = await paramsPromise; 
   const { id: vendorId } = routeParams;
 
-  const user: AuthenticatedUser | null = await getCurrentUser();
+  const user: AuthenticatedUser | null = await getCurrentUser(); // AuthenticatedUser koristi LocalUserRole
 
   if (!user) {
     redirect(`/sign-in?redirect_url=/admin/vendors/edit/${vendorId}`);
   }
 
-  if (user.role !== UserRole.SUPER_ADMIN) {
+  const isSuperAdmin = user.role === LocalUserRole.SUPER_ADMIN;
+  const isVendorOwner = user.role === LocalUserRole.VENDOR_OWNER;
+
+  if (!isSuperAdmin && !isVendorOwner) {
     return (
       <div className="container mx-auto py-8 px-4 md:px-6 text-center">
         <div className="card bg-base-200 shadow-xl max-w-md w-full mx-auto">
@@ -58,8 +102,8 @@ export default async function EditVendorPage(
                 <ShieldAlert className="h-16 w-16 text-error mb-4" />
                 <h1 className="card-title text-2xl text-error mb-2">Pristup Odbijen</h1>
                 <p className="mb-6">Nemate dozvolu za izmenu podataka o salonima.</p>
-                <Link href="/admin/vendors" className="btn btn-primary">
-                  Nazad na Listu Salona
+                <Link href="/admin" className="btn btn-primary">
+                  Nazad na Admin Panel
                 </Link>
             </div>
         </div>
@@ -77,8 +121,25 @@ export default async function EditVendorPage(
                 <ShieldAlert className="h-16 w-16 text-warning mb-4" />
                 <h1 className="card-title text-2xl text-warning mb-2">Salon Nije Pronađen</h1>
                 <p className="mb-6">Traženi salon ne postoji ili je došlo do greške.</p>
-                <Link href="/admin/vendors" className="btn btn-primary">
-                  Nazad na Listu Salona
+                <Link href={isSuperAdmin ? "/admin/vendors" : "/admin"} className="btn btn-primary">
+                  {isSuperAdmin ? "Nazad na Listu Salona" : "Nazad na Admin Panel"}
+                </Link>
+            </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isVendorOwner && user.ownedVendorId !== vendorId) {
+    return (
+      <div className="container mx-auto py-8 px-4 md:px-6 text-center">
+        <div className="card bg-base-200 shadow-xl max-w-md w-full mx-auto">
+            <div className="card-body items-center text-center">
+                <ShieldAlert className="h-16 w-16 text-error mb-4" />
+                <h1 className="card-title text-2xl text-error mb-2">Pristup Odbijen</h1>
+                <p className="mb-6">Nemate dozvolu da menjate podatke za ovaj salon.</p>
+                <Link href="/admin" className="btn btn-primary">
+                  Nazad na Admin Panel
                 </Link>
             </div>
         </div>
@@ -86,7 +147,7 @@ export default async function EditVendorPage(
     );
   }
   
-  const initialFormData: VendorFormInitialData = {
+  const initialFormData: VendorFormInitialDataForForm = {
       ...vendorToEdit,
       owner: vendorToEdit.owner ? {
           id: vendorToEdit.owner.id,
@@ -94,16 +155,28 @@ export default async function EditVendorPage(
           email: vendorToEdit.owner.email,
           firstName: vendorToEdit.owner.firstName,
           lastName: vendorToEdit.owner.lastName,
-          role: vendorToEdit.owner.role,
+          role: vendorToEdit.owner.role as LocalUserRole, // Cast PrismaUserRole to LocalUserRole
       } : undefined,
       description: vendorToEdit.description ?? '',
       address: vendorToEdit.address ?? '',
       phoneNumber: vendorToEdit.phoneNumber ?? '',
+      operatingHours: vendorToEdit.operatingHours, // Prosleđujemo direktno, forma će rukovati
   };
 
   return (
     <div className="container mx-auto py-8 px-4 md:px-6">
-      <VendorForm initialData={initialFormData} />
+       <div className="flex items-center mb-8">
+        <Edit2 className="h-8 w-8 mr-3 text-primary" />
+        <div>
+            <h1 className="text-3xl font-bold text-neutral-content">
+                Izmena Salona
+            </h1>
+            <p className="text-neutral-content/70 text-sm">
+                Salon: <span className="font-semibold text-primary">{vendorToEdit.name}</span>
+            </p>
+        </div>
+      </div>
+      <VendorForm initialData={initialFormData} currentUserRole={user.role} />
     </div>
   );
 }

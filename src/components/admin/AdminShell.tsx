@@ -12,18 +12,20 @@ import {
   ListOrdered,
   MessageSquare,
   Store,
-  Users, // Default Users icon
-  Users2, // Icon for Workers/Staff
+  Users, 
+  Users2, 
   Settings,
   Building,
   Menu,
   X,
   ShieldCheck,
+  Edit2, // Importovana ikona za izmenu
 } from 'lucide-react';
 import { UserRole } from '@/lib/types/prisma-enums';
 import type { AuthenticatedUser } from '@/lib/authUtils';
 
 interface NavItem {
+  id?: string; // Opcioni identifikator za lakše dinamičko rukovanje
   name: string;
   href: string;
   icon: React.ElementType;
@@ -31,14 +33,53 @@ interface NavItem {
   disabled?: boolean;
 }
 
+// Lista svih mogućih navigacionih linkova
 const allNavLinks: NavItem[] = [
-  { name: 'Kontrolna tabla', href: '/admin', icon: Home, roles: [UserRole.SUPER_ADMIN, UserRole.VENDOR_OWNER] },
-  { name: 'Termini', href: '/admin/appointments', icon: CalendarDays, roles: [UserRole.SUPER_ADMIN, UserRole.VENDOR_OWNER] },
-  { name: 'Usluge', href: '/admin/services', icon: ListOrdered, roles: [UserRole.SUPER_ADMIN, UserRole.VENDOR_OWNER] },
-  { name: 'Radnici', href: '/admin/workers', icon: Users2, roles: [UserRole.VENDOR_OWNER] }, // New link for VENDOR_OWNER
-  { name: 'Chat', href: '/admin/chat', icon: MessageSquare, roles: [UserRole.SUPER_ADMIN, UserRole.VENDOR_OWNER] },
-  { name: 'Saloni', href: '/admin/vendors', icon: Store, roles: [UserRole.SUPER_ADMIN] },
-  // Example of a SUPER_ADMIN specific link for all workers (if needed later)
+  { 
+    name: 'Kontrolna tabla', 
+    href: '/admin', 
+    icon: Home, 
+    roles: [UserRole.SUPER_ADMIN, UserRole.VENDOR_OWNER] 
+  },
+  { 
+    id: 'edit-my-vendor', // ID za lakše pronalaženje ovog linka
+    name: 'Informacije o Salonu', 
+    href: '/admin/vendors/edit/placeholder', // Privremeni href, biće dinamički postavljen
+    icon: Edit2, 
+    roles: [UserRole.VENDOR_OWNER],
+    disabled: true // Podrazumevano onemogućen dok se ne proveri ownedVendorId
+  },
+  { 
+    name: 'Termini', 
+    href: '/admin/appointments', 
+    icon: CalendarDays, 
+    roles: [UserRole.SUPER_ADMIN, UserRole.VENDOR_OWNER] 
+  },
+  { 
+    name: 'Usluge', 
+    href: '/admin/services', 
+    icon: ListOrdered, 
+    roles: [UserRole.SUPER_ADMIN, UserRole.VENDOR_OWNER] 
+  },
+  { 
+    name: 'Radnici', 
+    href: '/admin/workers', 
+    icon: Users2, 
+    roles: [UserRole.VENDOR_OWNER] 
+  },
+  { 
+    name: 'Chat', 
+    href: '/admin/chat', 
+    icon: MessageSquare, 
+    roles: [UserRole.SUPER_ADMIN, UserRole.VENDOR_OWNER] 
+  },
+  { 
+    name: 'Saloni', 
+    href: '/admin/vendors', 
+    icon: Store, 
+    roles: [UserRole.SUPER_ADMIN] 
+  },
+  // Primer onemogućenog linka
   // { name: 'Svi Radnici', href: '/admin/all-workers', icon: Users, roles: [UserRole.SUPER_ADMIN], disabled: true },
 ];
 
@@ -54,14 +95,28 @@ export default function AdminShell({ children, user }: AdminShellProps) {
 
   useEffect(() => {
     if (user?.role) {
-      const filteredLinks = allNavLinks.filter(link => link.roles.includes(user.role as UserRole));
+      const filteredLinks = allNavLinks
+        .filter(link => link.roles.includes(user.role as UserRole))
+        .map(link => {
+          // Dinamičko postavljanje href-a za "Informacije o Salonu"
+          if (link.id === 'edit-my-vendor' && user.role === UserRole.VENDOR_OWNER) {
+            if (user.ownedVendorId) {
+              return { ...link, href: `/admin/vendors/edit/${user.ownedVendorId}`, disabled: false };
+            } else {
+              // Ako VENDOR_OWNER nema ownedVendorId, link ostaje onemogućen
+              return { ...link, disabled: true }; 
+            }
+          }
+          return link;
+        });
       setVisibleNavLinks(filteredLinks);
     } else {
       setVisibleNavLinks([]);
     }
-  }, [user]);
+  }, [user]); // user objekat sadrži ownedVendorId, pa je dovoljan kao zavisnost
 
   if (!user) {
+    // Prikaz poruke ako korisnik nije ulogovan
     return (
         <div className="flex flex-col items-center justify-center min-h-screen bg-base-200">
             <p className="text-lg mb-4">Morate biti prijavljeni da biste pristupili admin panelu.</p>
@@ -73,6 +128,7 @@ export default function AdminShell({ children, user }: AdminShellProps) {
   return (
     <>
       <div className="min-h-screen bg-base-200">
+        {/* Mobilni sidebar */}
         <Transition show={sidebarOpen} as={Fragment}>
           <Dialog as="div" className="relative z-40 md:hidden" onClose={setSidebarOpen}>
             <Transition.Child
@@ -120,19 +176,19 @@ export default function AdminShell({ children, user }: AdminShellProps) {
                       {visibleNavLinks.map((item) => (
                         <Link
                           key={item.name}
-                          href={item.href}
+                          href={item.disabled ? '#' : item.href} // Ako je onemogućen, href je '#'
                           className={`
-                            ${pathname === item.href
+                            ${pathname === item.href && !item.disabled
                               ? 'bg-primary text-primary-content'
                               : 'text-base-content hover:bg-base-200 hover:text-base-content'
                             }
                             ${item.disabled ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}
                             group flex items-center px-2 py-2 text-base font-medium rounded-md
                           `}
-                          aria-current={pathname === item.href ? 'page' : undefined}
+                          aria-current={pathname === item.href && !item.disabled ? 'page' : undefined}
                           onClick={(e) => {
                             if (item.disabled) e.preventDefault();
-                            else setSidebarOpen(false); // Close sidebar on link click
+                            else setSidebarOpen(false); 
                           }}
                         >
                           <item.icon
@@ -147,11 +203,13 @@ export default function AdminShell({ children, user }: AdminShellProps) {
                 </Dialog.Panel>
               </Transition.Child>
               <div className="w-14 flex-shrink-0" aria-hidden="true">
+                {/* Prazan prostor za offset */}
               </div>
             </div>
           </Dialog>
         </Transition>
 
+        {/* Desktop sidebar */}
         <div className="hidden md:fixed md:inset-y-0 md:flex md:w-64 md:flex-col">
           <div className="flex flex-grow flex-col overflow-y-auto border-r border-base-300 bg-base-100 pt-5">
             <div className="flex flex-shrink-0 items-center px-4">
@@ -165,16 +223,16 @@ export default function AdminShell({ children, user }: AdminShellProps) {
                 {visibleNavLinks.map((item) => (
                   <Link
                     key={item.name}
-                    href={item.href}
+                    href={item.disabled ? '#' : item.href}
                     className={`
-                      ${pathname === item.href
+                      ${pathname === item.href && !item.disabled
                         ? 'bg-primary text-primary-content'
                         : 'text-base-content hover:bg-base-200 hover:text-base-content'
                       }
                       ${item.disabled ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}
                       group flex items-center px-2 py-2 text-sm font-medium rounded-md
                     `}
-                    aria-current={pathname === item.href ? 'page' : undefined}
+                    aria-current={pathname === item.href && !item.disabled ? 'page' : undefined}
                     onClick={item.disabled ? (e) => e.preventDefault() : undefined}
                   >
                     <item.icon
@@ -189,6 +247,7 @@ export default function AdminShell({ children, user }: AdminShellProps) {
           </div>
         </div>
 
+        {/* Glavni sadržaj */}
         <div className="flex flex-1 flex-col md:pl-64">
           <div className="sticky top-0 z-10 flex h-16 flex-shrink-0 bg-base-100 shadow">
             <button
@@ -201,7 +260,7 @@ export default function AdminShell({ children, user }: AdminShellProps) {
             </button>
             <div className="flex flex-1 justify-between px-4">
               <div className="flex flex-1">
-                {/* Optional: Search bar or other header content */}
+                {/* Opciono: Pretraga ili drugi sadržaj hedera */}
               </div>
               <div className="ml-4 flex items-center md:ml-6">
                 <div className="ml-3 relative">

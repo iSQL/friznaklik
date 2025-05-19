@@ -1,3 +1,4 @@
+// src/app/admin/page.tsx
 import Link from 'next/link';
 import prisma from '@/lib/prisma';
 import {
@@ -9,19 +10,33 @@ import {
     CalendarCheck,
     LayoutDashboard,
     Store, 
+    Edit2, // Importovana ikona za izmenu
 } from 'lucide-react';
 import { getCurrentUser, AuthenticatedUser } from '@/lib/authUtils'; 
-import { UserRole, AppointmentStatus } from '@prisma/client'; 
+import { UserRole, AppointmentStatus, VendorStatus } from '@/lib/types/prisma-enums'; // Koristimo UserRole direktno iz @prisma/client
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = {
+  title: 'Admin Panel - FrizNaKlik',
+  description: 'Administratorska tabla za upravljanje FrizNaKlik platformom.',
+};
 
 export default async function AdminDashboardPage() {
     const user: AuthenticatedUser | null = await getCurrentUser();
 
     if (!user || (user.role !== UserRole.SUPER_ADMIN && user.role !== UserRole.VENDOR_OWNER)) {
-        return <p className="p-4 text-center text-error">Pristup administratorskoj tabli nije dozvoljen.</p>;
+        // Umesto direktnog redirect-a, možemo prikazati poruku ili komponentu za neautorizovan pristup
+        return (
+             <div className="container mx-auto px-4 py-8 text-center">
+                <h1 className="text-2xl font-bold text-error mb-4">Pristup Odbijen</h1>
+                <p>Nemate dozvolu za pristup administratorskoj tabli.</p>
+                <Link href="/" className="btn btn-primary mt-4">Nazad na Početnu</Link>
+            </div>
+        );
     }
 
-    let pendingAppointmentCount: number;
-    let totalServiceCount: number;
+    let pendingAppointmentCount: number = 0;
+    let totalServiceCount: number = 0;
     let activeVendorCount: number | null = null;
     let totalSessionCount: number | null = null;
     let totalUserCount: number | null = null;
@@ -34,22 +49,30 @@ export default async function AdminDashboardPage() {
             return (
                 <div className="container mx-auto px-4 py-8 text-center">
                     <h1 className="text-2xl font-bold text-warning mb-4">Niste Povezani sa Salonom</h1>
-                    <p>Da biste videli statistike, morate biti vlasnik salona. Molimo kontaktirajte administratora.</p>
+                    <p>Da biste videli statistike i upravljali salonom, morate biti vlasnik salona. Molimo kontaktirajte administratora.</p>
+                     <Link href="/" className="btn btn-primary mt-4">Nazad na Početnu</Link>
                 </div>
             );
         }
         whereClauseAppointments.vendorId = user.ownedVendorId;
         whereClauseServices.vendorId = user.ownedVendorId;
     } else if (user.role === UserRole.SUPER_ADMIN) {
+        // SUPER_ADMIN statistike
         totalSessionCount = await prisma.chatSession.count();
         totalUserCount = await prisma.user.count();
-        activeVendorCount = await prisma.vendor.count({ where: { status: 'ACTIVE' }});
+        activeVendorCount = await prisma.vendor.count({ where: { status: VendorStatus.ACTIVE }});
     }
 
-    [pendingAppointmentCount, totalServiceCount] = await Promise.all([
-        prisma.appointment.count({ where: whereClauseAppointments }),
-        prisma.service.count({ where: whereClauseServices }),
-    ]);
+    try {
+        [pendingAppointmentCount, totalServiceCount] = await Promise.all([
+            prisma.appointment.count({ where: whereClauseAppointments }),
+            prisma.service.count({ where: whereClauseServices }),
+        ]);
+    } catch (dbError) {
+        console.error("Greška pri preuzimanju statistika:", dbError);
+        // Možete prikazati poruku o grešci korisniku
+    }
+
 
     const overviewStats = [];
     overviewStats.push({ 
@@ -84,6 +107,7 @@ export default async function AdminDashboardPage() {
             description: 'Pregledajte, odobrite, odbijte ili promenite termine.',
             icon: CalendarCheck,
             accentColor: 'border-primary',
+            roles: [UserRole.SUPER_ADMIN, UserRole.VENDOR_OWNER],
         },
         {
             href: '/admin/services',
@@ -91,31 +115,54 @@ export default async function AdminDashboardPage() {
             description: 'Dodajte, izmenite ili uklonite usluge i njihove detalje.',
             icon: Settings,
             accentColor: 'border-secondary',
+            roles: [UserRole.SUPER_ADMIN, UserRole.VENDOR_OWNER],
+        },
+        // Panel za izmenu informacija o salonu - samo za VENDOR_OWNER
+        ...(user.role === UserRole.VENDOR_OWNER && user.ownedVendorId ? [{
+            href: `/admin/vendors/edit/${user.ownedVendorId}`, // Dinamički link
+            title: 'Informacije o Salonu',
+            description: 'Izmenite naziv, opis, adresu i radno vreme Vašeg salona.',
+            icon: Edit2, // Ikona za izmenu
+            accentColor: 'border-success', // Drugačija boja za isticanje
+            roles: [UserRole.VENDOR_OWNER],
+        }] : []),
+        {
+            href: '/admin/workers', // VENDOR_OWNER će ovde upravljati svojim radnicima
+            title: 'Upravljanje Radnicima',
+            description: 'Dodajte, izmenite ili uklonite radnike Vašeg salona.',
+            icon: Users, // Ili Users2 ako preferirate
+            accentColor: 'border-info',
+            roles: [UserRole.VENDOR_OWNER],
         },
         {
             href: '/admin/chat',
             title: 'Upravljanje četom',
-            description: 'Pregledajte istoriju korisničkih četova i odgovarajte kao administrator.',
+            description: 'Pregledajte istoriju korisničkih četova i odgovarajte.',
             icon: MessageSquare,
             accentColor: 'border-accent',
+            roles: [UserRole.SUPER_ADMIN, UserRole.VENDOR_OWNER],
         },
-        
+        // Panel za upravljanje svim salonima - samo za SUPER_ADMIN
         ...(user.role === UserRole.SUPER_ADMIN ? [{
             href: '/admin/vendors',
-            title: 'Upravljanje Salonima',
+            title: 'Upravljanje Svim Salonima',
             description: 'Kreirajte, pregledajte i upravljajte svim salonima na platformi.',
             icon: Store,
-            accentColor: 'border-info',
-            disabled: true, 
+            accentColor: 'border-warning', 
+            roles: [UserRole.SUPER_ADMIN],
         }] : [])
-    ];
+    ].filter(panel => panel.roles.includes(user.role as UserRole)); // Filtriramo panele na osnovu uloge
+
 
     return (
         <div className="container mx-auto px-4 py-8">
             <div className="flex items-center mb-8">
                 <LayoutDashboard className="h-10 w-10 mr-3 text-primary" strokeWidth={1.5} />
                 <h1 className="text-3xl font-bold text-base-content">
-                    Administratorska tabla {user.role === UserRole.VENDOR_OWNER ? ` (Salon ID: ${user.ownedVendorId})` : ''}
+                    Administratorska tabla 
+                    {user.role === UserRole.VENDOR_OWNER && user.ownedVendorId && 
+                        <span className="text-lg font-normal text-base-content/70"> (Salon ID: {user.ownedVendorId.substring(0,8)}...)</span>
+                    }
                 </h1>
             </div>
 
@@ -142,18 +189,6 @@ export default async function AdminDashboardPage() {
                 <h2 className="text-2xl font-semibold mb-6 text-base-content">Alati za upravljanje</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {managementPanels.map((panel) => (
-                        panel.disabled ? (
-                            <div key={panel.href} className="card bg-base-100 shadow-lg opacity-50 cursor-not-allowed">
-                                 <div className={`card-body items-center text-center sm:items-start sm:text-left border-l-4 ${panel.accentColor} rounded-r-md`}>
-                                    <panel.icon className="h-10 w-10 mb-3 text-base-content opacity-80" strokeWidth={1.5} />
-                                    <h3 className="card-title text-xl font-semibold text-base-content mb-1">
-                                        {panel.title}
-                                    </h3>
-                                    <p className="text-base-content/70 text-sm">{panel.description}</p>
-                                    <p className="text-xs text-warning mt-2">(Uskoro dostupno)</p>
-                                </div>
-                            </div>
-                        ) : (
                         <Link href={panel.href} key={panel.href} className="card bg-base-100 shadow-lg hover:shadow-xl hover:scale-[1.02] transform transition-all duration-200 ease-in-out group">
                             <div className={`card-body items-center text-center sm:items-start sm:text-left border-l-4 ${panel.accentColor} rounded-r-md`}>
                                 <panel.icon className="h-10 w-10 mb-3 text-base-content opacity-80 group-hover:opacity-100 transition-opacity" strokeWidth={1.5} />
@@ -163,7 +198,6 @@ export default async function AdminDashboardPage() {
                                 <p className="text-base-content/70 text-sm">{panel.description}</p>
                             </div>
                         </Link>
-                        )
                     ))}
                 </div>
             </section>

@@ -5,18 +5,16 @@ import { UserButton, useAuth } from "@clerk/nextjs";
 import Link from "next/link";
 import Image from 'next/image';
 import {
-    Menu as MenuIcon, LogIn, UserPlus, LayoutDashboard, MessageCircle,
-    CalendarPlus, ListOrdered, X, ShieldCheck, Store, ChevronDown, Building2, Loader2 // Ensured Loader2 is imported
+    Menu as MenuIcon, LogIn, UserPlus, LayoutDashboard, MessageSquare,
+    CalendarPlus, ListOrdered, X, ShieldCheck, Store, ChevronDown, Building2, Loader2
 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { usePathname } from 'next/navigation';
-import type { AuthenticatedUser } from '@/lib/authUtils'; // Corrected import path
-import { UserRole } from '@/lib/types/prisma-enums'; // Corrected import path
+import type { AuthenticatedUser } from '@/lib/authUtils'; 
+import { UserRole } from '@/lib/types/prisma-enums'; 
 
 import { useBookingStore } from '@/store/bookingStore';
-import type { Vendor } from '@prisma/client';
-// formatErrorMessage is not used in this version of Header, but can be kept if error display becomes more complex
-// import { formatErrorMessage } from '@/lib/errorUtils';
+// import type { Vendor } from '@prisma/client'; // Vendor type is available via storeAllVendors
 
 interface HeaderProps {
   user: AuthenticatedUser | null;
@@ -30,13 +28,12 @@ export default function Header({ user, isAdmin }: HeaderProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const mobileDropdownRef = useRef<HTMLDivElement>(null);
 
-  // Get state and actions from useBookingStore for global vendor management
   const {
     selectedVendorId,
     selectVendor: setGlobalVendor,
-    allVendors: storeAllVendors, // Use vendors from the store
-    isLoadingAllVendors: storeIsLoadingAllVendors, // Use loading state from the store
-    fetchAndSetAllVendors // Action to fetch vendors and update the store
+    allVendors: storeAllVendors, 
+    isLoadingAllVendors: storeIsLoadingAllVendors, 
+    fetchAndSetAllVendors 
   } = useBookingStore();
 
   const [isDesktopVendorDropdownOpen, setIsDesktopVendorDropdownOpen] = useState(false);
@@ -44,20 +41,16 @@ export default function Header({ user, isAdmin }: HeaderProps) {
 
   const [isMobileVendorListOpen, setIsMobileVendorListOpen] = useState(false);
 
-  // Fetch global vendors when component mounts or pathname changes (if relevant)
   useEffect(() => {
     const showSelector = !pathname.startsWith('/admin') && !pathname.startsWith('/sign-in') && !pathname.startsWith('/sign-up');
     if (showSelector) {
-      // Call the action from the store to fetch vendors.
-      // The action itself will handle setting isLoadingAllVendors and allVendors.
       fetchAndSetAllVendors();
     }
   }, [pathname, fetchAndSetAllVendors]);
 
-  // Effect to ensure selectedVendorId is valid if storeAllVendors changes
   useEffect(() => {
     if (selectedVendorId && storeAllVendors.length > 0 && !storeAllVendors.some(v => v.id === selectedVendorId)) {
-        setGlobalVendor(null); // Reset if selected vendor is not in the new list
+        setGlobalVendor(null); 
     }
   }, [selectedVendorId, storeAllVendors, setGlobalVendor]);
 
@@ -71,7 +64,6 @@ export default function Header({ user, isAdmin }: HeaderProps) {
 
   const selectedVendorName = storeAllVendors.find(v => v.id === selectedVendorId)?.name || "Izaberite Salon";
 
-  // Click outside handler for ALL dropdowns
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (desktopVendorDropdownRef.current && !desktopVendorDropdownRef.current.contains(event.target as Node)) {
@@ -89,20 +81,20 @@ export default function Header({ user, isAdmin }: HeaderProps) {
   }, []);
 
   const navLinks = [
-    { href: "/vendors", label: "Saloni", icon: Building2 },
-    { href: "/services", label: "Usluge", icon: ListOrdered },
-    { href: "/book", label: "Zakaži", icon: CalendarPlus },
-    { href: "/chat", label: "Pomoć", icon: MessageCircle },
+    { href: "/vendors", label: "Saloni", icon: Building2, disabled: false },
+    { href: "/services", label: "Usluge", icon: ListOrdered, disabled: false },
+    { href: "/book", label: "Zakaži", icon: CalendarPlus, disabled: false },
+    //{ href: "/chat", label: "Pomoć", icon: MessageSquare, disabled: false }, // Onemogućen link
   ];
 
   const userNavLinks = [];
   if (user) {
-    userNavLinks.push({ href: "/dashboard", label: "Kontrolna Tabla", icon: LayoutDashboard });
-    if (user.role === UserRole.WORKER) { // Check for WORKER role
-    userNavLinks.push({ href: "/dashboard/my-schedule", label: "Moj Raspored", icon: LayoutDashboard }); // Or a more specific icon
+    userNavLinks.push({ href: "/dashboard", label: "Kontrolna Tabla", icon: LayoutDashboard, disabled: false });
+    if (user.role === UserRole.WORKER) { 
+    userNavLinks.push({ href: "/dashboard/my-schedule", label: "Moj Raspored", icon: LayoutDashboard, disabled: false });
     }
     if (isAdmin) {
-      userNavLinks.push({ href: "/admin", label: "Admin Panel", icon: ShieldCheck });
+      userNavLinks.push({ href: "/admin", label: "Admin Panel", icon: ShieldCheck, disabled: false });
     }
   }
 
@@ -169,7 +161,6 @@ export default function Header({ user, isAdmin }: HeaderProps) {
                     <ul className="menu menu-xs p-1 bg-base-200 rounded-box shadow-lg max-h-48 overflow-y-auto mt-1">
                       {storeIsLoadingAllVendors && <li><span className="loading loading-dots loading-xs"></span></li>}
                       {!storeIsLoadingAllVendors && storeAllVendors.length === 0 && <li><a>Nema dostupnih salona</a></li>}
-                      {/* Consider adding vendorSelectorError display here if needed */}
                       {storeAllVendors.map(vendor => (
                         <li key={vendor.id}>
                           <a onClick={() => handleGlobalVendorSelect(vendor.id)} className={selectedVendorId === vendor.id ? 'active' : ''}>
@@ -191,7 +182,19 @@ export default function Header({ user, isAdmin }: HeaderProps) {
             )}
             {navLinks.map((link) => (
               <li key={link.href}>
-                <Link href={link.href} onClick={() => {setIsMobileMenuOpen(false); setIsMobileVendorListOpen(false);}} className={`flex items-center gap-2 p-2 rounded-md ${pathname === link.href ? 'bg-primary text-primary-content' : 'hover:bg-base-300'}`}>
+                <Link 
+                  href={link.disabled ? '#' : link.href} 
+                  onClick={(e) => {
+                    if (link.disabled) e.preventDefault();
+                    else {setIsMobileMenuOpen(false); setIsMobileVendorListOpen(false);}
+                  }} 
+                  className={`flex items-center gap-2 p-2 rounded-md 
+                              ${pathname === link.href && !link.disabled ? 'bg-primary text-primary-content' : 'hover:bg-base-300'}
+                              ${link.disabled ? 'opacity-50 cursor-not-allowed' : ''}
+                            `}
+                  aria-disabled={link.disabled}
+                  tabIndex={link.disabled ? -1 : undefined}
+                >
                   {link.icon && <link.icon className="h-4 w-4" />}
                   {link.label}
                 </Link>
@@ -199,7 +202,19 @@ export default function Header({ user, isAdmin }: HeaderProps) {
             ))}
             {userNavLinks.map((link) => (
               <li key={link.href}>
-                <Link href={link.href} onClick={() => {setIsMobileMenuOpen(false); setIsMobileVendorListOpen(false);}} className={`flex items-center gap-2 p-2 rounded-md ${pathname.startsWith(link.href) && link.href !== '/' ? 'bg-primary text-primary-content' : 'hover:bg-base-300'}`}>
+                <Link 
+                  href={link.disabled ? '#' : link.href} 
+                  onClick={(e) => {
+                    if (link.disabled) e.preventDefault();
+                    else {setIsMobileMenuOpen(false); setIsMobileVendorListOpen(false);}
+                  }} 
+                  className={`flex items-center gap-2 p-2 rounded-md 
+                              ${pathname.startsWith(link.href) && link.href !== '/' && !link.disabled ? 'bg-primary text-primary-content' : 'hover:bg-base-300'}
+                              ${link.disabled ? 'opacity-50 cursor-not-allowed' : ''}
+                            `}
+                  aria-disabled={link.disabled}
+                  tabIndex={link.disabled ? -1 : undefined}
+                >
                   {link.icon && <link.icon className="h-4 w-4" />}
                   {link.label}
                 </Link>
@@ -241,7 +256,6 @@ export default function Header({ user, isAdmin }: HeaderProps) {
             >
                 {storeIsLoadingAllVendors && <li className="p-2 text-center"><span className="loading loading-dots loading-md"></span></li>}
                 {!storeIsLoadingAllVendors && storeAllVendors.length === 0 && <li><a className="text-sm text-base-content/70">Nema dostupnih salona</a></li>}
-                 {/* Consider adding vendorSelectorError display here if needed from store */}
                 {storeAllVendors.map((vendor) => (
                     <li key={vendor.id}>
                     <a onClick={() => handleGlobalVendorSelect(vendor.id)} className={selectedVendorId === vendor.id ? 'active' : ''}>
@@ -261,7 +275,16 @@ export default function Header({ user, isAdmin }: HeaderProps) {
         <ul className="menu menu-horizontal px-1 space-x-1">
           {navLinks.map((link) => (
             <li key={link.href}>
-              <Link href={link.href} className={`btn btn-ghost font-medium ${pathname === link.href ? 'btn-active text-primary' : ''}`}>
+              <Link 
+                href={link.disabled ? '#' : link.href} 
+                className={`btn btn-ghost font-medium 
+                            ${pathname === link.href && !link.disabled ? 'btn-active text-primary' : ''}
+                            ${link.disabled ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}
+                          `}
+                onClick={link.disabled ? (e) => e.preventDefault() : undefined}
+                aria-disabled={link.disabled}
+                tabIndex={link.disabled ? -1 : undefined}
+                >
                 {link.label}
               </Link>
             </li>
@@ -275,7 +298,16 @@ export default function Header({ user, isAdmin }: HeaderProps) {
             <ul className="menu menu-horizontal px-1 space-x-1 hidden lg:flex">
               {userNavLinks.map((link) => (
                 <li key={link.href}>
-                  <Link href={link.href} className={`btn btn-ghost font-medium ${pathname.startsWith(link.href) && link.href !== '/' ? 'btn-active text-primary' : ''}`}>
+                  <Link 
+                    href={link.disabled ? '#' : link.href} 
+                    className={`btn btn-ghost font-medium 
+                                ${pathname.startsWith(link.href) && link.href !== '/' && !link.disabled ? 'btn-active text-primary' : ''}
+                                ${link.disabled ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}
+                              `}
+                    onClick={link.disabled ? (e) => e.preventDefault() : undefined}
+                    aria-disabled={link.disabled}
+                    tabIndex={link.disabled ? -1 : undefined}
+                    >
                     {link.label}
                   </Link>
                 </li>
