@@ -1,10 +1,18 @@
 // src/app/admin/workers/page.tsx
 import { getCurrentUser, AuthenticatedUser } from '@/lib/authUtils';
-import { UserRole } from '@prisma/client';
+import { UserRole } from '@prisma/client'; // Koristimo UserRole iz @prisma/client direktno ako je tako konzistentno
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import AdminWorkersClient from '@/components/admin/workers/AdminWorkersClient';
+// import AdminWorkersClient from '@/components/admin/workers/AdminWorkersClient'; // Stara komponenta
+import VendorWorkersManager from '@/components/admin/workers/VendorWorkersManager'; // Nova, bogatija komponenta
 import { ShieldAlert, Users2 } from 'lucide-react';
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = {
+  title: 'Administracija Radnika - FrizNaKlik',
+  description: 'Upravljajte radnicima Vašeg salona.',
+};
+
 
 export default async function AdminWorkersPage() {
   const user: AuthenticatedUser | null = await getCurrentUser();
@@ -13,8 +21,7 @@ export default async function AdminWorkersPage() {
     redirect('/sign-in?redirect_url=/admin/workers');
   }
 
-  // Only VENDOR_OWNER can manage their workers directly via this page for now.
-  // SUPER_ADMIN would typically manage workers through a specific vendor's detail page or a global worker list (future feature).
+  // Samo VENDOR_OWNER treba da pristupa ovoj stranici direktno za svoje radnike
   if (user.role !== UserRole.VENDOR_OWNER) {
     return (
       <div className="container mx-auto py-8 px-4 md:px-6 text-center">
@@ -22,7 +29,7 @@ export default async function AdminWorkersPage() {
             <div className="card-body items-center text-center">
                 <ShieldAlert className="h-16 w-16 text-error mb-4" />
                 <h1 className="card-title text-2xl text-error mb-2">Pristup Odbijen</h1>
-                <p className="mb-6">Nemate dozvolu za direktno upravljanje radnicima na ovaj način.</p>
+                <p className="mb-6">Samo vlasnici salona mogu direktno upravljati svojim radnicima putem ove stranice.</p>
                 <Link href="/admin" className="btn btn-primary">
                   Nazad na Admin Panel
                 </Link>
@@ -57,7 +64,11 @@ export default async function AdminWorkersPage() {
               Upravljanje Radnicima Salona
             </h1>
         </div>
-      <AdminWorkersClient userRole={user.role} ownedVendorId={user.ownedVendorId} />
+      {/* Prosleđujemo vendorId komponenti VendorWorkersManager.
+        Komponenta VendorWorkersManager interno upravlja preuzimanjem radnika
+        i prikazivanjem svih potrebnih formi (detalji, usluge, raspored).
+      */}
+      <VendorWorkersManager vendorId={user.ownedVendorId} />
     </div>
   );
 }
