@@ -1,19 +1,22 @@
+// src/app/dashboard/AppointmentItem.tsx
 'use client';
 
 import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Appointment, Service } from '@prisma/client'; 
+import { Appointment, Service, Worker as PrismaWorker } from '@prisma/client'; // Added PrismaWorker
 import { AppointmentStatus } from '@/lib/types/prisma-enums';
 
 
 import { format, isPast } from 'date-fns';
 import { sr } from 'date-fns/locale'; 
 import { formatErrorMessage } from '@/lib/errorUtils';
-import { CalendarOff, AlertTriangle, CheckCircle2, Clock, HelpCircle, XCircle, MessageSquareText } from 'lucide-react'; 
+import { CalendarOff, AlertTriangle, CheckCircle2, Clock, HelpCircle, XCircle, MessageSquareText, UserCog, Building } from 'lucide-react'; // Added UserCog, Building
 
 interface AppointmentItemProps {
   appointment: Appointment & {
     service: Service; 
+    vendor: { name: string | null }; // Assuming vendor name is included for context
+    worker?: PrismaWorker | null; // Worker is optional
     startTime: Date; 
     endTime: Date;
   };
@@ -105,7 +108,6 @@ export default function AppointmentItem({ appointment }: AppointmentItemProps) {
       case AppointmentStatus.COMPLETED: return 'Završen';
       case AppointmentStatus.NO_SHOW: return 'Nije se pojavio'; 
       default: 
-        // Fallback za nepoznate statuse
         const s = status as string;
         return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase().replace(/_/g, ' ');
     }
@@ -131,8 +133,11 @@ export default function AppointmentItem({ appointment }: AppointmentItemProps) {
               <h2 className="card-title text-xl text-primary mb-1">
                 {appointment.service.name}
               </h2>
+              <p className="text-sm text-base-content opacity-70 flex items-center">
+                <Building size={14} className="mr-1.5 opacity-60"/> Salon: {appointment.vendor?.name || 'Nepoznat salon'}
+              </p>
               <p className="text-sm text-base-content opacity-80">
-                {format(new Date(appointment.startTime), 'eeee, dd. MMMM yyyy.', { locale: sr })}
+                {format(new Date(appointment.startTime), 'eeee, dd. MMMM yy.', { locale: sr })}
               </p>
               <p className="text-sm text-base-content opacity-80">
                 Vreme: {format(new Date(appointment.startTime), 'HH:mm')} - {format(new Date(appointment.endTime), 'HH:mm')}
@@ -143,6 +148,11 @@ export default function AppointmentItem({ appointment }: AppointmentItemProps) {
                   <span className="text-xs text-warning ml-2">(Prošao)</span>
                 )}
               </p>
+              {appointment.worker && (
+                <p className="text-sm text-base-content opacity-70 mt-1 flex items-center">
+                  <UserCog size={14} className="mr-1.5 opacity-60"/> Radnik: {appointment.worker.name}
+                </p>
+              )}
               <div className="mt-2">
                 <span className={`badge ${getStatusBadgeClass(appointment.status as AppointmentStatus)} badge-md font-medium items-center`}>
                   <StatusIcon status={appointment.status as AppointmentStatus} />
@@ -186,7 +196,7 @@ export default function AppointmentItem({ appointment }: AppointmentItemProps) {
           </div>
           <p className="py-2 opacity-90">
             Da li ste sigurni da želite da otkažete Vaš termin za <span className="font-semibold text-primary">{appointment.service.name}</span>
-            dana <span className="font-semibold">{format(new Date(appointment.startTime), 'dd. MMMM yyyy.', { locale: sr })}</span>
+            dana <span className="font-semibold">{format(new Date(appointment.startTime), 'dd. MMMM yy.', { locale: sr })}</span>
             u <span className="font-semibold">{format(new Date(appointment.startTime), 'HH:mm')}</span>?
           </p>
           <p className="text-sm opacity-70 mt-1">Ova radnja se ne može opozvati.</p>
@@ -225,3 +235,4 @@ export default function AppointmentItem({ appointment }: AppointmentItemProps) {
     </>
   );
 }
+

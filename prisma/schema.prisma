@@ -119,30 +119,61 @@ enum AppointmentStatus {
 }
 
 model Worker {
-  id           String        @id @default(cuid())
-  vendorId     String        
-  vendor         Vendor        @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  userId       String?       @unique // Optional: Link to a User account if the worker can log in
-  user           User?         @relation(fields: [userId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  name         String        // e.g., "Jane Doe" (if not linked to a User) or derived from User
-  bio         String?
-  photoUrl    String?
-  email        String?       @unique // Optional, if worker needs direct notifications/login
-  phoneNumber  String?
-  services     Service[]     @relation("WorkerServices")
-  appointments Appointment[]
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  id            String    @id @default(cuid())
+  vendorId      String
+  vendor        Vendor    @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  userId        String?   @unique // Clerk User ID, if linked
+  user          User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  name          String
+  email         String?   @unique // Optional, could be different from User's email or for non-user workers
+  phoneNumber   String?
+  bio           String?
+  photoUrl      String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  appointments  Appointment[]
+  services      Service[]     @relation("WorkerServices") 
+  availabilities WorkerAvailability[]
+  scheduleOverrides WorkerScheduleOverride[]
 
-  @@unique([vendorId, userId], name: "unique_vendor_user_worker") // A user can only be one worker per vendor
   @@index([vendorId])
   @@index([userId])
+  @@unique([vendorId, userId], name: "unique_vendor_user_worker")
 }
+
+
+model WorkerAvailability {
+  id          String    @id @default(cuid())
+  workerId    String
+  worker      Worker    @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  dayOfWeek   Int       // 0 (Sunday) to 6 (Saturday)
+  startTime   String    // "HH:mm" format, e.g., "09:00"
+  endTime     String    // "HH:mm" format, e.g., "17:00"
+  isAvailable Boolean   @default(true)
+
+  @@unique([workerId, dayOfWeek]) // Each worker has one entry per day of the week
+  @@index([workerId])
+}
+
+model WorkerScheduleOverride {
+  id          String    @id @default(cuid())
+  workerId    String
+  worker      Worker    @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  date        DateTime  @db.Date // Specific date for the override
+  startTime   String?   // "HH:mm", null if day off
+  endTime     String?   // "HH:mm", null if day off
+  isDayOff    Boolean   @default(false)
+  notes       String?   // Reason for override
+
+  @@unique([workerId, date])
+  @@index([workerId, date])
+}
+
 
 
 model ChatSession {
   id        String     @id @default(cuid())
-  userId    String     // Trebalo bi da bude Prisma User ID za direktnu relaciju
+  userId    String     
   user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   adminId   String?    // Može biti Prisma User ID admina koji je poslednji odgovorio
   // admin     User?   // Ako adminId referencira User.id, može se dodati i ova relacija
@@ -158,20 +189,19 @@ model ChatSession {
 }
 
 
-// Model for Chat Messages
 model ChatMessage {
   id          String      @id @default(cuid())
   sessionId   String
   session    ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   senderId    String?    // Može biti Prisma User ID ili specijalni identifikator kao "AI"                                                                                                                              // Ako senderId može biti npr. "AI", onda ova direktna relacija nije moguća na ovaj način
-  senderType  SenderType // USER, ADMIN, ili AI
+  senderType  SenderType 
   message    String     @db.Text
   timestamp   DateTime    @default(now())
   isRead      Boolean     @default(false)
-  senderUser User?       @relation(fields: [senderId], references: [id], onDelete: SetNull, onUpdate: Cascade) // Optional: if sender is a platform User
+  senderUser User?       @relation(fields: [senderId], references: [id], onDelete: SetNull, onUpdate: Cascade) 
 
   @@index([sessionId])
-  @@index([senderId]) // Ako je senderId često korišćen u pretragama
+  @@index([senderId]) 
 }
 
 enum SenderType {

@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { Vendor, Service as PrismaService, Worker as PrismaWorker, VendorStatus } from '@prisma/client';
 import { format, parseISO, isValid } from 'date-fns';
 import { srLatn } from 'date-fns/locale';
-import { Store, ListOrdered, Users2, MapPin, Phone, ClockIcon, Info, Briefcase, ExternalLink, Sparkles } from 'lucide-react'; // Added Sparkles
+import { Store, ListOrdered, Users2, MapPin, Phone, ClockIcon, Info, Briefcase, ExternalLink, Sparkles, UserCog, CheckSquare } from 'lucide-react'; // Added UserCog, CheckSquare
 import type { Metadata, ResolvingMetadata } from 'next';
 
 interface VendorProfileProps {
@@ -15,13 +15,14 @@ interface VendorProfileProps {
 // Define the types for the data we'll fetch
 interface ServiceWithDetails extends Pick<PrismaService, 'id' | 'name' | 'description' | 'price' | 'duration'> {}
 
-interface WorkerWithServices extends Pick<PrismaWorker, 'id' | 'name' | 'bio' | 'photoUrl'> {
-  services: Array<Pick<PrismaService, 'id' | 'name'>>; // Services this worker is assigned to
+// WorkerWithServices now includes the services the worker can perform
+interface WorkerWithAssignedServices extends Pick<PrismaWorker, 'id' | 'name' | 'bio' | 'photoUrl'> {
+  services: Array<Pick<PrismaService, 'id' | 'name'>>; // Services this worker is assigned to and are active
 }
 
 interface VendorProfileData extends Pick<Vendor, 'id' | 'name' | 'description' | 'address' | 'phoneNumber' | 'operatingHours' | 'status'> {
   services: ServiceWithDetails[]; // All active services of the vendor
-  workers: WorkerWithServices[];  // All workers of the vendor, with their assigned services
+  workers: WorkerWithAssignedServices[];  // All workers of the vendor, with their *assigned and active* services
 }
 
 async function getVendorProfile(vendorId: string): Promise<VendorProfileData | null> {
@@ -36,8 +37,8 @@ async function getVendorProfile(vendorId: string): Promise<VendorProfileData | n
         phoneNumber: true,
         operatingHours: true,
         status: true,
-        services: { // Fetch all active services offered by this vendor
-          where: { active: true },
+        services: { 
+          where: { active: true }, // Only active services of the vendor
           select: {
             id: true,
             name: true,
@@ -48,24 +49,23 @@ async function getVendorProfile(vendorId: string): Promise<VendorProfileData | n
           orderBy: { name: 'asc' },
         },
         workers: { // Fetch all workers associated with this vendor
+          orderBy: { name: 'asc' },
           select: {
             id: true,
             name: true,
             bio: true,
             photoUrl: true,
             services: { // For each worker, fetch the active services they are specifically assigned to
-              where: { active: true },
+              where: { active: true, vendorId: vendorId }, // Ensure service is active AND belongs to this vendor
               select: { id: true, name: true },
               orderBy: { name: 'asc' },
             },
           },
-          orderBy: { name: 'asc' },
         },
       },
     });
 
     if (!vendor || vendor.status !== VendorStatus.ACTIVE) {
-      // Do not return non-active vendors for public profiles
       return null;
     }
     return vendor;
@@ -80,7 +80,7 @@ export async function generateMetadata(
   parent: ResolvingMetadata
 ): Promise<Metadata> {
   const vendorId = params.vendorId;
-  const vendor = await getVendorProfile(vendorId); // Fetches active vendor
+  const vendor = await getVendorProfile(vendorId); 
 
   if (!vendor) {
     return {
@@ -89,24 +89,22 @@ export async function generateMetadata(
     };
   }
 
-  const previousImages = (await parent).openGraph?.images || [];
   const serviceNames = vendor.services.map(s => s.name).join(', ');
+  const workerNames = vendor.workers.map(w => w.name).join(', ');
 
   return {
-    title: `${vendor.name} - Usluge i Rezervacije | FrizNaKlik`,
-    description: vendor.description ? `${vendor.description.substring(0, 150)}...` : `Pogledajte usluge (${serviceNames}) i radnike salona ${vendor.name}. Zakažite termin online lako i brzo.`,
+    title: `${vendor.name} - Usluge, Tim i Rezervacije | FrizNaKlik`,
+    description: vendor.description ? `${vendor.description.substring(0, 150)}...` : `Pogledajte usluge (${serviceNames}), upoznajte naš tim (${workerNames}) i zakažite termin u salonu ${vendor.name}.`,
     alternates: {
       canonical: `/vendors/${vendor.id}`,
     },
     openGraph: {
       title: `${vendor.name} | FrizNaKlik`,
-      description: vendor.description || `Profesionalne frizerske usluge u salonu ${vendor.name}.`,
-      // url: `https://yourdomain.com/vendors/${vendor.id}`, // Replace with your actual domain
-      // images: [ /* Add relevant images */ ],
+      description: vendor.description || `Profesionalne frizerske usluge u salonu ${vendor.name}. Upoznajte naš tim i zakažite online.`,
       locale: 'sr_RS',
-      type: 'profile', // More specific type for OG
+      type: 'profile', 
     },
-    keywords: [vendor.name, 'frizerski salon', 'usluge', 'zakazivanje', ...vendor.services.map(s => s.name)],
+    keywords: [vendor.name, 'frizerski salon', 'usluge', 'radnici', 'tim', 'zakazivanje', ...vendor.services.map(s => s.name), ...vendor.workers.map(w => w.name || '')].filter(Boolean),
   };
 }
 
@@ -133,7 +131,7 @@ export default async function VendorProfilePage({ params }: VendorProfileProps) 
             if (dayInfo && dayInfo.open && dayInfo.close) {
                 return { day: dayName, hours: `${dayInfo.open} - ${dayInfo.close}` };
             }
-            return { day: dayName, hours: "Zatvoreno" }; // Show as closed if not defined
+            return { day: dayName, hours: "Zatvoreno" };
         });
   };
 
@@ -216,7 +214,7 @@ export default async function VendorProfilePage({ params }: VendorProfileProps) 
         )}
       </div>
 
-      {/* Workers Section */}
+      {/* MODIFIED Workers Section - Now shows services per worker */}
       <div className="mb-8 p-6 card bg-base-100 shadow-lg">
         <h2 className="text-xl font-semibold mb-4 card-title flex items-center">
           <Users2 size={22} className="mr-2 text-info" /> Naš Tim
@@ -224,40 +222,45 @@ export default async function VendorProfilePage({ params }: VendorProfileProps) 
         {vendor.workers.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {vendor.workers.map(worker => (
-              <div key={worker.id} className="card bg-base-200 shadow">
-                <div className="card-body items-center text-center sm:items-start sm:text-left">
+              <div key={worker.id} className="card bg-base-200 shadow hover:shadow-md transition-shadow h-full flex flex-col">
+                <div className="card-body items-center text-center sm:items-start sm:text-left flex-grow flex flex-col">
                   <div className="flex flex-col sm:flex-row items-center gap-4 mb-3 w-full">
                     {worker.photoUrl ? (
                        <div className="avatar">
                          <div className="w-20 h-20 rounded-full ring ring-primary ring-offset-base-100 ring-offset-2">
-                           <img src={worker.photoUrl} alt={worker.name} />
+                           <img src={worker.photoUrl} alt={worker.name || 'Radnik'} onError={(e) => (e.currentTarget.src = `https://placehold.co/80x80/E0E0E0/B0B0B0?text=${(worker.name || 'R').charAt(0)}&font=roboto`)} />
                          </div>
                        </div>
                     ) : (
                         <div className="avatar placeholder">
-                            <div className="bg-neutral text-neutral-content rounded-full w-20 h-20">
-                                <span className="text-3xl">{worker.name.charAt(0).toUpperCase()}</span>
+                            <div className="bg-neutral text-neutral-content rounded-full w-20 h-20 flex items-center justify-center">
+                                <span className="text-3xl">{(worker.name || 'R').charAt(0).toUpperCase()}</span>
                             </div>
                         </div>
                     )}
                     <div className="flex-1">
-                        <h3 className="text-lg font-semibold text-center sm:text-left">{worker.name}</h3>
+                        <h3 className="text-lg font-semibold text-center sm:text-left">{worker.name || 'Radnik'}</h3>
                         {worker.bio && <p className="text-xs text-base-content/70 line-clamp-2 text-center sm:text-left">{worker.bio}</p>}
                     </div>
                   </div>
-                  {worker.services && worker.services.length > 0 && (
-                    <div className="w-full">
-                      <h4 className="text-xs font-medium uppercase text-base-content/60 mt-2 mb-1.5 text-center sm:text-left">Usluge koje pruža:</h4>
+                  
+                  {/* Display services for this worker */}
+                  <div className="w-full mt-auto pt-3 border-t border-base-300/30">
+                    <h4 className="text-xs font-medium uppercase text-base-content/60 mb-1.5 text-center sm:text-left">
+                      Pruža usluge:
+                    </h4>
+                    {worker.services && worker.services.length > 0 ? (
                       <div className="flex flex-wrap gap-1 justify-center sm:justify-start">
                         {worker.services.map(service => (
-                          <span key={service.id} className="badge badge-outline badge-sm">{service.name}</span>
+                          <span key={service.id} className="badge badge-outline badge-accent badge-sm">
+                            <CheckSquare size={12} className="mr-1"/> {service.name}
+                          </span>
                         ))}
                       </div>
-                    </div>
-                  )}
-                  {(!worker.services || worker.services.length === 0) && (
-                    <p className="text-xs italic text-base-content/60 mt-2 w-full text-center sm:text-left">Nema posebno dodeljenih usluga.</p>
-                  )}
+                    ) : (
+                      <p className="text-xs italic text-base-content/60 text-center sm:text-left">Nema posebno dodeljenih aktivnih usluga.</p>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}

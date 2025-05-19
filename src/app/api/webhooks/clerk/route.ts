@@ -5,7 +5,7 @@ import { Webhook } from 'svix';
 import prisma from '@/lib/prisma';
 import { NextResponse } from 'next/server';
 import { formatErrorMessage } from '@/lib/errorUtils';
-import { UserRole } from '@prisma/client';
+import { UserRole } from '@/lib/types/prisma-enums';
 
 const webhookSecret = process.env.CLERK_WEBHOOK_SECRET;
 

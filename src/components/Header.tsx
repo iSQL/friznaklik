@@ -11,6 +11,8 @@ import {
 import { useState, useEffect, useRef } from 'react';
 import { usePathname } from 'next/navigation';
 import type { AuthenticatedUser } from '@/lib/authUtils'; // Corrected import path
+import { UserRole } from '@/lib/types/prisma-enums'; // Corrected import path
+
 import { useBookingStore } from '@/store/bookingStore';
 import type { Vendor } from '@prisma/client';
 // formatErrorMessage is not used in this version of Header, but can be kept if error display becomes more complex
@@ -96,6 +98,9 @@ export default function Header({ user, isAdmin }: HeaderProps) {
   const userNavLinks = [];
   if (user) {
     userNavLinks.push({ href: "/dashboard", label: "Kontrolna Tabla", icon: LayoutDashboard });
+    if (user.role === UserRole.WORKER) { // Check for WORKER role
+    userNavLinks.push({ href: "/dashboard/my-schedule", label: "Moj Raspored", icon: LayoutDashboard }); // Or a more specific icon
+    }
     if (isAdmin) {
       userNavLinks.push({ href: "/admin", label: "Admin Panel", icon: ShieldCheck });
     }
