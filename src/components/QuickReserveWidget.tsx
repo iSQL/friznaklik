@@ -1,14 +1,15 @@
 // src/components/QuickReserveWidget.tsx
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { Service as PrismaService } from '@prisma/client';
-import { format, addHours, setHours, setMinutes, isBefore, startOfToday, isSameDay, parseISO } from 'date-fns';
+import { format, addHours, setHours, setMinutes, isBefore, startOfToday, isSameDay, parseISO, addDays, startOfTomorrow } from 'date-fns';
 import { useAuth } from "@clerk/nextjs";
 import { AlertTriangle, Clock, CheckCircle2, XCircle, Info, Store, ShoppingBag, Loader2, UserCog, CalendarDays, Scissors } from 'lucide-react';
 import { formatErrorMessage } from '@/lib/errorUtils';
-import { useBookingStore, type SlotWithWorkers, type WorkerInfo } from '@/store/bookingStore'; // Import store types
+import { useBookingStore, type SlotWithWorkers } from '@/store/bookingStore';
+import { srLatn } from 'date-fns/locale'; // Serbian locale
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
 
@@ -18,12 +19,11 @@ interface BookingErrorPayload {
   details?: string | object;
 }
 
-// Type for the appointment object returned by the booking API
 interface BookedAppointment {
   id: string;
   service?: { name?: string | null };
   vendor?: { name?: string | null };
-  worker?: { name?: string | null } | null; // Worker can be null
+  worker?: { name?: string | null } | null;
   startTime: string;
 }
 
@@ -38,9 +38,9 @@ export default function QuickReserveWidget() {
 
   const [services, setServices] = useState<PrismaService[]>([]);
   const [selectedService, setSelectedService] = useState<PrismaService | null>(null);
-  
+
   const [availableSlotsData, setAvailableSlotsData] = useState<SlotWithWorkers[]>([]);
-  const [selectedSlotData, setSelectedSlotData] = useState<SlotWithWorkers | null>(null); 
+  const [selectedSlotData, setSelectedSlotData] = useState<SlotWithWorkers | null>(null);
 
   const [selectedVendorName, setSelectedVendorName] = useState<string | null>(null);
 
@@ -54,8 +54,8 @@ export default function QuickReserveWidget() {
   const [bookingSuccess, setBookingSuccess] = useState<string | null>(null);
   const [bookedAppointmentDetails, setBookedAppointmentDetails] = useState<BookedAppointment | null>(null);
 
-
-  const todayDateString = format(new Date(), 'yyyy-MM-dd');
+  const tomorrowDateObject = useMemo(() => startOfTomorrow(), []);
+  const tomorrowDateString = useMemo(() => format(tomorrowDateObject, 'yyyy-MM-dd'), [tomorrowDateObject]);
 
   useEffect(() => {
     if (globallySelectedVendorId && allVendorsFromStore.length > 0) {
@@ -68,21 +68,23 @@ export default function QuickReserveWidget() {
     }
   }, [globallySelectedVendorId, allVendorsFromStore]);
 
-  const resetSelections = useCallback(() => {
-    setSelectedService(null);
+  const resetSelections = useCallback((resetServiceToo = true) => {
+    if (resetServiceToo) {
+      setSelectedService(null);
+    }
     setAvailableSlotsData([]);
     setSelectedSlotData(null);
     setServicesError(null);
     setSlotsError(null);
     setBookingError(null);
-    setBookingSuccess(null);
-    setBookedAppointmentDetails(null);
+    // setBookingSuccess(null); // Keep success message if just service changes
+    // setBookedAppointmentDetails(null);
   }, []);
 
   useEffect(() => {
     if (globallySelectedVendorId && isStoreHydrated) {
       setIsLoadingServices(true);
-      resetSelections(); 
+      resetSelections(true); // Reset everything when vendor changes, including service
 
       fetch(`${SITE_URL}/api/services?vendorId=${globallySelectedVendorId}&activeOnly=true`)
         .then(res => {
@@ -93,7 +95,7 @@ export default function QuickReserveWidget() {
         .catch((err: unknown) => setServicesError(formatErrorMessage(err, `preuzimanja usluga za izabrani salon`)))
         .finally(() => setIsLoadingServices(false));
     } else {
-      resetSelections(); 
+      resetSelections(true);
       setIsLoadingServices(false);
     }
   }, [globallySelectedVendorId, isStoreHydrated, resetSelections]);
@@ -104,11 +106,14 @@ export default function QuickReserveWidget() {
       setSlotsError(null);
       setAvailableSlotsData([]);
       setSelectedSlotData(null);
-      setBookingError(null);
-      setBookingSuccess(null);
-      setBookedAppointmentDetails(null);
+      // Clear booking messages when fetching new slots for a new service/date
+      // Keep bookingSuccess so user sees it even if they re-select service quickly
+      // setBookingError(null);
+      // setBookingSuccess(null);
+      // setBookedAppointmentDetails(null);
 
-      fetch(`${SITE_URL}/api/appointments/available?vendorId=${globallySelectedVendorId}&serviceId=${selectedService.id}&date=${todayDateString}`)
+
+      fetch(`${SITE_URL}/api/appointments/available?vendorId=${globallySelectedVendorId}&serviceId=${selectedService.id}&date=${tomorrowDateString}`)
         .then(res => {
           if (!res.ok) return res.json().then(errData => Promise.reject({ message: `Neuspešno preuzimanje termina: ${res.status}`, status: res.status, details: errData.message || "Nepoznata greška" }));
           return res.json();
@@ -118,20 +123,13 @@ export default function QuickReserveWidget() {
             setSlotsError(data.message);
             setAvailableSlotsData([]);
           } else {
-            let slotsData = data.availableSlots;
-            const currentMinBookingTime = addHours(new Date(), 1);
-            const todayAsDateObj = startOfToday();
-             if (isSameDay(parseISO(todayDateString), todayAsDateObj)) { 
-                slotsData = slotsData.filter(slot => {
-                    const [slotHours, slotMinutes] = slot.time.split(':').map(Number);
-                    const slotDateTime = setMinutes(setHours(todayAsDateObj, slotHours), slotMinutes);
-                    return isBefore(currentMinBookingTime, slotDateTime);
-                });
-            }
-            setAvailableSlotsData(slotsData);
+            setAvailableSlotsData(data.availableSlots);
           }
         })
-        .catch((err: unknown) => setSlotsError(formatErrorMessage(err, `preuzimanja termina za ${selectedService.name} za danas`)))
+        .catch((err: unknown) => {
+            setSlotsError(formatErrorMessage(err, `preuzimanja termina za ${selectedService.name} za sutra`));
+            setAvailableSlotsData([]);
+        })
         .finally(() => setIsLoadingSlots(false));
     } else {
       setAvailableSlotsData([]);
@@ -139,17 +137,23 @@ export default function QuickReserveWidget() {
       setIsLoadingSlots(false);
       setSlotsError(null);
     }
-  }, [globallySelectedVendorId, selectedService, todayDateString, isStoreHydrated]);
+  }, [globallySelectedVendorId, selectedService, tomorrowDateString, isStoreHydrated]);
 
   const handleServiceChange = (serviceId: string) => {
     const service = services.find(s => s.id === serviceId);
+    // Clear previous success/error messages when user changes service
+    setBookingSuccess(null);
+    setBookingError(null);
+    setBookedAppointmentDetails(null);
     setSelectedService(service || null);
-    setAvailableSlotsData([]);
-    setSelectedSlotData(null);
+    // Resetting slots and selected slot is handled by the useEffect above
   };
-  
+
   const handleSlotSelect = (slotData: SlotWithWorkers) => {
     setSelectedSlotData(slotData);
+    // Clear previous success/error messages when user selects a new slot
+    setBookingSuccess(null);
+    setBookingError(null);
   };
 
   const handleBooking = async () => {
@@ -165,14 +169,13 @@ export default function QuickReserveWidget() {
 
     try {
       const [hours, minutes] = selectedSlotData.time.split(':').map(Number);
-      const todayAsDateObj = startOfToday(); 
-      const startTime = setMinutes(setHours(todayAsDateObj, hours), minutes);
+      const startTime = setMinutes(setHours(tomorrowDateObject, hours), minutes);
 
       const bookingPayload = {
         vendorId: globallySelectedVendorId,
         serviceId: selectedService.id,
         startTime: startTime.toISOString(),
-        workerId: null, 
+        workerId: null,
       };
 
       const response = await fetch(`${SITE_URL}/api/appointments`, {
@@ -185,39 +188,24 @@ export default function QuickReserveWidget() {
         const errorData: BookingErrorPayload = await response.json().catch(() => ({ message: `Rezervacija neuspešna: ${response.status}` }));
         throw { message: errorData.message, status: response.status, details: errorData.details || errorData };
       }
-      
-      const newAppointment: BookedAppointment = await response.json();
-      setBookedAppointmentDetails(newAppointment); 
 
-      let successMsg = `Uspešno ste zatražili termin za ${selectedService.name} u ${selectedSlotData.time} u salonu ${selectedVendorName || 'izabranom salonu'}.`;
+      const newAppointment: BookedAppointment = await response.json();
+      setBookedAppointmentDetails(newAppointment);
+
+      let successMsg = `Uspešno ste zatražili termin za ${selectedService.name} za sutra u ${selectedSlotData.time} u salonu ${selectedVendorName || 'izabranom salonu'}.`;
       if(newAppointment.worker?.name) {
         successMsg += ` Dodeljen Vam je radnik: ${newAppointment.worker.name}.`;
       }
       setBookingSuccess(successMsg);
-      setSelectedSlotData(null); 
       
-      if (globallySelectedVendorId && selectedService) {
-        setIsLoadingSlots(true);
-        fetch(`${SITE_URL}/api/appointments/available?vendorId=${globallySelectedVendorId}&serviceId=${selectedService.id}&date=${todayDateString}`)
-          .then(res => res.ok ? res.json() : Promise.reject(res))
-          .then((data: { availableSlots: SlotWithWorkers[] }) => {
-              let slotsData = data.availableSlots;
-              const currentMinBookingTime = addHours(new Date(), 1);
-              const todayObjForRefresh = startOfToday();
-               if (isSameDay(parseISO(todayDateString), todayObjForRefresh)) {
-                    slotsData = slotsData.filter(slot => {
-                        const [slotHours, slotMinutes] = slot.time.split(':').map(Number);
-                        const slotDateTime = setMinutes(setHours(todayObjForRefresh, slotHours), slotMinutes);
-                        return isBefore(currentMinBookingTime, slotDateTime);
-                    });
-                }
-              setAvailableSlotsData(slotsData);
-          })
-          .catch(e => setSlotsError(formatErrorMessage(e, "osvežavanja termina nakon rezervacije")))
-          .finally(() => setIsLoadingSlots(false));
-      }
+      // Reset selections to hide the slots and prompt for new service selection
+      setSelectedSlotData(null);
+      setAvailableSlotsData([]);
+      setSelectedService(null); // Vraća korisnika na odabir usluge
+
     } catch (err: unknown) {
       setBookingError(formatErrorMessage(err, "podnošenja brze rezervacije"));
+      // Ne resetujemo selectedService ovde da korisnik može da pokuša ponovo sa istom uslugom ako je greška
     } finally {
       setIsBooking(false);
     }
@@ -250,7 +238,7 @@ export default function QuickReserveWidget() {
     <div className="space-y-4">
       {selectedVendorName && (
         <p className="text-sm text-center text-base-content/80">
-            Brza rezervacija za danas u salonu: <span className="font-semibold text-primary">{selectedVendorName}</span>
+            Brza rezervacija za <span className="font-semibold text-secondary">sutra</span> u salonu: <span className="font-semibold text-primary">{selectedVendorName}</span>
         </p>
       )}
       <div>
@@ -276,10 +264,10 @@ export default function QuickReserveWidget() {
         {servicesError && <p className="text-error text-xs mt-1">{servicesError}</p>}
       </div>
 
-      {selectedService && (
+      {selectedService && ( // Prikazujemo slotove samo ako je usluga odabrana
         <div>
           <h3 className="text-md font-semibold mb-2 mt-3">
-            Dostupni termini za danas ({format(startOfToday(), 'dd.MM.yyyy')}) za {selectedService.name}:
+            Dostupni termini za sutra ({format(tomorrowDateObject, 'dd.MM.yyyy', { locale: srLatn })}) za {selectedService.name}:
           </h3>
           {isLoadingSlots ? (
             <div className="flex justify-center items-center py-4"> <Loader2 className="h-8 w-8 animate-spin text-primary" /> </div>
@@ -287,45 +275,37 @@ export default function QuickReserveWidget() {
             <div role="alert" className="alert alert-warning text-sm p-3"> <AlertTriangle className="h-5 w-5" /> <span>{slotsError}</span> </div>
           ) : availableSlotsData.length > 0 ? (
             <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-              {availableSlotsData.map(slot => {
-                const slotHours = parseInt(slot.time.split(':')[0]);
-                const slotMinutes = parseInt(slot.time.split(':')[1]);
-                const slotDateTime = setMinutes(setHours(startOfToday(), slotHours), slotMinutes);
-                const isSlotTooSoon = isBefore(slotDateTime, addHours(new Date(),1));
-
-                return (
-                  <button
-                    key={slot.time}
-                    className={`btn btn-sm ${selectedSlotData?.time === slot.time ? 'btn-primary' : 'btn-outline'}`}
-                    onClick={() => handleSlotSelect(slot)}
-                    disabled={isBooking || isSlotTooSoon}
-                    title={isSlotTooSoon ? "Termin je unutar narednih sat vremena" : ""}
-                  >
-                    <Clock className="mr-1 h-4 w-4" /> {slot.time}
-                  </button>
-                );
-              })}
+              {availableSlotsData.map(slot => (
+                <button
+                  key={slot.time}
+                  className={`btn btn-sm ${selectedSlotData?.time === slot.time ? 'btn-primary' : 'btn-outline'}`}
+                  onClick={() => handleSlotSelect(slot)}
+                  disabled={isBooking}
+                >
+                  <Clock className="mr-1 h-4 w-4" /> {slot.time}
+                </button>
+              ))}
             </div>
           ) : (
-            <p className="text-base-content/70 p-3 bg-base-200 rounded-md">Nema dostupnih termina za danas za odabranu uslugu.</p>
+            <p className="text-base-content/70 p-3 bg-base-200 rounded-md">Nema dostupnih termina za sutra za odabranu uslugu.</p>
           )}
         </div>
       )}
 
-      {bookingSuccess && (
+      {bookingSuccess && ( // Poruka o uspehu se prikazuje nezavisno od toga da li je selectedService null
         <div role="alert" className="alert alert-success mt-3">
           <CheckCircle2 />
           <span>{bookingSuccess}</span>
         </div>
       )}
-      {bookingError && (
+      {bookingError && ( // Poruka o grešci se takođe prikazuje nezavisno
         <div role="alert" className="alert alert-error mt-3">
           <XCircle />
           <span>{bookingError}</span>
         </div>
       )}
 
-      {selectedService && selectedSlotData && isSignedIn && (
+      {selectedService && selectedSlotData && isSignedIn && ( // Dugme za potvrdu se prikazuje samo ako je sve odabrano
         <button
           className="btn btn-success w-full mt-4"
           onClick={handleBooking}
@@ -334,14 +314,14 @@ export default function QuickReserveWidget() {
           {isBooking ? (
             <> <Loader2 className="loading loading-spinner loading-sm mr-2" /> Rezerviše se... </>
           ) : (
-            <> <CheckCircle2 className="mr-2 h-5 w-5" /> Potvrdi Rezervaciju za {selectedSlotData.time} </>
+            <> <CheckCircle2 className="mr-2 h-5 w-5" /> Potvrdi Rezervaciju za {selectedSlotData.time} (Sutra) </>
           )}
         </button>
       )}
-      
+
       {selectedService && availableSlotsData.length === 0 && !isLoadingSlots && !slotsError && (
          <div className="mt-4 text-center">
-            <p className="mb-2 text-sm text-base-content/70">Žao nam je, nema brzih termina za danas za ovu uslugu.</p>
+            <p className="mb-2 text-sm text-base-content/70">Žao nam je, nema brzih termina za sutra za ovu uslugu.</p>
             <Link href={`/book?vendorId=${globallySelectedVendorId}`} className="btn btn-secondary btn-sm">
                 <CalendarDays className="mr-2 h-4 w-4"/> Pogledajte sve termine
             </Link>
@@ -357,4 +337,3 @@ export default function QuickReserveWidget() {
     </div>
   );
 }
-

@@ -1,5 +1,7 @@
 // src/app/api/appointments/route.ts
 import { NextRequest, NextResponse } from 'next/server';
+import { sendEmail } from '@/lib/emailService';
+
 import prisma from '@/lib/prisma';
 import {
     ensureAuthenticated,
@@ -26,6 +28,7 @@ import {
     getDay,
     isSameDay,
 } from 'date-fns';
+import { srLatn } from 'date-fns/locale';
 
 const createAppointmentSchema = z.object({
   serviceId: z.string().cuid('Neispravan ID usluge.'),
@@ -168,7 +171,7 @@ async function isWorkerSlotStillAvailable(
 
 async function POST_handler(req: NextRequest) {
   try {
-    const bookingUser = await ensureAuthenticated(); // Ensures user is authenticated and returns user object
+    const bookingUser = await ensureAuthenticated();
 
     const body = await req.json();
     const parseResult = createAppointmentSchema.safeParse(body);
@@ -180,15 +183,13 @@ async function POST_handler(req: NextRequest) {
     const { serviceId, vendorId, workerId: requestedWorkerId, startTime: startTimeString, notes } = parseResult.data;
     const parsedStartTime = parseISO(startTimeString);
 
-    // Validate startTime (at least 1 hour in the future)
     if (!isValid(parsedStartTime) || isBefore(parsedStartTime, addHoursFns(new Date(), 1))) {
         return NextResponse.json({ message: 'Neispravno vreme termina. Termin mora biti najmanje 1 sat unapred i validan datum/vreme.' }, { status: 400 });
     }
 
-    // Fetch Vendor and Service details
     const vendor = await prisma.vendor.findUnique({
         where: { id: vendorId, status: VendorStatus.ACTIVE },
-        select: { operatingHours: true, name: true } 
+        select: { operatingHours: true, name: true, ownerId: true } // Include ownerId
     });
     if (!vendor) {
         return NextResponse.json({ message: 'Salon nije pronađen ili nije aktivan.' }, { status: 404 });
@@ -196,7 +197,7 @@ async function POST_handler(req: NextRequest) {
 
     const service = await prisma.service.findUnique({
       where: { id: serviceId, vendorId: vendorId, active: true },
-      select: { duration: true, name: true } 
+      select: { duration: true, name: true }
     });
     if (!service) {
       return NextResponse.json({ message: `Usluga "${serviceId}" nije pronađena, nije aktivna, ili ne pripada salonu "${vendor.name}".` }, { status: 404 });
@@ -205,7 +206,7 @@ async function POST_handler(req: NextRequest) {
     const appointmentEndTime = addMinutes(parsedStartTime, service.duration);
 
     const vendorBusinessHours = getVendorOperatingHoursForDay(vendor.operatingHours, parsedStartTime);
-    if (vendorBusinessHours) { 
+    if (vendorBusinessHours) {
         if (isBefore(parsedStartTime, vendorBusinessHours.openTime) || isBefore(vendorBusinessHours.closeTime, appointmentEndTime) || appointmentEndTime > vendorBusinessHours.closeTime) {
             return NextResponse.json({ message: `Traženi termin je van radnog vremena salona "${vendor.name}".` }, { status: 400 });
         }
@@ -213,19 +214,17 @@ async function POST_handler(req: NextRequest) {
          console.warn(`Vendor ${vendorId} nema definisano opšte radno vreme za ${format(parsedStartTime, 'eeee')}. Oslanjamo se na raspored radnika.`);
     }
 
-
     let finalWorkerId: string | null = null;
 
     if (requestedWorkerId) {
         const worker = await prisma.worker.findUnique({
-            where: { id: requestedWorkerId, vendorId: vendorId }, // Ensure worker belongs to the vendor
-            include: { services: { select: { id: true } } } // To check if worker can perform the service
+            where: { id: requestedWorkerId, vendorId: vendorId },
+            include: { services: { select: { id: true } } }
         });
 
         if (!worker) {
             return NextResponse.json({ message: `Traženi radnik (ID: ${requestedWorkerId}) nije pronađen u salonu "${vendor.name}".` }, { status: 404 });
         }
-        // Check if the worker is assigned to (can perform) the requested service
         if (!worker.services.some(s => s.id === serviceId)) {
             return NextResponse.json({ message: `Radnik ${worker.name} ne pruža uslugu "${service.name}".` }, { status: 400 });
         }
@@ -236,17 +235,14 @@ async function POST_handler(req: NextRequest) {
         }
         finalWorkerId = requestedWorkerId;
     } else {
-        // No specific worker requested, find the first available qualified worker
         const qualifiedWorkers = await prisma.worker.findMany({
             where: {
                 vendorId: vendorId,
                 services: {
-                    some: { id: serviceId, active: true } // Worker must be able to perform the active service
+                    some: { id: serviceId, active: true }
                 }
             },
             select: { id: true, name: true }
-            // Optional: Add orderBy if there's a preferred way to pick the "first" (e.g., by creation date, name)
-            // orderBy: { name: 'asc' } 
         });
 
         if (qualifiedWorkers.length === 0) {
@@ -258,7 +254,7 @@ async function POST_handler(req: NextRequest) {
             if (stillAvailable) {
                 finalWorkerId = worker.id;
                 console.log(`Automatski dodeljen radnik ${worker.name || worker.id} za termin.`);
-                break; 
+                break;
             }
         }
 
@@ -269,32 +265,80 @@ async function POST_handler(req: NextRequest) {
 
     const newAppointment = await prisma.appointment.create({
       data: {
-        userId: bookingUser.id, 
+        userId: bookingUser.id,
         serviceId,
         vendorId,
-        workerId: finalWorkerId, // This will now be an assigned worker ID or error out before this
+        workerId: finalWorkerId,
         startTime: parsedStartTime,
         endTime: appointmentEndTime,
-        status: AppointmentStatus.PENDING, 
+        status: AppointmentStatus.PENDING,
         notes: notes || null,
       },
-      include: { 
+      include: {
           service: {select: {name: true}},
-          vendor: {select: {name: true}},
+          vendor: {select: {name: true, owner: { select: { email: true, firstName: true}}}}, // Include owner email and name
           worker: {select: {name: true}},
+          user: {select: {firstName: true, lastName: true, email: true}} // Include booking user's details
       }
     });
 
-    return NextResponse.json(newAppointment, { status: 201 });
+    // --- Send Notification Email to Vendor Owner ---
+    if (newAppointment.vendor?.owner?.email) {
+      const vendorOwner = newAppointment.vendor.owner;
+      const customer = newAppointment.user;
+      const formattedStartTime = format(new Date(newAppointment.startTime), "eeee, dd. MMMM yyyy 'u' HH:mm", { locale: srLatn });
+      const adminAppointmentsLink = `${process.env.NEXT_PUBLIC_SITE_URL}/admin/appointments`;
+
+      const emailSubject = `Novi zahtev za termin: ${newAppointment.service.name} u ${newAppointment.vendor.name}`;
+      const emailHtmlContent = `
+        <p>Poštovani ${vendorOwner.firstName || 'vlasniče salona'},</p>
+        <p>Primili ste novi zahtev za termin:</p>
+        <ul>
+          <li><strong>Korisnik:</strong> ${customer.firstName || ''} ${customer.lastName || ''} (${customer.email})</li>
+          <li><strong>Salon:</strong> ${newAppointment.vendor.name}</li>
+          <li><strong>Usluga:</strong> ${newAppointment.service.name}</li>
+          <li><strong>Zatraženo vreme:</strong> ${formattedStartTime}</li>
+          ${newAppointment.worker?.name ? `<li><strong>Radnik:</strong> ${newAppointment.worker.name}</li>` : ''}
+          ${newAppointment.notes ? `<li><strong>Napomena korisnika:</strong> ${newAppointment.notes}</li>` : ''}
+        </ul>
+        <p>Molimo Vas da pregledate i obradite ovaj zahtev u Vašem administratorskom panelu.</p>
+        <p><a href="${adminAppointmentsLink}">Idi na Admin Panel - Termini</a></p>
+        <p>S poštovanjem,<br>FrizNaKlik Tim</p>
+      `;
+
+      try {
+        await sendEmail({
+          to: vendorOwner.email,
+          subject: emailSubject,
+          html: emailHtmlContent,
+        });
+      } catch (emailError) {
+        // Log email sending failure but don't let it fail the appointment creation
+        console.error("Greška pri slanju email notifikacije vlasniku salona:", emailError);
+      }
+    } else {
+      console.warn(`Email vlasnika salona nije pronađen za salon ID: ${newAppointment.vendorId}. Notifikacija nije poslata.`);
+    }
+    // --- End Send Notification Email ---
+
+    // Prepare response by removing sensitive owner data from the newAppointment object if necessary
+    const { vendor: vendorDataForResponse, ...restOfAppointment } = newAppointment;
+    const responseAppointment = {
+        ...restOfAppointment,
+        vendor: { name: vendorDataForResponse.name } // Only include vendor name in response to client
+    };
+
+
+    return NextResponse.json(responseAppointment, { status: 201 });
 
   } catch (error: unknown) {
+    // ... (your existing error handling)
     console.error('Greška pri kreiranju termina:', error);
     if (error instanceof z.ZodError) {
       return NextResponse.json({ message: 'Neispravan unos.', errors: error.flatten().fieldErrors }, { status: 400 });
     }
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
         // Handle specific Prisma errors if needed
-        // Example: if (error.code === 'P2002') return NextResponse.json({ message: 'Konflikt resursa.' }, { status: 409 });
     }
     return NextResponse.json({ message: 'Interna greška servera prilikom kreiranja termina.' }, { status: 500 });
   }

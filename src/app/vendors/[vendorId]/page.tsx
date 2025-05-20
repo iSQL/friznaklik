@@ -1,28 +1,29 @@
-// src/app/vendors/[vendorId]/page.tsx
 import prisma from '@/lib/prisma';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { Vendor, Service as PrismaService, Worker as PrismaWorker, VendorStatus } from '@prisma/client';
-import { format, parseISO, isValid } from 'date-fns';
-import { srLatn } from 'date-fns/locale';
-import { Store, ListOrdered, Users2, MapPin, Phone, ClockIcon, Info, Briefcase, ExternalLink, Sparkles, UserCog, CheckSquare } from 'lucide-react'; // Added UserCog, CheckSquare
+import { Store, ListOrdered, Users2, MapPin, Phone, ClockIcon, Info, Briefcase, ExternalLink, Sparkles, UserCog, CheckSquare } from 'lucide-react';
 import type { Metadata, ResolvingMetadata } from 'next';
 
-interface VendorProfileProps {
-  params: { vendorId: string };
+interface VendorProfilePageParams {
+  vendorId: string;
 }
 
-// Define the types for the data we'll fetch
+interface VendorProfileProps {
+  params: Promise<VendorProfilePageParams>; // Params je sada Promise
+  // searchParams?: { [key: string]: string | string[] | undefined }; // Dodajte ako koristite searchParams
+}
+
+// Definišemo tipove za podatke koje ćemo dohvatiti
 interface ServiceWithDetails extends Pick<PrismaService, 'id' | 'name' | 'description' | 'price' | 'duration'> {}
 
-// WorkerWithServices now includes the services the worker can perform
 interface WorkerWithAssignedServices extends Pick<PrismaWorker, 'id' | 'name' | 'bio' | 'photoUrl'> {
-  services: Array<Pick<PrismaService, 'id' | 'name'>>; // Services this worker is assigned to and are active
+  services: Array<Pick<PrismaService, 'id' | 'name'>>;
 }
 
 interface VendorProfileData extends Pick<Vendor, 'id' | 'name' | 'description' | 'address' | 'phoneNumber' | 'operatingHours' | 'status'> {
-  services: ServiceWithDetails[]; // All active services of the vendor
-  workers: WorkerWithAssignedServices[];  // All workers of the vendor, with their *assigned and active* services
+  services: ServiceWithDetails[];
+  workers: WorkerWithAssignedServices[];
 }
 
 async function getVendorProfile(vendorId: string): Promise<VendorProfileData | null> {
@@ -37,8 +38,8 @@ async function getVendorProfile(vendorId: string): Promise<VendorProfileData | n
         phoneNumber: true,
         operatingHours: true,
         status: true,
-        services: { 
-          where: { active: true }, // Only active services of the vendor
+        services: {
+          where: { active: true },
           select: {
             id: true,
             name: true,
@@ -48,15 +49,15 @@ async function getVendorProfile(vendorId: string): Promise<VendorProfileData | n
           },
           orderBy: { name: 'asc' },
         },
-        workers: { // Fetch all workers associated with this vendor
+        workers: {
           orderBy: { name: 'asc' },
           select: {
             id: true,
             name: true,
             bio: true,
             photoUrl: true,
-            services: { // For each worker, fetch the active services they are specifically assigned to
-              where: { active: true, vendorId: vendorId }, // Ensure service is active AND belongs to this vendor
+            services: {
+              where: { active: true, vendorId: vendorId },
               select: { id: true, name: true },
               orderBy: { name: 'asc' },
             },
@@ -76,11 +77,12 @@ async function getVendorProfile(vendorId: string): Promise<VendorProfileData | n
 }
 
 export async function generateMetadata(
-  { params }: VendorProfileProps,
+  { params: paramsPromise }: VendorProfileProps, // Destrukturiramo i preimenujemo params u paramsPromise
   parent: ResolvingMetadata
 ): Promise<Metadata> {
+  const params = await paramsPromise; // Čekamo da se Promise razreši
   const vendorId = params.vendorId;
-  const vendor = await getVendorProfile(vendorId); 
+  const vendor = await getVendorProfile(vendorId);
 
   if (!vendor) {
     return {
@@ -102,14 +104,15 @@ export async function generateMetadata(
       title: `${vendor.name} | FrizNaKlik`,
       description: vendor.description || `Profesionalne frizerske usluge u salonu ${vendor.name}. Upoznajte naš tim i zakažite online.`,
       locale: 'sr_RS',
-      type: 'profile', 
+      type: 'profile',
     },
     keywords: [vendor.name, 'frizerski salon', 'usluge', 'radnici', 'tim', 'zakazivanje', ...vendor.services.map(s => s.name), ...vendor.workers.map(w => w.name || '')].filter(Boolean),
   };
 }
 
 
-export default async function VendorProfilePage({ params }: VendorProfileProps) {
+export default async function VendorProfilePage({ params: paramsPromise }: VendorProfileProps) { // Destrukturiramo i preimenujemo params u paramsPromise
+  const params = await paramsPromise; // Čekamo da se Promise razreši
   const vendor = await getVendorProfile(params.vendorId);
 
   if (!vendor) {
@@ -128,7 +131,7 @@ export default async function VendorProfilePage({ params }: VendorProfileProps) 
         .map(dayKey => {
             const dayInfo = operatingHours[dayKey];
             const dayName = translations[dayKey] || dayKey.charAt(0).toUpperCase() + dayKey.slice(1);
-            if (dayInfo && dayInfo.open && dayInfo.close) {
+            if (dayInfo && dayInfo.open && dayInfo.close && !dayInfo.isClosed) { // Dodata provera za isClosed
                 return { day: dayName, hours: `${dayInfo.open} - ${dayInfo.close}` };
             }
             return { day: dayName, hours: "Zatvoreno" };
@@ -214,7 +217,7 @@ export default async function VendorProfilePage({ params }: VendorProfileProps) 
         )}
       </div>
 
-      {/* MODIFIED Workers Section - Now shows services per worker */}
+      {/* Workers Section */}
       <div className="mb-8 p-6 card bg-base-100 shadow-lg">
         <h2 className="text-xl font-semibold mb-4 card-title flex items-center">
           <Users2 size={22} className="mr-2 text-info" /> Naš Tim
@@ -243,8 +246,7 @@ export default async function VendorProfilePage({ params }: VendorProfileProps) 
                         {worker.bio && <p className="text-xs text-base-content/70 line-clamp-2 text-center sm:text-left">{worker.bio}</p>}
                     </div>
                   </div>
-                  
-                  {/* Display services for this worker */}
+
                   <div className="w-full mt-auto pt-3 border-t border-base-300/30">
                     <h4 className="text-xs font-medium uppercase text-base-content/60 mb-1.5 text-center sm:text-left">
                       Pruža usluge:

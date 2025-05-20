@@ -12,7 +12,7 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  //directUrl = env("DIRECT_URL")
 }
 
 model Vendor {
@@ -46,6 +46,7 @@ model User {
   id              String        @id @default(cuid())
   clerkId         String        @unique // From Clerk authentication
   email           String        @unique
+  phoneNumber     String?       @unique 
   firstName       String?
   lastName        String?
   profileImageUrl String?

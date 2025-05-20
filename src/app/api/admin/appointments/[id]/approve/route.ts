@@ -8,14 +8,17 @@ import {
 } from '@/lib/authUtils';
 import { Prisma } from '@prisma/client';
 import { UserRole, AppointmentStatus } from '@/lib/types/prisma-enums';
+import { sendEmail } from '@/lib/emailService'; // Import email service
+import { format } from 'date-fns'; // For formatting dates in email
+import { srLatn } from 'date-fns/locale'; // For Serbian date formatting
 
 async function POST_handler(
   _req: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const user: AuthenticatedUser | null = await getCurrentUser();
-    if (!user) {
+    const adminUser: AuthenticatedUser | null = await getCurrentUser(); // Admin performing the action
+    if (!adminUser) {
       return NextResponse.json({ message: 'Niste autorizovani.' }, { status: 401 });
     }
 
@@ -26,18 +29,30 @@ async function POST_handler(
 
     const appointmentToApprove = await prisma.appointment.findUnique({
       where: { id: appointmentId },
-      select: { status: true, vendorId: true, workerId: true }, // Select workerId to check if already assigned
+      select: {
+        status: true,
+        vendorId: true,
+        workerId: true,
+        userId: true, // Need userId to fetch customer's email
+        startTime: true,
+        service: { select: { name: true } },
+        vendor: { select: { name: true } },
+        user: { select: { email: true, firstName: true, lastName: true } }, // Customer details for email
+        worker: { select: { name: true } }, // Worker details for email
+      },
     });
 
     if (!appointmentToApprove) {
       return NextResponse.json({ message: 'Termin nije pronađen.' }, { status: 404 });
     }
 
-    if (user.role === UserRole.VENDOR_OWNER) {
-      if (!user.ownedVendorId || appointmentToApprove.vendorId !== user.ownedVendorId) {
+    // Authorization check for VENDOR_OWNER
+    if (adminUser.role === UserRole.VENDOR_OWNER) {
+      if (!adminUser.ownedVendorId || appointmentToApprove.vendorId !== adminUser.ownedVendorId) {
         return NextResponse.json({ message: 'Zabranjeno: Nemate dozvolu da odobrite ovaj termin.' }, { status: 403 });
       }
     }
+    // SUPER_ADMIN can approve any appointment
 
     if (appointmentToApprove.status !== AppointmentStatus.PENDING) {
       return NextResponse.json(
@@ -50,43 +65,91 @@ async function POST_handler(
       status: AppointmentStatus.CONFIRMED,
     };
 
-    // Automatic assignment logic if no worker is assigned yet
+    // Automatic worker assignment logic (if worker not already assigned by admin before approval)
     if (!appointmentToApprove.workerId) {
       const workersOfVendor = await prisma.worker.findMany({
-        where: { vendorId: appointmentToApprove.vendorId },
+        where: {
+          vendorId: appointmentToApprove.vendorId,
+          // Optional: Add filter for workers qualified for the specific service if needed
+          // services: { some: { id: appointmentToApprove.serviceId } }
+        },
         select: { id: true },
-        // Add orderBy if you have a preference for "first"
-        // orderBy: { createdAt: 'asc' } // Example: oldest worker first
       });
 
       if (workersOfVendor.length > 0) {
-        // Correct way to update a foreign key via relation
         dataToUpdate.worker = {
           connect: {
-            id: workersOfVendor[0].id,
+            id: workersOfVendor[0].id, // Assign the first available worker
           },
         };
         console.log(`Termin ${appointmentId} automatski dodeljen radniku ${workersOfVendor[0].id} prilikom odobravanja.`);
+         // Re-fetch worker name if one was auto-assigned for the email
+        if (!appointmentToApprove.worker) {
+            const assignedWorker = await prisma.worker.findUnique({
+                where: { id: workersOfVendor[0].id},
+                select: { name: true }
+            });
+            appointmentToApprove.worker = assignedWorker;
+        }
+
       } else {
         console.log(`Nema dostupnih radnika u salonu ${appointmentToApprove.vendorId} za automatsku dodelu terminu ${appointmentId}.`);
-        // Optionally, you could prevent approval if no worker can be assigned, or leave it as is.
-        // If you want to explicitly set workerId to null if no workers are found (though it's already null):
-        // dataToUpdate.workerId = null; // Or worker: { disconnect: true } if it was previously connected
       }
     }
+
 
     const updatedAppointment = await prisma.appointment.update({
       where: { id: appointmentId },
       data: dataToUpdate,
-      include: { // Return worker details
-          worker: { select: {id: true, name: true}}
-      }
+      include: { // Re-include necessary fields for the email and response
+        service: { select: { name: true } },
+        vendor: { select: { name: true } },
+        user: { select: { email: true, firstName: true, lastName: true } },
+        worker: { select: { name: true } },
+      },
     });
+
+    // --- Send Confirmation Email to User ---
+    if (updatedAppointment.user?.email && updatedAppointment.status === AppointmentStatus.CONFIRMED) {
+      const customer = updatedAppointment.user;
+      const formattedStartTime = format(new Date(updatedAppointment.startTime), "eeee, dd. MMMM yyyy. 'u' HH:mm 'h'", { locale: srLatn });
+      const dashboardLink = `${process.env.NEXT_PUBLIC_SITE_URL}/dashboard`;
+
+      const emailSubject = `Vaš termin je potvrđen: ${updatedAppointment.service.name} u ${updatedAppointment.vendor.name}`;
+      const emailHtmlContent = `
+        <p>Poštovani ${customer.firstName || customer.lastName || 'korisniče'},</p>
+        <p>Vaš zahtev za termin je <strong>uspešno potvrđen!</strong></p>
+        <ul style="list-style-type: none; padding: 0;">
+          <li style="margin-bottom: 5px;"><strong>Salon:</strong> ${updatedAppointment.vendor.name}</li>
+          <li style="margin-bottom: 5px;"><strong>Usluga:</strong> ${updatedAppointment.service.name}</li>
+          <li style="margin-bottom: 5px;"><strong>Potvrđeno vreme:</strong> ${formattedStartTime}</li>
+          ${updatedAppointment.worker?.name ? `<li style="margin-bottom: 5px;"><strong>Radnik:</strong> ${updatedAppointment.worker.name}</li>` : ''}
+          ${updatedAppointment.notes ? `<li style="margin-bottom: 5px;"><strong>Vaša napomena:</strong> ${updatedAppointment.notes}</li>` : ''}
+        </ul>
+        <p style="margin-top: 15px;">Radujemo se Vašem dolasku!</p>
+        <p>Možete videti detalje Vašeg termina na Vašoj kontrolnoj tabli:</p>
+        <p><a href="${dashboardLink}" style="color: #007bff; text-decoration: none;">Moja Kontrolna Tabla</a></p>
+        <br>
+        <p>S poštovanjem,<br>Tim Salona ${updatedAppointment.vendor.name} i FrizNaKlik</p>
+      `;
+
+      try {
+        await sendEmail({
+          to: customer.email,
+          subject: emailSubject,
+          html: emailHtmlContent,
+        });
+      } catch (emailError) {
+        console.error(`Greška pri slanju email potvrde korisniku ${customer.email}:`, emailError);
+        // Log error, but don't fail the main operation
+      }
+    }
+    // --- End Send Confirmation Email to User ---
 
     return NextResponse.json(updatedAppointment);
 
   } catch (error: unknown) {
-    const { id: appointmentId } = await context.params; // Re-access params in catch
+    const { id: appointmentId } = await context.params;
     console.error(`Greška pri odobravanju termina ${appointmentId || 'unknown'}:`, error);
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
       return NextResponse.json(

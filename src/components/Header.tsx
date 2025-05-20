@@ -14,7 +14,6 @@ import type { AuthenticatedUser } from '@/lib/authUtils';
 import { UserRole } from '@/lib/types/prisma-enums'; 
 
 import { useBookingStore } from '@/store/bookingStore';
-// import type { Vendor } from '@prisma/client'; // Vendor type is available via storeAllVendors
 
 interface HeaderProps {
   user: AuthenticatedUser | null;
@@ -82,8 +81,8 @@ export default function Header({ user, isAdmin }: HeaderProps) {
 
   const navLinks = [
     { href: "/vendors", label: "Saloni", icon: Building2, disabled: false },
-    { href: "/services", label: "Usluge", icon: ListOrdered, disabled: false },
-    { href: "/book", label: "Zakaži", icon: CalendarPlus, disabled: false },
+    //{ href: "/services", label: "Usluge", icon: ListOrdered, disabled: false },
+    { href: "/book", label: "Zakazivanje", icon: CalendarPlus, disabled: false },
     //{ href: "/chat", label: "Pomoć", icon: MessageSquare, disabled: false }, // Onemogućen link
   ];
 
@@ -236,7 +235,7 @@ export default function Header({ user, isAdmin }: HeaderProps) {
         </Link>
       </div>
 
-      <div className="navbar-center hidden lg:flex">
+      <div className="navbar-center hidden lg:flex">Odaberi salon:
         {showVendorSelector && (
             <div className={`dropdown dropdown-end mr-2 ${isDesktopVendorDropdownOpen ? "dropdown-open" : ""}`} ref={desktopVendorDropdownRef}>
             <button
