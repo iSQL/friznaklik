@@ -15,6 +15,7 @@ import {
 import { getCurrentUser, AuthenticatedUser } from '@/lib/authUtils'; 
 import { UserRole, AppointmentStatus, VendorStatus } from '@/lib/types/prisma-enums'; // Koristimo UserRole direktno iz @prisma/client
 import type { Metadata } from 'next';
+import { Prisma } from '@prisma/client'; // Import Prisma for types
 
 export const metadata: Metadata = {
   title: 'Admin Panel - FrizNaKlik',
@@ -41,8 +42,8 @@ export default async function AdminDashboardPage() {
     let totalSessionCount: number | null = null;
     let totalUserCount: number | null = null;
 
-    const whereClauseAppointments: any = { status: AppointmentStatus.PENDING };
-    const whereClauseServices: any = {};
+    const whereClauseAppointments: Prisma.AppointmentWhereInput = { status: AppointmentStatus.PENDING };
+    const whereClauseServices: Prisma.ServiceWhereInput = {};
 
     if (user.role === UserRole.VENDOR_OWNER) {
         if (!user.ownedVendorId) {

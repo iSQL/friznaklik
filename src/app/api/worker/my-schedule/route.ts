@@ -1,11 +1,10 @@
-// src/app/api/worker/my-schedule/route.ts
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getCurrentUser, AuthenticatedUser } from '@/lib/authUtils';
 import { UserRole, AppointmentStatus } from '@/lib/types/prisma-enums'; // Corrected enum import
 import { startOfToday } from 'date-fns';
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const user: AuthenticatedUser | null = await getCurrentUser();
 

@@ -1,4 +1,3 @@
-// src/app/api/admin/vendors/[vendorId]/workers/[workerId]/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import {
@@ -6,16 +5,15 @@ import {
   withRoleProtection,
   AuthenticatedUser,
 } from '@/lib/authUtils';
-import { UserRole } from '@/lib/types/prisma-enums'; // Corrected import
-import { Prisma, Worker } from '@prisma/client'; // Prisma types
+import { UserRole } from '@/lib/types/prisma-enums'; 
+import { Prisma, Worker, WorkerAvailability, WorkerScheduleOverride, Service as PrismaService, User as PrismaUser } from '@prisma/client'; 
 import { z } from 'zod';
 
-// Zod schema for updating a worker's basic details
 const updateWorkerDetailsSchema = z.object({
   name: z.string().min(1, 'Ime radnika je obavezno.').optional(),
   bio: z.string().optional().nullable(),
   photoUrl: z.string().url('URL fotografije nije validan.').optional().nullable(),
-  userEmail: z.string().email("Neispravan format email adrese.").optional().nullable(), // For linking/unlinking by email
+  userEmail: z.string().email("Neispravan format email adrese.").optional().nullable(), 
 });
 
 interface RouteContext {
@@ -25,15 +23,28 @@ interface RouteContext {
   }>;
 }
 
+// Define more specific types for the included relations
+type WorkerService = Pick<PrismaService, 'id' | 'name'>;
+type WorkerUser = Pick<PrismaUser, 'clerkId' | 'email' | 'firstName' | 'lastName'> | null;
+
+// Define a more specific return type for getWorkerForAdmin
+type WorkerForAdmin = Worker & {
+  availabilities: WorkerAvailability[];
+  scheduleOverrides: WorkerScheduleOverride[];
+  services: WorkerService[];
+  user: WorkerUser;
+};
+
+
 // Helper to verify ownership and fetch worker with full details for GET
 async function getWorkerForAdmin(
   user: AuthenticatedUser,
   vendorIdFromParams: string,
   workerIdFromParams: string
-): Promise<(Worker & { availabilities: any[], scheduleOverrides: any[], services: any[], user: { clerkId: string | null, email: string | null, firstName: string | null, lastName: string | null } | null }) | 'FORBIDDEN' | 'NOT_FOUND'> {
+): Promise<WorkerForAdmin | 'FORBIDDEN' | 'NOT_FOUND'> {
   const worker = await prisma.worker.findUnique({
     where: { id: workerIdFromParams },
-    include: { 
+    include: {
         user: { select: { clerkId:true, email: true, firstName: true, lastName: true } },
         services: { select: { id: true, name: true }, orderBy: {name: 'asc'} },
         availabilities: { orderBy: { dayOfWeek: 'asc'} },
@@ -47,7 +58,7 @@ async function getWorkerForAdmin(
 
   if (worker.vendorId !== vendorIdFromParams) {
     console.warn(`Worker ${workerIdFromParams} does not belong to vendor ${vendorIdFromParams}. Actual vendor: ${worker.vendorId}`);
-    return 'NOT_FOUND'; 
+    return 'NOT_FOUND';
   }
 
   if (user.role === UserRole.VENDOR_OWNER) {
@@ -55,13 +66,13 @@ async function getWorkerForAdmin(
       return 'FORBIDDEN';
     }
   }
-  return worker as (Worker & { availabilities: any[], scheduleOverrides: any[], services: any[], user: { clerkId: string | null, email: string | null, firstName: string | null, lastName: string | null } | null });
+  return worker as WorkerForAdmin;
 }
 
 
 // GET handler to fetch a specific worker with their schedule
 async function GET_handler(req: NextRequest, context: RouteContext) {
-  const user = await getCurrentUser(); 
+  const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ message: 'Korisnik nije pronađen ili nije autentifikovan.' }, { status: 401 });
   }
@@ -89,7 +100,7 @@ async function PUT_handler(req: NextRequest, context: RouteContext) {
 
   const workerToUpdate = await prisma.worker.findUnique({
     where: { id: workerId },
-    select: { vendorId: true, userId: true } 
+    select: { vendorId: true, userId: true }
   });
 
   if (!workerToUpdate) {
@@ -118,17 +129,17 @@ async function PUT_handler(req: NextRequest, context: RouteContext) {
     if (photoUrl !== undefined) dataToUpdate.photoUrl = photoUrl;
 
     if (userEmail !== undefined) {
-        if (userEmail === null || userEmail === '') { 
+        if (userEmail === null || userEmail === '') {
             if (workerToUpdate.userId) {
                  dataToUpdate.user = { disconnect: true };
                  console.log(`Worker ${workerId}: Unlinking user.`);
             } else {
                 console.log(`Worker ${workerId}: No user was linked, no action to disconnect.`);
             }
-        } else { 
+        } else {
             const targetUser = await prisma.user.findUnique({
-                where: { email: userEmail }, 
-                select: { id: true, email: true } 
+                where: { email: userEmail },
+                select: { id: true, email: true }
             });
 
             if (!targetUser) {
@@ -139,14 +150,14 @@ async function PUT_handler(req: NextRequest, context: RouteContext) {
                 where: {
                     vendorId: vendorId,
                     userId: targetUser.id,
-                    NOT: { id: workerId } 
+                    NOT: { id: workerId }
                 }
             });
 
             if (existingWorkerLink) {
                 return NextResponse.json({ message: `Korisnik sa emailom ${userEmail} je već povezan sa drugim radnikom (ID: ${existingWorkerLink.id}) u ovom salonu.` }, { status: 409 });
             }
-            
+
             dataToUpdate.user = { connect: { id: targetUser.id } };
             console.log(`Worker ${workerId}: Linking to user ${targetUser.id} (Email: ${userEmail}).`);
         }
@@ -155,16 +166,15 @@ async function PUT_handler(req: NextRequest, context: RouteContext) {
     if (Object.keys(dataToUpdate).length === 0) {
         const currentWorkerData = await getWorkerForAdmin(user, vendorId, workerId);
          if (currentWorkerData === 'NOT_FOUND' || currentWorkerData === 'FORBIDDEN') {
-            // This should ideally not happen if workerToUpdate was found earlier, but as a safeguard
             return NextResponse.json({ message: 'Radnik nije pronađen ili nemate pristup nakon provere za ažuriranje.' }, { status: 404 });
         }
-        return NextResponse.json(currentWorkerData); 
+        return NextResponse.json(currentWorkerData);
     }
 
     const updatedWorker = await prisma.worker.update({
       where: { id: workerId },
-      data: dataToUpdate, 
-      include: { 
+      data: dataToUpdate,
+      include: {
         user: { select: { clerkId: true, email: true, firstName: true, lastName: true } },
         services: { select: { id: true, name: true } },
       }
@@ -230,19 +240,6 @@ async function DELETE_handler(req: NextRequest, context: RouteContext) {
     await prisma.$transaction([
         prisma.workerAvailability.deleteMany({ where: { workerId: workerId } }),
         prisma.workerScheduleOverride.deleteMany({ where: { workerId: workerId } }),
-        // Dissociate worker from services (many-to-many relation)
-        // This is important if the relation isn't set to cascade on delete from the Worker side,
-        // or if you want to explicitly clear the join table entries.
-        // If using an explicit join table like _WorkerServices, you might need:
-        // prisma.$executeRawUnsafe(`DELETE FROM "_WorkerServices" WHERE "B" = $1;`, workerId);
-        // Or, if Prisma manages the implicit join table, updating the worker with an empty services list might work:
-        // await prisma.worker.update({ where: { id: workerId }, data: { services: { set: [] } } });
-        // However, since we are deleting the worker, Prisma should handle cascading deletes or
-        // removal from join tables based on how the relation is defined in schema.prisma.
-        // For now, let's assume direct deletion of worker handles this or relations are set up for cascade.
-        // If `onDelete: Cascade` is on the `Worker` side of the `WorkerServices` relation, this is fine.
-        // If not, you might need to explicitly disconnect services before deleting the worker.
-        // The `onDelete: Cascade` in `WorkerAvailability` and `WorkerScheduleOverride` handles those.
         prisma.worker.delete({ where: { id: workerId } })
     ]);
 
@@ -253,11 +250,7 @@ async function DELETE_handler(req: NextRequest, context: RouteContext) {
       if (error.code === 'P2025') {
         return NextResponse.json({ message: 'Radnik nije pronađen tokom pokušaja brisanja.' }, { status: 404 });
       }
-      if (error.code === 'P2003' || error.code === 'P2014') { // Foreign key constraint
-        // This error implies that there are still records (e.g., Appointments) referencing this worker.
-        // The check for PENDING/CONFIRMED appointments should prevent this for active ones.
-        // This might occur if there are COMPLETED or other status appointments still linked.
-        // Depending on policy, you might nullify workerId on those appointments or prevent deletion.
+      if (error.code === 'P2003' || error.code === 'P2014') {
         return NextResponse.json({ message: 'Ne možete obrisati radnika jer je povezan sa drugim zapisima (npr. istorija termina). Razmislite o deaktivaciji radnika umesto brisanja.' }, { status: 409 });
       }
     }

@@ -1,4 +1,3 @@
-// src/app/api/appointments/available/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import {
@@ -18,11 +17,10 @@ import {
     isSameDay,
 } from 'date-fns';
 import { getCurrentUser, AuthenticatedUser } from '@/lib/authUtils';
-import { Prisma } from '@prisma/client'; // Prisma enums
-import { AppointmentStatus, VendorStatus } from '@/lib/types/prisma-enums'; // Prisma enums
+import { Prisma } from '@prisma/client'; 
+import { AppointmentStatus, VendorStatus } from '@/lib/types/prisma-enums'; 
 
-const BASE_SLOT_INTERVAL = 15; // Slot interval in minutes
-
+const BASE_SLOT_INTERVAL = 15; //TODO: Make this configurable, maybe as a vendor setting
 interface WorkerInfo {
     id: string;
     name: string | null;
@@ -37,17 +35,27 @@ interface EffectiveSchedule {
   closeTime: Date;
 }
 
+interface DailyOperatingHour {
+  open: string | null;
+  close: string | null;
+  isClosed?: boolean;
+}
+type OperatingHoursMap = {
+  [key: string]: DailyOperatingHour | null;
+};
+
+
 // Helper to get vendor's operating hours for a specific day
 function getVendorOperatingHoursForDay(
-    operatingHoursJson: any, // Vendor.operatingHours (JSON)
+    operatingHoursJson: Prisma.JsonValue | OperatingHoursMap | null, 
     date: Date
 ): EffectiveSchedule | null {
-    if (!operatingHoursJson || typeof operatingHoursJson !== 'object') {
+    if (!operatingHoursJson || typeof operatingHoursJson !== 'object' || operatingHoursJson === null || Array.isArray(operatingHoursJson)) {
         console.warn("Vendor operatingHours is null or not an object.");
         return null;
     }
     const dayOfWeekString = format(date, 'eeee').toLowerCase(); // e.g., 'monday'
-    const daySchedule = operatingHoursJson[dayOfWeekString];
+    const daySchedule = (operatingHoursJson as OperatingHoursMap)[dayOfWeekString];
 
     if (!daySchedule || !daySchedule.open || !daySchedule.close) {
         // console.log(`Vendor is closed on ${dayOfWeekString} or hours not set.`);
@@ -76,7 +84,7 @@ function getVendorOperatingHoursForDay(
 async function getWorkerEffectiveSchedule(
   workerId: string,
   forDate: Date, // Should be startOfDay(forDate)
-  vendorOperatingHoursJson: any // Vendor's general operatingHours JSON, as fallback
+  vendorOperatingHoursJson: Prisma.JsonValue | OperatingHoursMap | null // Updated type
 ): Promise<EffectiveSchedule | null> {
   const dayOfWeek = getDay(forDate); // 0 for Sunday, 1 for Monday, etc.
 
@@ -121,7 +129,7 @@ async function getWorkerEffectiveSchedule(
       // Fall through to vendor hours if weekly is misconfigured or error occurs
     }
   }
-  
+
   // 3. Fallback to vendor's general operating hours for that day of the week
   return getVendorOperatingHoursForDay(vendorOperatingHoursJson, forDate);
 }
@@ -147,7 +155,7 @@ export async function GET(request: NextRequest) {
 
     let selectedDate = parseISO(dateString);
     if (!isValid(selectedDate)) {
-      return NextResponse.json({ message: 'Neispravan format datuma. Očekivani format je yyyy-MM-dd.' }, { status: 400 });
+      return NextResponse.json({ message: 'Neispravan format datuma. Očekivani format je YYYY-MM-DD.' }, { status: 400 });
     }
     selectedDate = startOfDay(selectedDate); // Normalize to start of day
 
@@ -227,7 +235,7 @@ export async function GET(request: NextRequest) {
         if (isBefore(workerSchedule.closeTime, potentialSlotEnd) || potentialSlotEnd > workerSchedule.closeTime) {
             break; // Slot extends beyond worker's closing time
         }
-        
+
         // Check if slot is in the past or too soon
         if (isBefore(potentialSlotStart, minBookingTime) && isSameDay(selectedDate, now)) {
             potentialSlotStart = addMinutes(potentialSlotStart, BASE_SLOT_INTERVAL);
@@ -255,7 +263,7 @@ export async function GET(request: NextRequest) {
     const finalSlots: SlotWithWorkers[] = Array.from(availableSlotsMap.entries())
       .map(([time, workers]) => ({ time, availableWorkers: workers }))
       .sort((a, b) => a.time.localeCompare(b.time));
-      
+
     if (finalSlots.length === 0 && !requestedWorkerId) {
          return NextResponse.json({ availableSlots: [], message: `Nema slobodnih termina za odabranu uslugu i datum kod bilo kog radnika.` }, { status: 200 });
     }

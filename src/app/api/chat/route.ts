@@ -1,8 +1,7 @@
-// src/app/api/chat/route.ts
 
 import { NextResponse, type NextRequest } from 'next/server';
 import prisma from '@/lib/prisma';
-import { Prisma, Appointment, Service, SenderType, UserRole } from '@prisma/client';
+import { Prisma, Appointment, Service, SenderType } from '@prisma/client';
 import { getCurrentUser, AuthenticatedUser } from '@/lib/authUtils';
 
 import {
@@ -23,7 +22,7 @@ import { parseISO, format, isValid, set } from 'date-fns';
 import { formatErrorMessage } from '@/lib/errorUtils';
 
 // --- Pomoćna funkcija za normalizaciju srpskog teksta ---
-function normalizeSerbianText(text: string): string {
+/* function normalizeSerbianText(text: string): string {
   if (!text) return '';
   return text
     .toLowerCase()
@@ -32,7 +31,7 @@ function normalizeSerbianText(text: string): string {
     .replace(/č/g, 'c')
     .replace(/ć/g, 'c')
     .replace(/ž/g, 'z');
-}
+} */
 
 // --- Definicija Schema za parametre alata ---
 const vendorIdSchema: Schema = { type: SchemaType.STRING, description: "ID salona (vendorId) za koji se vrši provera ili zakazivanje. Ako korisnik ne navede salon, koristi podrazumevani ID koji ti je dat u sistemskim instrukcijama." };

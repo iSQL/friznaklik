@@ -1,4 +1,3 @@
-// src/components/vendors/VendorBrowserClient.tsx
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
@@ -6,18 +5,29 @@ import Link from 'next/link';
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { formatErrorMessage } from '@/lib/errorUtils';
 import type { Vendor as PrismaVendor, Service as PrismaService } from '@prisma/client';
-import { AlertTriangle, Loader2, Store, SlidersHorizontal, ExternalLink, MapPin, Phone, Info, SearchX } from 'lucide-react';
+import { AlertTriangle, Loader2, SlidersHorizontal, ExternalLink, MapPin, Phone, SearchX } from 'lucide-react';
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
 
+// Define types for operating hours, matching VendorForm.tsx
+interface DailyOperatingHours {
+  open: string | null;
+  close: string | null;
+  isClosed: boolean;
+}
+
+type FormOperatingHours = {
+  [key in 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday']: DailyOperatingHours;
+};
+
 // Type for Vendor data received from the API (includes services)
 export interface VendorWithServices extends Omit<PrismaVendor, 'operatingHours'> {
-  operatingHours?: any | null; // Keep as any for now, or define a stricter type
+  operatingHours?: FormOperatingHours | null; // Replaced 'any' with specific type
   services: Array<Pick<PrismaService, 'id' | 'name' | 'description' | 'price' | 'duration'>>;
 }
 
-// Type for individual service filter item
-interface ServiceFilterItem extends Pick<PrismaService, 'id' | 'name'> {}
+// Type for individual service filter item (simplified)
+type ServiceFilterItem = Pick<PrismaService, 'id' | 'name'>;
 
 // --- VendorCard Component ---
 interface VendorCardProps {

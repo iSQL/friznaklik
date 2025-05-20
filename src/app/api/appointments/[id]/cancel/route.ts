@@ -1,7 +1,6 @@
-// src/app/api/appointments/[id]/cancel/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { AppointmentStatus, Prisma, UserRole } // Assuming UserRole is needed for other logic or future use
+import { AppointmentStatus, Prisma } 
 from '@prisma/client';
 import { getCurrentUser, AuthenticatedUser } from '@/lib/authUtils';
 import { sendEmail } from '@/lib/emailService'; // Import email service

@@ -5,7 +5,8 @@ import {
   withRoleProtection,
   AuthenticatedUser,
 } from '@/lib/authUtils';
-import { UserRole, AppointmentStatus, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
+import { UserRole, AppointmentStatus } from '@/lib/types/prisma-enums';
 import { z } from 'zod';
 
 const updateDurationSchema = z.object({
@@ -43,6 +44,7 @@ async function PUT_handler(
       }
       newDuration = parseResult.data.newDuration;
     } catch (e) {
+      console.error('Error parsing request body:', e);
       return NextResponse.json({ message: 'Invalid JSON body' }, { status: 400 });
     }
 

@@ -5,7 +5,7 @@ import {
   withRoleProtection,
   
 } from '@/lib/authUtils';
-import { UserRole } from '@prisma/client'; 
+import { UserRole } from '@/lib/types/prisma-enums'; 
 
 interface RouteContext {
   params: Promise<{

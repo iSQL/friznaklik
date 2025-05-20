@@ -3,27 +3,27 @@
 
 import { useState, useEffect, FormEvent } from 'react';
 import { WorkerAvailability, WorkerScheduleOverride } from '@prisma/client';
-import { AlertTriangle, CalendarPlus, Trash2, Clock, Save, X } from 'lucide-react';
+import { AlertTriangle, CalendarPlus, Trash2, Save } from 'lucide-react'; // Removed Clock and X
 import { format, parse, isValid, parseISO, isBefore } from 'date-fns';
 
 interface AvailabilityData {
-  dayOfWeek: number; 
+  dayOfWeek: number;
   startTime: string; // "HH:mm"
   endTime: string;   // "HH:mm"
   isAvailable: boolean;
 }
 
 interface OverrideData {
-  id?: string; 
-  date: string; // Always yyyy-MM-dd for input
-  startTime: string | null; 
-  endTime: string | null;   
+  id?: string;
+  date: string; // Always YYYY-MM-DD for input
+  startTime: string | null;
+  endTime: string | null;
   isDayOff: boolean;
   notes: string;
 }
 
 interface OnSubmitOverrideData {
-    date: string; // yyyy-MM-DD
+    date: string; // YYYY-MM-DD
     startTime: string | null;
     endTime: string | null;
     isDayOff: boolean;
@@ -48,7 +48,7 @@ const daysOfWeek = [
   { value: 1, label: 'Ponedeljak' }, { value: 2, label: 'Utorak' },
   { value: 3, label: 'Sreda' }, { value: 4, label: 'Četvrtak' },
   { value: 5, label: 'Petak' }, { value: 6, label: 'Subota' },
-  { value: 0, label: 'Nedelja' }, 
+  { value: 0, label: 'Nedelja' },
 ];
 
 export default function WorkerScheduleForm({
@@ -90,7 +90,9 @@ export default function WorkerScheduleForm({
 
   const handleWeeklyChange = (index: number, field: keyof AvailabilityData, value: string | boolean) => {
     const updated = [...weeklyAvailabilities];
-    (updated[index] as any)[field] = value;
+    const itemToUpdate = { ...updated[index] } as AvailabilityData;
+    (itemToUpdate[field] as string | boolean) = value;
+    updated[index] = itemToUpdate;
     setWeeklyAvailabilities(updated);
     setFormError(null);
   };
@@ -106,7 +108,7 @@ export default function WorkerScheduleForm({
             currentOverride.endTime = null;
         }
     } else if (field === 'startTime' || field === 'endTime' || field === 'date' || field === 'notes') {
-        (currentOverride as any)[field] = value as string;
+        (currentOverride[field] as string | null) = value as string;
     }
     updated[index] = currentOverride;
     setDateOverrides(updated);
@@ -159,7 +161,7 @@ export default function WorkerScheduleForm({
           return false;
         }
       }
-      if (!override.date || !isValid(parseISO(override.date))) { 
+      if (!override.date || !isValid(parseISO(override.date))) {
           setFormError(`Neispravan format datuma za izuzetak: ${override.date}. Koristite YYYY-MM-DD.`);
           return false;
       }
@@ -173,12 +175,12 @@ export default function WorkerScheduleForm({
     if (!validateTimes()) {
       return;
     }
-    const payloadOverrides: OnSubmitOverrideData[] = dateOverrides.map(({ id, ...rest }) => ({
-        date: rest.date, 
-        startTime: rest.isDayOff ? null : (rest.startTime || null), // Ensure null if empty
-        endTime: rest.isDayOff ? null : (rest.endTime || null),   // Ensure null if empty
+    const payloadOverrides: OnSubmitOverrideData[] = dateOverrides.map(({ id: _id, ...rest }) => ({ // eslint-disable-line @typescript-eslint/no-unused-vars
+        date: rest.date,
+        startTime: rest.isDayOff ? null : (rest.startTime || null),
+        endTime: rest.isDayOff ? null : (rest.endTime || null),
         isDayOff: rest.isDayOff,
-        notes: rest.notes || null, 
+        notes: rest.notes || null,
     }));
 
     onSubmit({
@@ -195,7 +197,7 @@ export default function WorkerScheduleForm({
         <button onClick={onClose} className="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" disabled={isProcessing}>✕</button>
         <h3 className="font-bold text-xl mb-1">Raspored Radnika: {workerName || 'N/A'}</h3>
         <p className="text-xs text-base-content/70 mb-4">Podesite nedeljnu dostupnost i specifične izuzetke.</p>
-        
+
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="p-4 border border-base-300 rounded-lg bg-base-100/30">
             <h4 className="text-lg font-semibold mb-3 text-primary">Nedeljna Dostupnost</h4>
@@ -221,19 +223,19 @@ export default function WorkerScheduleForm({
                     <input
                       type="time"
                       className={`input input-bordered input-sm w-full ${!avail.isAvailable ? 'input-disabled' : ''}`}
-                      value={avail.startTime} // Should be "HH:mm"
+                      value={avail.startTime}
                       onChange={(e) => handleWeeklyChange(index, 'startTime', e.target.value)}
                       disabled={!avail.isAvailable || isProcessing}
-                      step="900" // 15 minute intervals, optional
+                      step="900"
                     />
                     <span className={`${!avail.isAvailable ? 'text-base-content/30' : ''}`}>-</span>
                     <input
                       type="time"
                       className={`input input-bordered input-sm w-full ${!avail.isAvailable ? 'input-disabled' : ''}`}
-                      value={avail.endTime} // Should be "HH:mm"
+                      value={avail.endTime}
                       onChange={(e) => handleWeeklyChange(index, 'endTime', e.target.value)}
                       disabled={!avail.isAvailable || isProcessing}
-                      step="900" // 15 minute intervals, optional
+                      step="900"
                     />
                   </div>
                 </div>
@@ -257,7 +259,7 @@ export default function WorkerScheduleForm({
                     <input
                       type="date"
                       className="input input-bordered input-sm w-full"
-                      value={override.date} 
+                      value={override.date}
                       onChange={(e) => handleOverrideChange(index, 'date', e.target.value)}
                       disabled={isProcessing}
                     />
@@ -278,7 +280,7 @@ export default function WorkerScheduleForm({
                     <input
                       type="time"
                       className="input input-bordered input-sm w-full"
-                      value={override.startTime || ''} 
+                      value={override.startTime || ''}
                       onChange={(e) => handleOverrideChange(index, 'startTime', e.target.value)}
                       disabled={override.isDayOff || isProcessing}
                       step="900"
@@ -287,7 +289,7 @@ export default function WorkerScheduleForm({
                     <input
                       type="time"
                       className="input input-bordered input-sm w-full"
-                      value={override.endTime || ''} 
+                      value={override.endTime || ''}
                       onChange={(e) => handleOverrideChange(index, 'endTime', e.target.value)}
                       disabled={override.isDayOff || isProcessing}
                       step="900"
@@ -313,7 +315,7 @@ export default function WorkerScheduleForm({
               ))}
             </div>
           </div>
-          
+
           {(formError || actionError) && (
             <div role="alert" className="alert alert-error text-xs p-2">
               <AlertTriangle className="w-4 h-4" />

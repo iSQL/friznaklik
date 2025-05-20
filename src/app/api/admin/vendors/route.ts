@@ -66,7 +66,7 @@ const vendorCreateSchema = z.object({
 });
 
 // GET handler za dobavljanje svih salona (samo za SUPER_ADMIN)
-async function GET_all_vendors_handler(req: NextRequest) {
+async function GET_all_vendors_handler() {
   try {
     const vendors = await prisma.vendor.findMany({
       include: {

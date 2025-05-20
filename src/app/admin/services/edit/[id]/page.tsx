@@ -1,4 +1,3 @@
-// src/app/admin/services/edit/[id]/page.tsx
 import { getCurrentUser, AuthenticatedUser } from '@/lib/authUtils';
 import prisma from '@/lib/prisma';
 import ServiceForm from '@/components/admin/services/ServiceForm';
@@ -6,7 +5,7 @@ import { UserRole } from '@/lib/types/prisma-enums'; // Using the correct enum
 import { Vendor, Service as PrismaService } from '@prisma/client';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { ShieldAlert, Edit, ListOrdered } from 'lucide-react';
+import { ShieldAlert, ListOrdered } from 'lucide-react';
 
 // Type for the initial data expected by ServiceForm when editing
 type ServiceFormInitialData = PrismaService & {

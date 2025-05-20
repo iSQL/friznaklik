@@ -61,7 +61,7 @@ async function POST_handler(
       );
     }
 
-    let dataToUpdate: Prisma.AppointmentUpdateInput = {
+    const dataToUpdate: Prisma.AppointmentUpdateInput = {
       status: AppointmentStatus.CONFIRMED,
     };
 

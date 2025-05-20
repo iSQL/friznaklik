@@ -1,16 +1,15 @@
-// src/app/book/page.tsx
 'use client';
 
-import { useBookingStore, type SlotWithWorkers, type WorkerInfo as BookingStoreWorkerInfo } from '@/store/bookingStore';
+import { useBookingStore, type SlotWithWorkers } from '@/store/bookingStore';
 import { useState, useEffect, Suspense, useRef } from 'react';
 import type { Service, Vendor } from '@prisma/client';
-import Link from 'next/link';
-import { useSearchParams, useRouter } from 'next/navigation';
-import { formatErrorMessage, type FormattedError } from '@/lib/errorUtils';
-import { CalendarDays, Clock, ShoppingBag, AlertTriangle, CheckCircle2, ArrowLeft, Loader2, X, Store, Users, MessageSquare, Building2, Info, UserCog, UserCircle as UserAvatarIcon } from 'lucide-react';
+import Image from 'next/image'; 
+import { useSearchParams } from 'next/navigation'; 
+import { formatErrorMessage } from '@/lib/errorUtils';
+import { CalendarDays, Clock, ShoppingBag, AlertTriangle, CheckCircle2, ArrowLeft, Loader2, X, Users, Building2, Info, UserCog, UserCircle as UserAvatarIcon } from 'lucide-react';
 
 import DatePicker, { registerLocale } from 'react-datepicker';
-import 'react-datepicker/dist/react-datepicker.css'; // Default styles
+import 'react-datepicker/dist/react-datepicker.css'; 
 import { format, getDay, addHours, isBefore, startOfToday, isSameDay, setHours, setMinutes, set } from 'date-fns';
 import { srLatn } from 'date-fns/locale';
 
@@ -36,16 +35,16 @@ type BookingStep = 'SELECT_VENDOR' | 'SELECT_SERVICE' | 'SELECT_WORKER' | 'SELEC
 function BookingForm() {
   const searchParams = useSearchParams();
   const successModalRef = useRef<HTMLDialogElement>(null);
-  const router = useRouter();
+  // const router = useRouter(); // This was unused
 
   const {
     selectedVendorId,
     selectedServiceId,
     preferredWorkerIdForFilter,
     selectedDate,
-    availableSlotsData, 
+    availableSlotsData,
     selectedSlotTime,
-    selectedWorkerForBookingId,   
+    selectedWorkerForBookingId,
     bookingNotes,
     bookingStatus,
     bookingError,
@@ -75,14 +74,14 @@ function BookingForm() {
   const [services, setServices] = useState<Service[]>([]);
   const [isLoadingServices, setIsLoadingServices] = useState(false);
   const [servicesError, setServicesError] = useState<string | null>(null);
-  
+
   const [qualifiedWorkers, setQualifiedWorkers] = useState<PublicWorkerInfo[]>([]);
   const [isLoadingWorkers, setIsLoadingWorkers] = useState(false);
   const [workersError, setWorkersError] = useState<string | null>(null);
 
   const [isLoadingSlots, setIsLoadingSlots] = useState(false);
   const [slotsError, setSlotsError] = useState<string | null>(null);
-  
+
   // Effect for initial vendor loading and selection from URL/store
   useEffect(() => {
     if (!isHydrated) return;
@@ -94,7 +93,7 @@ function BookingForm() {
     }
 
     const vendorIdFromUrl = searchParams.get('vendorId');
-    const serviceIdFromUrl = searchParams.get('serviceId');
+    // const serviceIdFromUrl = searchParams.get('serviceId'); // Not used here, handled in service effect
 
     // Only set initial step if not already further along due to other interactions
     if (currentStep === 'SELECT_VENDOR') {
@@ -108,7 +107,7 @@ function BookingForm() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isHydrated, storeIsLoadingAllVendors, storeAllVendors, searchParams]);
   // Removed services from deps to reduce re-runs that might reset step
-  
+
   useEffect(() => {
     if (isHydrated && storeAllVendors.length === 0 && !storeIsLoadingAllVendors) {
       fetchAndSetAllVendors().catch(err => setVendorsError(formatErrorMessage(err, "inicijalnog preuzimanja salona")));
@@ -135,7 +134,7 @@ function BookingForm() {
           const serviceIdFromUrl = searchParams.get('serviceId');
           if (currentStep === 'SELECT_SERVICE' && serviceIdFromUrl && data.some(s => s.id === serviceIdFromUrl)) {
             if(selectedServiceId !== serviceIdFromUrl) selectService(serviceIdFromUrl);
-            setCurrentStep('SELECT_WORKER'); 
+            setCurrentStep('SELECT_WORKER');
           } else if (data.length === 0) {
             setServicesError("Odabrani salon trenutno nema dostupnih aktivnih usluga.");
           }
@@ -150,15 +149,15 @@ function BookingForm() {
 
   // Fetch qualified workers for selected service and vendor
   useEffect(() => {
-    if (selectedVendorId && selectedServiceId && 
+    if (selectedVendorId && selectedServiceId &&
         (currentStep === 'SELECT_WORKER' || currentStep === 'SELECT_DATETIME' || currentStep === 'CONFIRM')) {
-      
+
       // Only fetch if on SELECT_WORKER step or if qualifiedWorkers is empty (needed for subsequent steps)
       if (currentStep === 'SELECT_WORKER' || qualifiedWorkers.length === 0) {
         setIsLoadingWorkers(true);
         setWorkersError(null);
         // setQualifiedWorkers([]); // Clear only if actively re-fetching for this step
-      
+
         fetch(`${SITE_URL}/api/vendors/${selectedVendorId}/services/${selectedServiceId}/workers`)
           .then(res => {
             if (!res.ok) return res.json().then(err => Promise.reject({ ...err, status: res.status }));
@@ -193,14 +192,14 @@ function BookingForm() {
 
   // Fetch available slots
   useEffect(() => {
-    if (selectedVendorId && selectedServiceId && selectedDate && 
+    if (selectedVendorId && selectedServiceId && selectedDate &&
         (currentStep === 'SELECT_DATETIME' || currentStep === 'CONFIRM')) {
-      
+
       // Only fetch if on SELECT_DATETIME or if slots are empty (needed for confirm)
       if (currentStep === 'SELECT_DATETIME' || availableSlotsData.length === 0) {
         setIsLoadingSlots(true);
         setSlotsError(null);
-        setAvailableSlotsData([]); 
+        setAvailableSlotsData([]);
 
         let apiUrl = `${SITE_URL}/api/appointments/available?vendorId=${selectedVendorId}&serviceId=${selectedServiceId}&date=${format(selectedDate, 'yyyy-MM-dd')}`;
         if (preferredWorkerIdForFilter) {
@@ -225,14 +224,14 @@ function BookingForm() {
                       return isBefore(currentMinBookingTime, slotDateTime);
                   });
               }
-              setAvailableSlotsData(slotsToSet); 
+              setAvailableSlotsData(slotsToSet);
             }
           })
           .catch(err => setSlotsError(formatErrorMessage(err, "preuzimanja dostupnih termina")))
           .finally(() => setIsLoadingSlots(false));
         }
     } else {
-      setAvailableSlotsData([]); 
+      setAvailableSlotsData([]);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedVendorId, selectedServiceId, selectedDate, preferredWorkerIdForFilter, currentStep]);
@@ -246,7 +245,7 @@ function BookingForm() {
 
   const handleServiceSelect = (serviceId: string) => {
     if (selectedServiceId !== serviceId) selectService(serviceId); // Resets worker pref and date
-    setCurrentStep('SELECT_WORKER'); 
+    setCurrentStep('SELECT_WORKER');
     setWorkersError(null); setSlotsError(null); setBookingError(null);
   };
 
@@ -279,7 +278,7 @@ function BookingForm() {
             return;
         }
     }
-    selectSlotTime(slotDataTime); 
+    selectSlotTime(slotDataTime);
     setCurrentStep('CONFIRM');
     setBookingError(null);
   };
@@ -290,7 +289,7 @@ function BookingForm() {
       setBookingStatus('error');
       return;
     }
-    
+
     setBookingStatus('submitting');
     setBookingError(null);
     try {
@@ -307,7 +306,7 @@ function BookingForm() {
           vendorId: selectedVendorId,
           serviceId: selectedServiceId,
           startTime: startTime.toISOString(),
-          workerId: selectedWorkerForBookingId, 
+          workerId: selectedWorkerForBookingId,
           notes: bookingNotes,
         }),
       });
@@ -319,7 +318,7 @@ function BookingForm() {
       }
       setBookingStatus('success');
       successModalRef.current?.showModal();
-      resetServiceAndBelow(); 
+      resetServiceAndBelow();
       setCurrentStep('SELECT_SERVICE');
     } catch (err: unknown) {
       setBookingStatus('error');
@@ -329,10 +328,10 @@ function BookingForm() {
 
   const selectedVendorName = vendors.find(v => v.id === selectedVendorId)?.name || 'Salon';
   const selectedServiceName = services.find(s => s.id === selectedServiceId)?.name || 'Usluga';
-  
+
   const finalSelectedWorkerName = selectedWorkerForBookingId
-    ? (qualifiedWorkers.find(w => w.id === selectedWorkerForBookingId)?.name || 
-       availableSlotsData.flatMap(s => s.availableWorkers).find(w => w.id === selectedWorkerForBookingId)?.name || 
+    ? (qualifiedWorkers.find(w => w.id === selectedWorkerForBookingId)?.name ||
+       availableSlotsData.flatMap(s => s.availableWorkers).find(w => w.id === selectedWorkerForBookingId)?.name ||
        `Radnik (ID: ...${selectedWorkerForBookingId.slice(-4)})`)
     : 'Bilo koji dostupan / Automatski dodeljen';
 
@@ -368,13 +367,13 @@ function BookingForm() {
         </button>
     )
   }
-  
+
   const handleGoToStep = (step: BookingStep) => {
-    if (step === 'SELECT_VENDOR') selectVendor(null); 
-    else if (step === 'SELECT_SERVICE') resetServiceAndBelow(); 
-    else if (step === 'SELECT_WORKER') resetWorkerAndBelow(); 
+    if (step === 'SELECT_VENDOR') selectVendor(null);
+    else if (step === 'SELECT_SERVICE') resetServiceAndBelow();
+    else if (step === 'SELECT_WORKER') resetWorkerAndBelow();
     else if (step === 'SELECT_DATETIME') { selectDate(null); } // This resets slots in store
-    
+
     setCurrentStep(step);
     setBookingError(null); // Clear any previous booking error when navigating steps
   }
@@ -391,7 +390,7 @@ function BookingForm() {
         <StepIndicator step="SELECT_SERVICE" title="2. Usluga" currentStepProp={currentStep} onClick={() => handleGoToStep('SELECT_SERVICE')} isEnabled={!!selectedVendorId} />
         <StepIndicator step="SELECT_WORKER" title="3. Radnik" currentStepProp={currentStep} onClick={() => handleGoToStep('SELECT_WORKER')} isEnabled={!!selectedServiceId} />
         {/* Enable Step 4 if service is selected AND (worker preference is set OR we are already on/past datetime step) */}
-        <StepIndicator step="SELECT_DATETIME" title="4. Vreme" currentStepProp={currentStep} onClick={() => handleGoToStep('SELECT_DATETIME')} 
+        <StepIndicator step="SELECT_DATETIME" title="4. Vreme" currentStepProp={currentStep} onClick={() => handleGoToStep('SELECT_DATETIME')}
                        isEnabled={!!selectedServiceId && (preferredWorkerIdForFilter !== undefined || currentStep === 'SELECT_DATETIME' || currentStep === 'CONFIRM')} />
         <StepIndicator step="CONFIRM" title="5. Potvrda" currentStepProp={currentStep} isEnabled={!!selectedSlotTime} />
       </ul>
@@ -452,9 +451,9 @@ function BookingForm() {
             <UserCog className="h-6 w-6 mr-2" /> 3. Odaberite Radnika za &quot;{selectedServiceName}&quot;
           </h2>
           {isLoadingWorkers ? ( <div className="flex justify-center items-center h-32"> <Loader2 className="h-12 w-12 animate-spin text-primary" /> </div>
-          ) : workersError ? ( 
-            <div role="alert" className="alert alert-error"> 
-                <AlertTriangle className="h-6 w-6" /> 
+          ) : workersError ? (
+            <div role="alert" className="alert alert-error">
+                <AlertTriangle className="h-6 w-6" />
                 <span>{workersError}</span>
                 <button onClick={() => handleWorkerSelectForFilter(null)} className="btn btn-sm btn-outline btn-info ml-auto">Nastavi sa &quot;Bilo koji&quot;</button>
             </div>
@@ -477,7 +476,19 @@ function BookingForm() {
                     className={`card bordered cursor-pointer hover:shadow-md ${preferredWorkerIdForFilter === worker.id ? 'border-2 border-primary ring-2 ring-primary/50' : 'bg-base-100'}`}
                     onClick={() => handleWorkerSelectForFilter(worker.id)}>
                     <div className="card-body p-4 items-center text-center">
-                      {worker.photoUrl ? <div className="avatar"><div className="w-12 h-12 rounded-full"><img src={worker.photoUrl} alt={worker.name || 'Radnik'}/></div></div> : <UserAvatarIcon className="h-8 w-8 text-base-content/70 mb-2"/>}
+                      {worker.photoUrl ?
+                        <div className="avatar">
+                            <div className="w-12 h-12 rounded-full">
+                                <Image
+                                    src={worker.photoUrl}
+                                    alt={worker.name || 'Radnik'}
+                                    width={48}
+                                    height={48}
+                                    className="object-cover"
+                                />
+                            </div>
+                        </div>
+                         : <UserAvatarIcon className="h-8 w-8 text-base-content/70 mb-2"/>}
                       <h3 className="card-title text-md">{worker.name || `Radnik ${worker.id.substring(0,6)}`}</h3>
                       {worker.bio && <p className="text-xs text-base-content/60 line-clamp-2">{worker.bio}</p>}
                     </div>
@@ -488,12 +499,12 @@ function BookingForm() {
           )}
         </section>
       )}
-      
+
       {currentStep === 'SELECT_DATETIME' && selectedVendorId && selectedServiceId && (
         <section id="select-datetime" className="mb-8 p-4 sm:p-6 card bg-base-200 shadow-xl border border-base-300/50">
           <h2 className="text-xl sm:text-2xl font-semibold mb-6 card-title text-primary flex items-center">
             <CalendarDays className="h-6 w-6 mr-2" /> 4. Odaberite Datum i Vreme za &quot;{selectedServiceName}&quot;
-            {preferredWorkerIdForFilter && qualifiedWorkers.find(w=>w.id === preferredWorkerIdForFilter) && 
+            {preferredWorkerIdForFilter && qualifiedWorkers.find(w=>w.id === preferredWorkerIdForFilter) &&
               <span> kod radnika &quot;{qualifiedWorkers.find(w=>w.id === preferredWorkerIdForFilter)?.name}&quot;</span>}
             {!preferredWorkerIdForFilter && <span> kod bilo kog dostupnog radnika</span>}
           </h2>
@@ -674,3 +685,4 @@ function BookingPageSkeleton() {
         </div>
     );
 }
+

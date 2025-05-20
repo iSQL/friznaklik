@@ -1,10 +1,15 @@
-// src/components/admin/vendors/AdminVendorsClient.tsx
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { PlusCircle, Store, Edit3, Trash2, AlertTriangle, Eye, Loader2 } from 'lucide-react'; // Added Eye icon and Loader2
+import { PlusCircle, Store, Edit3, Trash2, AlertTriangle, Eye, Loader2 } from 'lucide-react';
 import { VendorStatus, UserRole } from '@/lib/types/prisma-enums';
+import { Prisma } from '@prisma/client'; 
+
+// Define a more specific type for operating hours within VendorWithDetails
+interface OperatingHoursDetails {
+  [key: string]: { open: string; close: string; isClosed?: boolean } | null;
+}
 
 
 // Definicija tipa za Vendor objekat koji očekujemo od API-ja
@@ -12,9 +17,9 @@ export interface VendorWithDetails {
   id: string;
   name: string;
   description?: string | null;
-  ownerId: string; // This is Prisma User ID
+  ownerId: string; 
   owner: {
-    id: string; // Prisma User ID
+    id: string; 
     clerkId: string;
     firstName?: string | null;
     lastName?: string | null;
@@ -22,14 +27,13 @@ export interface VendorWithDetails {
   };
   address?: string | null;
   phoneNumber?: string | null;
-  operatingHours?: any | null; // Consider a more specific type if possible
+  operatingHours?: OperatingHoursDetails | Prisma.JsonValue | null; 
   status: VendorStatus;
-  createdAt: string; // Should be Date or string, handle parsing if string
-  updatedAt: string; // Should be Date or string
+  createdAt: string; 
+  updatedAt: string; 
   _count: {
     services: number;
     appointments: number;
-    // workers: number; // Add if you count workers
   };
 }
 
@@ -230,8 +234,8 @@ export default function AdminVendorsClient({ userRole }: AdminVendorsClientProps
             <h3 className="font-bold text-lg text-error">Potvrda Suspendovanja Salona</h3>
             <button onClick={closeDeleteModal} className="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" disabled={isProcessing}>✕</button>
             <p className="py-4">
-              Da li ste sigurni da želite da suspendujete salon "<strong>{vendorToAction.name}</strong>"?
-              Ova akcija će promeniti status salona u "Suspendovan".
+              Da li ste sigurni da želite da suspendujete salon &quot;<strong>{vendorToAction.name}</strong>&quot;?
+              Ova akcija će promeniti status salona u &quot;Suspendovan&quot;.
             </p>
             {actionError && (
               <div role="alert" className="alert alert-warning text-xs p-2 my-2">

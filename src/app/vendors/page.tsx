@@ -1,6 +1,6 @@
 // src/app/vendors/page.tsx
 import VendorBrowser from '@/components/vendors/VendorBrowserClient'; // We'll create this
-import { Building2, Search } from 'lucide-react';
+import { Building2 } from 'lucide-react';
 import type { Metadata } from 'next';
 import { Suspense } from 'react';
 

@@ -1,4 +1,3 @@
-// src/app/dashboard/page.tsx
 import { getCurrentUser, AuthenticatedUser } from '@/lib/authUtils';
 import prisma from '@/lib/prisma';
 import { redirect } from 'next/navigation';
@@ -10,16 +9,17 @@ import {
     Vendor as PrismaVendor,
     Worker as PrismaWorker
 } from '@prisma/client';
-import UserAppointmentList from '@/components/user/UserAppointmentList';
+import UserAppointmentList, { AppointmentWithServiceDetails } from '@/components/user/UserAppointmentList'; 
 import QuickReserveWidget from '@/components/QuickReserveWidget';
 import { LayoutDashboard, UserCircle, ShieldCheck, Scissors, MessageSquare } from 'lucide-react';
 
-export interface UserDashboardAppointment extends PrismaAppointment {
+export interface UserDashboardAppointment extends Omit<PrismaAppointment, 'startTime' | 'endTime' | 'status'> {
   service: PrismaService;
   vendor: Pick<PrismaVendor, 'name'>;
-  worker?: Pick<PrismaWorker, 'name'> | null;
+  worker?: Pick<PrismaWorker, 'id' | 'name'> | null;
   startTime: Date;
   endTime: Date;
+  status: string;
 }
 
 async function getUserAppointments(prismaUserId: string): Promise<UserDashboardAppointment[]> {
@@ -33,26 +33,27 @@ async function getUserAppointments(prismaUserId: string): Promise<UserDashboardA
         vendor: {
           select: { name: true }
         },
-        worker: {
-          select: { name: true }
+        worker: { 
+          select: { id: true, name: true }
         },
       },
       orderBy: {
         startTime: 'desc',
       },
-      take: 5,
+      take: 5, // Consider pagination or a "view all" link for more appointments
     });
 
     return appointments
-      .filter(app => app.service && app.vendor)
+      .filter(app => app.service && app.vendor) 
       .map(app => ({
         ...app,
         service: app.service!,
         vendor: app.vendor!,
-        worker: app.worker ? { name: app.worker.name } : null,
-        startTime: new Date(app.startTime),
-        endTime: new Date(app.endTime),
-    })) as UserDashboardAppointment[];
+        worker: app.worker ? { id: app.worker.id, name: app.worker.name } : null,
+        startTime: new Date(app.startTime), 
+        endTime: new Date(app.endTime),     
+        status: app.status, 
+    })) as UserDashboardAppointment[]; 
 
   } catch (error) {
     console.error("Greška pri dobavljanju korisničkih termina:", error);
@@ -68,6 +69,10 @@ export default async function DashboardPage() {
   }
 
   const appointments = await getUserAppointments(user.id);
+
+  
+  const appointmentsForList = appointments as AppointmentWithServiceDetails[];
+
 
   return (
     <div className="container mx-auto px-2 sm:px-4 py-6">
@@ -91,10 +96,7 @@ export default async function DashboardPage() {
         )}
       </div>
 
-      {/* Quick Actions and Quick Reserve Widget Section */}
-      {/* Na lg ekranima, prva kolona zauzima 1/4, druga 3/4 */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
-        {/* Column 1: Quick Actions (Profile & Chat) - lg:col-span-1 */}
         <div className="flex flex-col space-y-4 lg:col-span-1">
           <Link href="/user" className="card bg-base-100 shadow-md hover:shadow-lg transition-shadow flex-1">
             <div className="card-body items-center text-center p-4 justify-center">
@@ -103,7 +105,6 @@ export default async function DashboardPage() {
               <p className="text-xs text-base-content/70">Podešavanja naloga i broj telefona.</p>
             </div>
           </Link>
-          {/* Link ka Chat stranici - Onemogućen */}
            <div className="card bg-base-100 shadow-md flex-1 opacity-50 cursor-not-allowed" title="Uskoro dostupno">
             <div className="card-body items-center text-center p-4 justify-center">
               <MessageSquare className="h-10 w-10 text-info mb-2" />
@@ -113,7 +114,6 @@ export default async function DashboardPage() {
           </div>
         </div>
 
-        {/* Column 2: Quick Reserve Widget - lg:col-span-3 */}
         <div className="card bg-base-100 shadow-xl border border-base-300/40 lg:col-span-3">
           <div className="card-body p-4 sm:p-5">
             <h2 className="card-title text-lg sm:text-xl mb-3 text-secondary flex items-center">
@@ -125,8 +125,8 @@ export default async function DashboardPage() {
       </div>
 
       <section>
-        <h2 className="text-xl font-semibold mb-3 text-base-content">Moji Termini (poslednjih {appointments.length > 0 ? appointments.length : 0})</h2>
-        <UserAppointmentList appointments={appointments} />
+        <h2 className="text-xl font-semibold mb-3 text-base-content">Moji Termini (poslednjih {appointmentsForList.length > 0 ? appointmentsForList.length : 0})</h2>
+        <UserAppointmentList appointments={appointmentsForList} />
       </section>
     </div>
   );

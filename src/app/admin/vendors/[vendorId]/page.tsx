@@ -1,11 +1,11 @@
-// src/app/admin/vendors/[vendorId]/page.tsx
 import { getCurrentUser, AuthenticatedUser } from '@/lib/authUtils';
 import prisma from '@/lib/prisma';
-import { UserRole, Vendor, Service, Appointment, User as PrismaUser, AppointmentStatus, VendorStatus, Worker as PrismaWorker } from '@prisma/client';
+import { Vendor, Service, Appointment, User as PrismaUser } from '@prisma/client';
+import { UserRole, AppointmentStatus, VendorStatus } from '@/lib/types/prisma-enums';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { ShieldAlert, Store, UserCircle, ListOrdered, CalendarDays, Edit3, ArrowLeft, Phone, MapPin, Info, Users2 } from 'lucide-react';
-import { format, parseISO, isValid } from 'date-fns'; // Added isValid
+import { format, isValid } from 'date-fns'; 
 import { sr } from 'date-fns/locale';
 import VendorWorkersManager from '@/components/admin/workers/VendorWorkersManager';
 
@@ -15,7 +15,6 @@ type VendorDetails = Vendor & {
   appointments: (Appointment & {
     user: Pick<PrismaUser, 'firstName' | 'lastName' | 'email'>;
     service: Pick<Service, 'name'>;
-    // Ensure startTime is treated as Date
     startTime: Date;
   })[];
 };

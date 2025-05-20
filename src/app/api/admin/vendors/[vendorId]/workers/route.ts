@@ -1,12 +1,10 @@
-// src/app/api/admin/vendors/[vendorId]/workers/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import {
   getCurrentUser,
   withRoleProtection,
-  AuthenticatedUser,
 } from '@/lib/authUtils';
-import { UserRole } from '@/lib/types/prisma-enums'; // Ensure this is your correct enum path
+import { UserRole } from '@/lib/types/prisma-enums'; 
 import {  Prisma } from '@prisma/client';
 import { z } from 'zod';
 

@@ -1,13 +1,11 @@
-// src/app/api/admin/vendors/[vendorId]/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import {
   withRoleProtection,
   getCurrentUser, 
-  AuthenticatedUser, 
 } from '@/lib/authUtils';
-import { UserRole, VendorStatus } from '@/lib/types/prisma-enums'; // Ispravljen import
-import { Prisma } from '@prisma/client'; // Prisma ostaje za Prisma.JsonNull i druge Prisma tipove
+import { UserRole, VendorStatus } from '@/lib/types/prisma-enums'; 
+import { Prisma } from '@prisma/client'; 
 import { z } from 'zod';
 
 const timeFormatRegex = /^([01]\d|2[0-3]):([0-5]\d)$/; 

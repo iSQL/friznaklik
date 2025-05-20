@@ -1,15 +1,14 @@
-// src/components/QuickReserveWidget.tsx
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { Service as PrismaService } from '@prisma/client';
-import { format, addHours, setHours, setMinutes, isBefore, startOfToday, isSameDay, parseISO, addDays, startOfTomorrow } from 'date-fns';
+import { format, setHours, setMinutes, startOfTomorrow } from 'date-fns';
 import { useAuth } from "@clerk/nextjs";
-import { AlertTriangle, Clock, CheckCircle2, XCircle, Info, Store, ShoppingBag, Loader2, UserCog, CalendarDays, Scissors } from 'lucide-react';
+import { AlertTriangle, Clock, CheckCircle2, XCircle, Info, Store, ShoppingBag, Loader2, CalendarDays } from 'lucide-react';
 import { formatErrorMessage } from '@/lib/errorUtils';
 import { useBookingStore, type SlotWithWorkers } from '@/store/bookingStore';
-import { srLatn } from 'date-fns/locale'; // Serbian locale
+import { srLatn } from 'date-fns/locale'; 
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
 
@@ -52,7 +51,6 @@ export default function QuickReserveWidget() {
   const [slotsError, setSlotsError] = useState<string | null>(null);
   const [bookingError, setBookingError] = useState<string | null>(null);
   const [bookingSuccess, setBookingSuccess] = useState<string | null>(null);
-  const [bookedAppointmentDetails, setBookedAppointmentDetails] = useState<BookedAppointment | null>(null);
 
   const tomorrowDateObject = useMemo(() => startOfTomorrow(), []);
   const tomorrowDateString = useMemo(() => format(tomorrowDateObject, 'yyyy-MM-dd'), [tomorrowDateObject]);
@@ -77,8 +75,6 @@ export default function QuickReserveWidget() {
     setServicesError(null);
     setSlotsError(null);
     setBookingError(null);
-    // setBookingSuccess(null); // Keep success message if just service changes
-    // setBookedAppointmentDetails(null);
   }, []);
 
   useEffect(() => {
@@ -106,11 +102,6 @@ export default function QuickReserveWidget() {
       setSlotsError(null);
       setAvailableSlotsData([]);
       setSelectedSlotData(null);
-      // Clear booking messages when fetching new slots for a new service/date
-      // Keep bookingSuccess so user sees it even if they re-select service quickly
-      // setBookingError(null);
-      // setBookingSuccess(null);
-      // setBookedAppointmentDetails(null);
 
 
       fetch(`${SITE_URL}/api/appointments/available?vendorId=${globallySelectedVendorId}&serviceId=${selectedService.id}&date=${tomorrowDateString}`)
@@ -144,7 +135,6 @@ export default function QuickReserveWidget() {
     // Clear previous success/error messages when user changes service
     setBookingSuccess(null);
     setBookingError(null);
-    setBookedAppointmentDetails(null);
     setSelectedService(service || null);
     // Resetting slots and selected slot is handled by the useEffect above
   };
@@ -165,7 +155,6 @@ export default function QuickReserveWidget() {
     setIsBooking(true);
     setBookingError(null);
     setBookingSuccess(null);
-    setBookedAppointmentDetails(null);
 
     try {
       const [hours, minutes] = selectedSlotData.time.split(':').map(Number);
@@ -190,7 +179,7 @@ export default function QuickReserveWidget() {
       }
 
       const newAppointment: BookedAppointment = await response.json();
-      setBookedAppointmentDetails(newAppointment);
+      // bookedAppointmentDetails removed as it was unused.
 
       let successMsg = `Uspešno ste zatražili termin za ${selectedService.name} za sutra u ${selectedSlotData.time} u salonu ${selectedVendorName || 'izabranom salonu'}.`;
       if(newAppointment.worker?.name) {

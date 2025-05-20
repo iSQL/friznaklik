@@ -1,13 +1,14 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import {
   getCurrentUser,
   withRoleProtection,
   AuthenticatedUser,
 } from '@/lib/authUtils';
-import { UserRole, Prisma } from '@prisma/client'; 
+import { Prisma } from '@prisma/client'; 
+import { UserRole } from '@/lib/types/prisma-enums'; 
 
-async function GET_handler(request: NextRequest) {
+async function GET_handler() {
   const user: AuthenticatedUser | null = await getCurrentUser();
 
   if (!user) {

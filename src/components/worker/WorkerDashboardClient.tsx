@@ -1,12 +1,10 @@
-// src/components/worker/WorkerDashboardClient.tsx
 'use client';
 
-// Corrected import: WorkerAvailability and WorkerScheduleOverride are Prisma types
 import { AppointmentStatus } from '@/lib/types/prisma-enums'; 
 import type { WorkerAvailability, WorkerScheduleOverride } from '@prisma/client'; // Import Prisma types
 import { format, parseISO, isValid } from 'date-fns';
 import { srLatn } from 'date-fns/locale';
-import { Calendar, Clock, User, Briefcase, Info, Building, Edit, AlertCircle } from 'lucide-react';
+import { Calendar, Clock, User, Info, Building, AlertCircle } from 'lucide-react';
 
 // Match the structure from the page component
 interface AppointmentData {
@@ -56,8 +54,6 @@ const daysOfWeekMap: { [key: number]: string } = {
 
 export default function WorkerDashboardClient({ scheduleData }: WorkerDashboardClientProps) {
   const {
-    workerName,
-    vendorInfo,
     upcomingAppointments,
     weeklyAvailability,
     scheduleOverrides,

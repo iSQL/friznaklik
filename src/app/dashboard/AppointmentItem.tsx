@@ -15,11 +15,9 @@ import {
   Clock,
   HelpCircle,
   XCircle,
-  MessageSquareText,
   UserCog,
   Building,
-  Briefcase, // Icon for service
-  Info // Icon for notes if MessageSquareText is too large
+  Info 
 } from 'lucide-react';
 
 interface AppointmentItemProps {

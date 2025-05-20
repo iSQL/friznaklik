@@ -16,7 +16,7 @@ export default function ServiceList({ services, onDelete, userRole }: ServiceLis
         <p className="text-gray-500 text-lg">Nema pronađenih usluga.</p>
         { (userRole === UserRole.SUPER_ADMIN || userRole === UserRole.VENDOR_OWNER) && (
             <p className="mt-2 text-sm text-gray-400">
-                Možete dodati novu uslugu koristeći dugme "Dodaj Novu Uslugu".
+                Možete dodati novu uslugu koristeći dugme &quot;Dodaj Novu Uslugu&quot;.
             </p>
         )}
       </div>

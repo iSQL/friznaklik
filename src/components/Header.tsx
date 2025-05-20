@@ -1,12 +1,11 @@
-// src/components/Header.tsx
 'use client';
 
 import { UserButton, useAuth } from "@clerk/nextjs";
 import Link from "next/link";
 import Image from 'next/image';
 import {
-    Menu as MenuIcon, LogIn, UserPlus, LayoutDashboard, MessageSquare,
-    CalendarPlus, ListOrdered, X, ShieldCheck, Store, ChevronDown, Building2, Loader2
+    Menu as MenuIcon, LogIn, UserPlus, LayoutDashboard, 
+    CalendarPlus, X, ShieldCheck, Store, ChevronDown, Building2, Loader2
 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { usePathname } from 'next/navigation';

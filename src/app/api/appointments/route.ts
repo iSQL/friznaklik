@@ -1,4 +1,3 @@
-// src/app/api/appointments/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { sendEmail } from '@/lib/emailService';
 
@@ -9,7 +8,7 @@ import {
     withRoleProtection,
     AuthenticatedUser,
 } from '@/lib/authUtils';
-import { AppointmentStatus, VendorStatus, UserRole } from '@/lib/types/prisma-enums'; 
+import { AppointmentStatus, VendorStatus, UserRole } from '@/lib/types/prisma-enums';
 import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import {
@@ -17,7 +16,6 @@ import {
     addMinutes,
     isBefore,
     startOfDay,
-    endOfDay,
     isValid,
     setHours,
     setMinutes,
@@ -26,7 +24,6 @@ import {
     format,
     addHours as addHoursFns,
     getDay,
-    isSameDay,
 } from 'date-fns';
 import { srLatn } from 'date-fns/locale';
 
@@ -44,15 +41,27 @@ interface EffectiveSchedule {
   closeTime: Date;
 }
 
+// Define a more specific type for the operatingHours JSON structure
+interface DailyOperatingHour {
+  open: string | null;
+  close: string | null;
+  isClosed?: boolean;
+}
+type OperatingHoursMap = {
+  [key: string]: DailyOperatingHour | null;
+};
+
+
 function getVendorOperatingHoursForDay(
-    operatingHoursJson: any,
+    operatingHoursJson: Prisma.JsonValue | OperatingHoursMap | null, // Updated type
     date: Date
 ): EffectiveSchedule | null {
-    if (!operatingHoursJson || typeof operatingHoursJson !== 'object') {
+    // Corrected condition: Prisma.JsonNull is an input type; on read, it's typically just `null`.
+    if (!operatingHoursJson || typeof operatingHoursJson !== 'object' || operatingHoursJson === null || Array.isArray(operatingHoursJson)) {
         return null;
     }
     const dayOfWeekString = format(date, 'eeee').toLowerCase();
-    const daySchedule = operatingHoursJson[dayOfWeekString];
+    const daySchedule = (operatingHoursJson as OperatingHoursMap)[dayOfWeekString];
 
     if (!daySchedule || !daySchedule.open || !daySchedule.close) {
         return null;
@@ -61,7 +70,7 @@ function getVendorOperatingHoursForDay(
         const [openHour, openMinute] = daySchedule.open.split(':').map(Number);
         const [closeHour, closeMinute] = daySchedule.close.split(':').map(Number);
         if (isNaN(openHour) || isNaN(openMinute) || isNaN(closeHour) || isNaN(closeMinute)) return null;
-        
+
         const openTime = setMilliseconds(setSeconds(setMinutes(setHours(startOfDay(date), openHour), openMinute), 0), 0);
         const closeTime = setMilliseconds(setSeconds(setMinutes(setHours(startOfDay(date), closeHour), closeMinute), 0), 0);
         return { openTime, closeTime };
@@ -74,7 +83,7 @@ function getVendorOperatingHoursForDay(
 async function getWorkerEffectiveSchedule(
   workerId: string,
   forDate: Date,
-  vendorOperatingHoursJson: any
+  vendorOperatingHoursJson: Prisma.JsonValue | OperatingHoursMap | null // Updated type
 ): Promise<EffectiveSchedule | null> {
   const dayOfWeek = getDay(forDate); // 0 for Sunday, 1 for Monday, etc.
 
@@ -94,9 +103,9 @@ async function getWorkerEffectiveSchedule(
         openTime: setMilliseconds(setSeconds(setMinutes(setHours(forDate, oH), oM), 0), 0),
         closeTime: setMilliseconds(setSeconds(setMinutes(setHours(forDate, cH), cM), 0), 0),
       };
-    } catch (e) { 
+    } catch (e) {
         console.error(`Error parsing override times for worker ${workerId} on ${format(forDate, 'yyyy-MM-dd')}:`, e);
-        return null; 
+        return null;
     }
   }
 
@@ -116,12 +125,12 @@ async function getWorkerEffectiveSchedule(
         openTime: setMilliseconds(setSeconds(setMinutes(setHours(forDate, wOH), wOM), 0), 0),
         closeTime: setMilliseconds(setSeconds(setMinutes(setHours(forDate, wCH), wCM), 0), 0),
       };
-    } catch (e) { 
+    } catch (e) {
       console.error(`Error parsing weekly availability times for worker ${workerId} on day ${dayOfWeek}:`, e);
       // Fall through to vendor hours if weekly is misconfigured or error occurs
     }
   }
-  
+
   // 3. Fallback to vendor's general operating hours for that day of the week
   return getVendorOperatingHoursForDay(vendorOperatingHoursJson, forDate);
 }
@@ -129,22 +138,22 @@ async function getWorkerEffectiveSchedule(
 // Re-verification of availability for a specific worker and slot
 async function isWorkerSlotStillAvailable(
     workerId: string,
-    vendorId: string, 
-    serviceId: string, 
+    vendorId: string,
+    serviceId: string,
     slotStartTime: Date,
-    vendorOperatingHoursJson: any // Pass vendor's general operating hours for fallback in getWorkerEffectiveSchedule
+    vendorOperatingHoursJson: Prisma.JsonValue | OperatingHoursMap | null // Updated type
 ): Promise<boolean> {
     const service = await prisma.service.findUnique({ where: {id: serviceId}, select: { duration: true}});
     if (!service) {
         console.error(`Service with ID ${serviceId} not found during slot availability check.`);
-        return false; 
+        return false;
     }
     const slotEndTime = addMinutes(slotStartTime, service.duration);
 
     const workerSchedule = await getWorkerEffectiveSchedule(workerId, startOfDay(slotStartTime), vendorOperatingHoursJson);
     if (!workerSchedule) {
         // console.log(`Worker ${workerId} is not scheduled for ${format(slotStartTime, 'yyyy-MM-dd')}.`);
-        return false; 
+        return false;
     }
 
     // Check if slot is within worker's effective working hours
@@ -157,10 +166,10 @@ async function isWorkerSlotStillAvailable(
     const conflictingAppointments = await prisma.appointment.count({
         where: {
             workerId: workerId,
-            vendorId: vendorId, 
+            vendorId: vendorId,
             status: { in: [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED] },
             OR: [
-                { startTime: { lt: slotEndTime }, endTime: { gt: slotStartTime } }, 
+                { startTime: { lt: slotEndTime }, endTime: { gt: slotStartTime } },
             ],
         },
     });
@@ -358,7 +367,7 @@ async function GET_handler(req: NextRequest) {
     const limit = parseInt(queryParams.get('limit') || '10', 10);
     const skip = (page - 1) * limit;
 
-    const whereClause: Prisma.AppointmentWhereInput = {};
+    const whereClause: Prisma.AppointmentWhereInput = {}; // Use Prisma.AppointmentWhereInput
 
     if (statusFilter) {
         whereClause.status = statusFilter;
@@ -400,5 +409,5 @@ async function GET_handler(req: NextRequest) {
   }
 }
 
-export const POST = POST_handler; 
+export const POST = POST_handler;
 export const GET = withRoleProtection(GET_handler, [UserRole.SUPER_ADMIN, UserRole.VENDOR_OWNER]);

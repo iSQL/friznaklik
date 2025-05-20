@@ -4,21 +4,29 @@ import { useState, useEffect, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { Vendor } from '@prisma/client';
 import { UserRole } from '@/lib/types/prisma-enums';
+import { Service } from './AdminServicesClient';
 
-import { Service } from './AdminServicesClient'; 
+// Define a more specific type for the API payload
+interface ServiceApiPayload {
+  name: string;
+  description?: string | null;
+  price: number;
+  duration: number;
+  vendorId?: string;
+}
 
 interface ServiceFormProps {
-  initialData?: Service | null; 
+  initialData?: Service | null;
   userRole: UserRole;
-  ownedVendorId?: string | null; 
-  allVendors?: Vendor[]; 
+  ownedVendorId?: string | null;
+  allVendors?: Vendor[];
 }
 
 interface FormData {
   name: string;
   description: string;
-  price: string; 
-  duration: string; 
+  price: string;
+  duration: string;
   vendorId?: string;
 }
 
@@ -26,7 +34,7 @@ export default function ServiceForm({
   initialData,
   userRole,
   ownedVendorId,
-  allVendors = [], 
+  allVendors = [],
 }: ServiceFormProps) {
   const router = useRouter();
   const [formData, setFormData] = useState<FormData>({
@@ -34,9 +42,9 @@ export default function ServiceForm({
     description: initialData?.description || '',
     price: initialData?.price?.toString() || '',
     duration: initialData?.duration?.toString() || '',
-    vendorId: (userRole === UserRole.SUPER_ADMIN && initialData) 
-                ? initialData.vendorId 
-                : (userRole === UserRole.SUPER_ADMIN && allVendors.length > 0) 
+    vendorId: (userRole === UserRole.SUPER_ADMIN && initialData)
+                ? initialData.vendorId
+                : (userRole === UserRole.SUPER_ADMIN && allVendors.length > 0)
                     ? allVendors[0].id // Podrazumevani prvi salon za SUPER_ADMINA pri kreiranju
                     : ownedVendorId || '', // Za VENDOR_OWNER ili ako SUPER_ADMIN nema salona za izbor
   });
@@ -86,7 +94,7 @@ export default function ServiceForm({
     const method = initialData ? 'PUT' : 'POST';
     const url = initialData ? `/api/admin/services/${initialData.id}` : '/api/admin/services';
 
-    const payload: any = {
+    const payload: ServiceApiPayload = { // Use the defined interface
       name: formData.name,
       description: formData.description,
       price: parseFloat(formData.price),
@@ -98,13 +106,13 @@ export default function ServiceForm({
     if (userRole === UserRole.VENDOR_OWNER && ownedVendorId) {
       payload.vendorId = ownedVendorId;
     } else if (userRole === UserRole.SUPER_ADMIN) {
-      if (initialData) { 
+      if (initialData) {
         payload.vendorId = initialData.vendorId;
       } else {
         payload.vendorId = formData.vendorId;
       }
     }
-    
+
     if (!payload.vendorId && method === 'POST') {
         setError('Salon (Vendor ID) nije specificiran. Ovo se ne bi smelo dogoditi.');
         setIsLoading(false);
@@ -125,8 +133,8 @@ export default function ServiceForm({
       }
 
       alert(`Usluga uspešno ${initialData ? 'ažurirana' : 'kreirana'}!`); // Razmisliti o boljem UX-u od alert-a
-      router.push('/admin/services'); 
-      router.refresh(); 
+      router.push('/admin/services');
+      router.refresh();
 
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Došlo je do nepoznate greške.';
@@ -175,17 +183,17 @@ export default function ServiceForm({
           {allVendors.length === 0 && <span className="text-warning text-xs mt-1">Nema dostupnih salona za odabir.</span>}
         </div>
       )}
-      
+
       {userRole === UserRole.SUPER_ADMIN && initialData && initialData.vendorId && (
         <div className="form-control w-full">
             <label className="label">
                 <span className="label-text text-base font-medium text-gray-700 dark:text-gray-300">Salon (Vendor)</span>
             </label>
-            <input 
-                type="text" 
-                value={allVendors.find(v => v.id === initialData.vendorId)?.name || initialData.vendorId} 
-                className="input input-bordered w-full" 
-                readOnly 
+            <input
+                type="text"
+                value={allVendors.find(v => v.id === initialData.vendorId)?.name || initialData.vendorId}
+                className="input input-bordered w-full"
+                readOnly
             />
             <p className="text-xs text-gray-500 mt-1">Salon se ne može menjati kroz ovu formu.</p>
         </div>
@@ -263,19 +271,19 @@ export default function ServiceForm({
           {formErrors.duration && <span className="text-error text-xs mt-1">{formErrors.duration}</span>}
         </div>
       </div>
-      
+
       <div className="flex justify-end space-x-3 pt-4">
-        <button 
-            type="button" 
-            onClick={() => router.back()} 
+        <button
+            type="button"
+            onClick={() => router.back()}
             className="btn btn-ghost"
             disabled={isLoading}
         >
           Otkaži
         </button>
-        <button 
-            type="submit" 
-            className="btn btn-primary" 
+        <button
+            type="submit"
+            className="btn btn-primary"
             disabled={isLoading}
         >
           {isLoading ? (

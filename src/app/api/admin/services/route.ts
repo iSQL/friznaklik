@@ -4,7 +4,7 @@ import {
   getCurrentUser,
   withRoleProtection,
 } from '@/lib/authUtils';
-import { UserRole } from '@prisma/client';
+import { UserRole } from '@/lib/types/prisma-enums';
 import { z } from 'zod';
 
 const serviceSchema = z.object({
@@ -109,7 +109,6 @@ async function POST_handler(req: NextRequest) {
         price,
         duration,
         vendorId: targetVendorId,
-        // TODO: Add skillsRequired and workers in later phases
       },
     });
 

@@ -49,7 +49,7 @@ async function POST_handler(
       }
       reason = parseResult.data.rejectionReason;
     } catch (e) {
-      // Body might be empty if no reason is provided by client, which is fine for optional reason
+      console.error('Greška pri parsiranju zahteva:', e);
       console.log('Telo zahteva za odbijanje/otkazivanje je prazno ili nije validan JSON.');
     }
 

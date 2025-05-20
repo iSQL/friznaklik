@@ -1,13 +1,14 @@
-// src/app/admin/vendors/edit/[id]/page.tsx
 import { getCurrentUser, AuthenticatedUser } from '@/lib/authUtils';
 import prisma from '@/lib/prisma';
 import VendorForm from '@/components/admin/vendors/VendorForm';
-import { UserRole as PrismaUserRole, Vendor, User as PrismaUser, Prisma } from '@prisma/client'; // Import Prisma's UserRole
-import { UserRole as LocalUserRole } from '@/lib/types/prisma-enums'; // Import local UserRole
+import { Vendor, Prisma } from '@prisma/client'; 
+import { UserRole } from '@prisma/client'; 
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { ShieldAlert, Edit2 } from 'lucide-react'; 
 import type { Metadata } from 'next';
+import { VendorStatus as LocalVendorStatus } from '@/lib/types/prisma-enums';
+
 
 // Tip koji VendorForm očekuje za initialData
 // owner.role treba da koristi LocalUserRole
@@ -19,7 +20,7 @@ type VendorFormInitialDataForForm = Omit<Vendor, 'operatingHours'> & {
         email: string;
         firstName?: string | null;
         lastName?: string | null;
-        role: LocalUserRole; // Koristi lokalni enum ovde
+        role: UserRole; // Koristi lokalni enum ovde
     };
 };
 
@@ -40,7 +41,6 @@ export async function generateMetadata({ params: paramsPromise }: { params: Prom
   };
 }
 
-// Tip koji vraća getVendorWithOwnerById (owner.role je PrismaUserRole)
 type VendorWithPrismaOwnerRole = Omit<Vendor, 'operatingHours'> & {
     operatingHours?: Prisma.JsonValue | null;
     owner: ({
@@ -49,7 +49,7 @@ type VendorWithPrismaOwnerRole = Omit<Vendor, 'operatingHours'> & {
         email: string;
         firstName: string | null;
         lastName: string | null;
-        role: PrismaUserRole; // Prisma enum
+        role: UserRole; // Prisma enum
     }) | null;
 };
 
@@ -85,14 +85,14 @@ export default async function EditVendorPage(
   const routeParams = await paramsPromise; 
   const { id: vendorId } = routeParams;
 
-  const user: AuthenticatedUser | null = await getCurrentUser(); // AuthenticatedUser koristi LocalUserRole
+  const user: AuthenticatedUser | null = await getCurrentUser(); 
 
   if (!user) {
     redirect(`/sign-in?redirect_url=/admin/vendors/edit/${vendorId}`);
   }
 
-  const isSuperAdmin = user.role === LocalUserRole.SUPER_ADMIN;
-  const isVendorOwner = user.role === LocalUserRole.VENDOR_OWNER;
+  const isSuperAdmin = user.role === UserRole.SUPER_ADMIN;
+  const isVendorOwner = user.role === UserRole.VENDOR_OWNER;
 
   if (!isSuperAdmin && !isVendorOwner) {
     return (
@@ -147,20 +147,22 @@ export default async function EditVendorPage(
     );
   }
   
-  const initialFormData: VendorFormInitialDataForForm = {
+  // Prepravka initialFormData da koristi LocalVendorStatus
+  const initialFormData: any = {
       ...vendorToEdit,
+      status: vendorToEdit.status as unknown as LocalVendorStatus,
       owner: vendorToEdit.owner ? {
           id: vendorToEdit.owner.id,
           clerkId: vendorToEdit.owner.clerkId,
           email: vendorToEdit.owner.email,
           firstName: vendorToEdit.owner.firstName,
           lastName: vendorToEdit.owner.lastName,
-          role: vendorToEdit.owner.role as LocalUserRole, // Cast PrismaUserRole to LocalUserRole
+          role: vendorToEdit.owner.role as UserRole, 
       } : undefined,
       description: vendorToEdit.description ?? '',
       address: vendorToEdit.address ?? '',
       phoneNumber: vendorToEdit.phoneNumber ?? '',
-      operatingHours: vendorToEdit.operatingHours, // Prosleđujemo direktno, forma će rukovati
+      operatingHours: vendorToEdit.operatingHours, 
   };
 
   return (

@@ -1,29 +1,31 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import type { Appointment as PrismaAppointment, Service as PrismaService } from '@prisma/client';
+import type { Appointment as PrismaAppointment, Service as PrismaService, Vendor as PrismaVendor, Worker as PrismaWorker } from '@prisma/client';
 import { AppointmentStatus } from '@/lib/types/prisma-enums';
 import { parseISO, isPast } from 'date-fns';
 import Link from 'next/link';
-import AppointmentItem from '@/app/dashboard/AppointmentItem'; 
+import AppointmentItem from '@/app/dashboard/AppointmentItem';
 import { CalendarPlus, ListFilter, Inbox } from 'lucide-react';
 
 
 export interface AppointmentWithServiceDetails extends PrismaAppointment {
   service: PrismaService;
-  startTime: Date; 
-  endTime: Date;   
+  vendor: Pick<PrismaVendor, 'name'>;
+  worker?: PrismaWorker | null; 
+  startTime: Date;
+  endTime: Date;
 }
 
 
 type ProcessedAppointment = Omit<AppointmentWithServiceDetails, 'status'> & {
-  status: AppointmentStatus; // Koristimo naš lokalni enum
+  status: AppointmentStatus;
+  vendor: Pick<PrismaVendor, 'name'>;
 };
 
-// Opcije za filter statusa, sada koristeći naš enum
 const APPOINTMENT_STATUS_OPTIONS = [
-  'all', // Specijalna vrednost za "Svi"
-  ...Object.values(AppointmentStatus), // Sve vrednosti iz našeg enuma
+  'all', 
+  ...Object.values(AppointmentStatus), 
 ] as const;
 
 export type AppointmentStatusFilter = typeof APPOINTMENT_STATUS_OPTIONS[number];
@@ -35,91 +37,78 @@ interface UserAppointmentListProps {
 export default function UserAppointmentList({ appointments: initialAppointments }: UserAppointmentListProps) {
   const [activeFilter, setActiveFilter] = useState<AppointmentStatusFilter>('all');
 
-  // Memoizacija i procesiranje inicijalnih termina
   const appointments = useMemo((): ProcessedAppointment[] => {
     return initialAppointments.map(app => {
-      // startTime i endTime bi trebalo da su već Date objekti prema AppointmentWithServiceDetails
-      // Ako nisu, parseISO bi bio potreban, ali je bolje to rešiti na mestu gde se podaci dobavljaju (npr. DashboardPage)
       const startTime = app.startTime instanceof Date ? app.startTime : parseISO(app.startTime as unknown as string);
       const endTime = app.endTime instanceof Date ? app.endTime : parseISO(app.endTime as unknown as string);
-      
-      let currentStatus: AppointmentStatus = app.status as AppointmentStatus; // Tipski kast jer su string vrednosti iste
 
-      // Automatski prebaci u COMPLETED ako je termin prošao, a bio je CONFIRMED (ili APPROVED u staroj logici)
+      let currentStatus: AppointmentStatus = app.status as AppointmentStatus;
+
       if (currentStatus === AppointmentStatus.CONFIRMED && isPast(endTime)) {
         currentStatus = AppointmentStatus.COMPLETED;
       }
 
       return {
-        ...app,
+        ...app, 
         startTime,
         endTime,
-        status: currentStatus, // status je sada naš lokalni AppointmentStatus
+        status: currentStatus,
+        vendor: app.vendor, 
       };
     });
   }, [initialAppointments]);
 
-  // Memoizacija za filtrirane i sortirane termine
   const filteredAndSortedAppointments = useMemo(() => {
     let filtered = appointments;
 
     if (activeFilter !== 'all') {
-      // Filtriramo poređenjem sa vrednostima našeg AppointmentStatus enuma
       filtered = appointments.filter(app => app.status === activeFilter);
     }
 
-    // Sortiranje
     return filtered.sort((a, b) => {
       const statusOrder = (status: AppointmentStatus): number => {
-        // Redosled za sortiranje
         if (status === AppointmentStatus.PENDING) return 0;
-        if (status === AppointmentStatus.CONFIRMED) return 1; 
-        if (status === AppointmentStatus.COMPLETED) return 2; 
-        if (status === AppointmentStatus.CANCELLED_BY_USER) return 3; 
-        if (status === AppointmentStatus.CANCELLED_BY_VENDOR) return 3; // Isto kao korisnik
-        if (status === AppointmentStatus.REJECTED) return 4; 
+        if (status === AppointmentStatus.CONFIRMED) return 1;
+        if (status === AppointmentStatus.COMPLETED) return 2;
+        if (status === AppointmentStatus.CANCELLED_BY_USER) return 3;
+        if (status === AppointmentStatus.CANCELLED_BY_VENDOR) return 3;
+        if (status === AppointmentStatus.REJECTED) return 4;
         if (status === AppointmentStatus.NO_SHOW) return 5;
-        return 6; // Ostali
+        return 6;
       };
 
-      // Ako je filter "Svi", prvo sortiraj po statusu, pa po datumu
       if (activeFilter === 'all') {
         const statusComparison = statusOrder(a.status) - statusOrder(b.status);
         if (statusComparison !== 0) {
           return statusComparison;
         }
       }
-      // Za sve filtere (uključujući "Svi" ako su statusi isti), sortiraj po datumu, najnoviji prvo
       return b.startTime.getTime() - a.startTime.getTime();
     });
   }, [appointments, activeFilter]);
-  
-  // Funkcija za dobijanje prevedenih naziva filtera
+
   const getTranslatedFilterLabel = (statusValue: AppointmentStatusFilter): string => {
     if (statusValue === 'all') return 'Svi';
-    // Koristimo naš AppointmentStatus enum za prevod
-    switch (statusValue as AppointmentStatus) { // Tipski kast jer 'all' nije deo enuma
+    switch (statusValue as AppointmentStatus) {
       case AppointmentStatus.PENDING: return 'Na čekanju';
-      case AppointmentStatus.CONFIRMED: return 'Predstojeći / Odobreni'; // Može biti i "Potvrđeni"
+      case AppointmentStatus.CONFIRMED: return 'Predstojeći / Odobreni';
       case AppointmentStatus.COMPLETED: return 'Završeni';
       case AppointmentStatus.CANCELLED_BY_USER: return 'Otkazao korisnik';
       case AppointmentStatus.CANCELLED_BY_VENDOR: return 'Otkazao salon';
       case AppointmentStatus.REJECTED: return 'Odbijeni';
       case AppointmentStatus.NO_SHOW: return 'Nije se pojavio';
-      default: 
-        // Fallback ako status nije prepoznat (ne bi trebalo da se desi sa enumom)
+      default:
         const s = statusValue as string;
         return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase().replace(/_/g, ' ');
     }
   };
 
-  // Generisanje opcija za filter dugmad
   const filterOptions = useMemo(() => {
     return APPOINTMENT_STATUS_OPTIONS.map(statusValue => ({
         value: statusValue,
         label: getTranslatedFilterLabel(statusValue)
     }));
-  }, []); // getTranslatedFilterLabel ne zavisi od stanja pa ga ne treba u dependency array
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -163,7 +152,6 @@ export default function UserAppointmentList({ appointments: initialAppointments 
       ) : (
         <div className="space-y-4">
           {filteredAndSortedAppointments.map((appointment) => (
-
             <AppointmentItem key={appointment.id} appointment={appointment} />
           ))}
         </div>

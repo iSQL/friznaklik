@@ -1,17 +1,16 @@
-// src/components/admin/workers/VendorWorkersManager.tsx
 'use client';
 
 import { useState, useEffect, useCallback, FormEvent } from 'react';
-import { UserRole } from '@/lib/types/prisma-enums';
-import { Worker as PrismaWorker, Service as PrismaService, WorkerAvailability, WorkerScheduleOverride, User as PrismaUser } from '@prisma/client';
-import { PlusCircle, Edit3, Trash2, AlertTriangle, Users2, Loader2, Image as ImageIcon, Link2, Info, ListChecks, CalendarCog, Mail } from 'lucide-react';
+import Image from 'next/image'; 
+import { Worker as PrismaWorker, Service as PrismaService, WorkerAvailability, WorkerScheduleOverride,  } from '@prisma/client';
+import { PlusCircle, Edit3, Trash2, AlertTriangle, Users2, Loader2, ImageIcon, Info, ListChecks, CalendarCog, Mail } from 'lucide-react';
 import { formatErrorMessage } from '@/lib/errorUtils';
 import WorkerScheduleForm from './WorkerScheduleForm';
 
 export interface WorkerWithDetails extends PrismaWorker {
   user?: {
-    id: string; 
-    clerkId: string | null; 
+    id: string;
+    clerkId: string | null;
     email: string | null;
     firstName?: string | null;
     lastName?: string | null;
@@ -25,7 +24,7 @@ interface WorkerFormData {
   name: string;
   bio: string | null;
   photoUrl: string | null;
-  userEmail: string | null; 
+  userEmail: string | null;
 }
 
 interface WorkerScheduleSubmitData {
@@ -153,14 +152,13 @@ const WorkerDetailsForm = ({
                 onChange={handleChange}
                 placeholder="email@example.com"
                 className="input input-bordered w-full"
-                // Corrected: Disable if editing AND a user is already linked (initialData.user exists and has an email)
                 disabled={isProcessing || (!!initialData && !!initialData.user && !!initialData.user.email)}
                 />
             </div>
-            {initialData?.user && initialData.user.email && ( // Show message if user is linked and has an email
+            {initialData?.user && initialData.user.email && (
                 <p className="text-xs text-warning mt-1">Povezani korisnik: {initialData.user.email}. Izmena povezanog emaila nije direktno podržana putem ove forme nakon inicijalnog povezivanja. Za promenu, prvo uklonite vezu (ako je API podržava) ili kontaktirajte administratora.</p>
             )}
-             {(!initialData || !initialData.user || !initialData.user.email) && ( // Show if creating new, or editing an unlinked worker, or worker's user has no email
+             {(!initialData || !initialData.user || !initialData.user.email) && (
                  <p className="text-xs text-info mt-1 flex items-start">
                     <Info size={14} className="mr-1 mt-0.5 shrink-0"/>
                     <span>Unesite email postojećeg korisnika platforme da biste ga povezali sa ovim radnikom. Ostavite prazno ako ne želite da povežete.</span>
@@ -192,7 +190,6 @@ const WorkerDetailsForm = ({
   );
 };
 
-// ... (rest of VendorWorkersManager.tsx remains the same) ...
 
 const WorkerServicesForm = ({
     isOpen,
@@ -327,10 +324,17 @@ const WorkerList = ({
                   <div className="avatar">
                     <div className="mask mask-squircle w-12 h-12 bg-base-300">
                       {worker.photoUrl ? (
-                        <img src={worker.photoUrl} alt={worker.name} onError={(e) => e.currentTarget.src = `https://placehold.co/48x48/E0E0E0/B0B0B0?text=${worker.name.charAt(0)}&font=roboto`} />
+                        <Image
+                            src={worker.photoUrl}
+                            alt={worker.name || 'Radnik'}
+                            width={48}
+                            height={48}
+                            className="object-cover"
+                            onError={(e) => (e.currentTarget.src = `https://placehold.co/48x48/E0E0E0/B0B0B0?text=${worker.name ? worker.name.charAt(0) : 'R'}&font=roboto`)}
+                        />
                       ) : (
                         <div className="flex items-center justify-center w-full h-full text-xl font-semibold text-base-content/70">
-                          {worker.name.charAt(0).toUpperCase()}
+                          {worker.name ? worker.name.charAt(0).toUpperCase() : 'R'}
                         </div>
                       )}
                     </div>
@@ -381,16 +385,16 @@ export default function VendorWorkersManager({ vendorId }: VendorWorkersManagerP
   const [allVendorServices, setAllVendorServices] = useState<PrismaService[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
+
   const [isDetailsFormOpen, setIsDetailsFormOpen] = useState(false);
-  const [editingWorker, setEditingWorker] = useState<WorkerWithDetails | null>(null); // This state is used by WorkerDetailsForm via initialData
+  const [editingWorker, setEditingWorker] = useState<WorkerWithDetails | null>(null);
   const [isProcessingDetailsForm, setIsProcessingDetailsForm] = useState(false);
   const [detailsFormActionError, setDetailsFormActionError] = useState<string | null>(null);
 
   const [isServicesFormOpen, setIsServicesFormOpen] = useState(false);
   const [isProcessingServicesForm, setIsProcessingServicesForm] = useState(false);
   const [serviceAssignmentError, setServiceAssignmentError] = useState<string | null>(null);
-  
+
   const [isScheduleFormOpen, setIsScheduleFormOpen] = useState(false);
   const [editingWorkerForSchedule, setEditingWorkerForSchedule] = useState<WorkerWithDetails | null>(null);
   const [isProcessingScheduleForm, setIsProcessingScheduleForm] = useState(false);
@@ -442,7 +446,7 @@ export default function VendorWorkersManager({ vendorId }: VendorWorkersManagerP
   }, [fetchWorkersAndSchedules, fetchVendorServices]);
 
   const handleOpenDetailsForm = (worker: WorkerWithDetails | null = null) => {
-    setEditingWorker(worker); // This sets the context for the WorkerDetailsForm
+    setEditingWorker(worker);
     setIsDetailsFormOpen(true);
     setDetailsFormActionError(null);
   };
@@ -455,7 +459,7 @@ export default function VendorWorkersManager({ vendorId }: VendorWorkersManagerP
   const handleSubmitDetailsForm = async (formData: WorkerFormData) => {
     setIsProcessingDetailsForm(true);
     setDetailsFormActionError(null);
-    
+
     const payload = {
         name: formData.name,
         bio: formData.bio,
@@ -467,12 +471,12 @@ export default function VendorWorkersManager({ vendorId }: VendorWorkersManagerP
       ? `/api/admin/vendors/${vendorId}/workers/${editingWorker.id}`
       : `/api/admin/vendors/${vendorId}/workers`;
     const method = editingWorker ? 'PUT' : 'POST';
-    
+
     try {
-      const response = await fetch(url, { 
-          method, 
-          headers: { 'Content-Type': 'application/json' }, 
-          body: JSON.stringify(payload) 
+      const response = await fetch(url, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
         });
       const responseData = await response.json();
       if (!response.ok) throw new Error(responseData.message || `Neuspešno ${editingWorker ? 'ažuriranje' : 'dodavanje'} radnika.`);
@@ -486,24 +490,24 @@ export default function VendorWorkersManager({ vendorId }: VendorWorkersManagerP
   };
 
   const handleOpenServicesForm = (worker: WorkerWithDetails) => {
-    setEditingWorker(worker); // Set editingWorker here for context in WorkerServicesForm
+    setEditingWorker(worker);
     setIsServicesFormOpen(true);
     setServiceAssignmentError(null);
   };
   const handleCloseServicesForm = () => {
     setIsServicesFormOpen(false);
-    setEditingWorker(null); // Clear editingWorker when closing services form
+    setEditingWorker(null);
     setServiceAssignmentError(null);
   };
   const handleSubmitWorkerServices = async (selectedServiceIds: string[]) => {
-    if (!editingWorker) return; // Guard against editingWorker being null
+    if (!editingWorker) return;
     setIsProcessingServicesForm(true);
     setServiceAssignmentError(null);
     try {
         const response = await fetch(`/api/admin/workers/${editingWorker.id}/services`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ serviceIds: selectedServiceIds }) });
         const responseData = await response.json();
         if (!response.ok) throw new Error(responseData.message || 'Neuspešno dodeljivanje usluga.');
-        fetchWorkersAndSchedules(); 
+        fetchWorkersAndSchedules();
         handleCloseServicesForm();
     } catch (err) {
         setServiceAssignmentError(err instanceof Error ? err.message : 'Greška prilikom dodeljivanja usluga.');
@@ -514,7 +518,7 @@ export default function VendorWorkersManager({ vendorId }: VendorWorkersManagerP
 
   const handleOpenScheduleForm = async (worker: WorkerWithDetails) => {
     setScheduleFormActionError(null);
-    setIsProcessingScheduleForm(true); 
+    setIsProcessingScheduleForm(true);
     try {
         const response = await fetch(`/api/admin/vendors/${vendorId}/workers/${worker.id}`);
         if (!response.ok) {
@@ -522,7 +526,7 @@ export default function VendorWorkersManager({ vendorId }: VendorWorkersManagerP
             throw new Error(errorData.message || "Neuspešno preuzimanje trenutnog rasporeda radnika.");
         }
         const workerDetailsWithSchedule: WorkerWithDetails = await response.json();
-        setEditingWorkerForSchedule(workerDetailsWithSchedule); 
+        setEditingWorkerForSchedule(workerDetailsWithSchedule);
         setIsScheduleFormOpen(true);
     } catch (err) {
         setScheduleFormActionError(formatErrorMessage(err, "preuzimanja rasporeda radnika"));
@@ -547,7 +551,7 @@ export default function VendorWorkersManager({ vendorId }: VendorWorkersManagerP
       });
       const responseData = await response.json();
       if (!response.ok) throw new Error(responseData.message || 'Neuspešno ažuriranje rasporeda radnika.');
-      fetchWorkersAndSchedules(); 
+      fetchWorkersAndSchedules();
       handleCloseScheduleForm();
     } catch (err) {
       setScheduleFormActionError(err instanceof Error ? err.message : 'Došlo je do greške prilikom ažuriranja rasporeda.');
@@ -625,7 +629,7 @@ export default function VendorWorkersManager({ vendorId }: VendorWorkersManagerP
         isOpen={isDetailsFormOpen}
         onClose={handleCloseDetailsForm}
         onSubmit={handleSubmitDetailsForm}
-        initialData={editingWorker} // Pass editingWorker here
+        initialData={editingWorker}
         isProcessing={isProcessingDetailsForm}
         actionError={detailsFormActionError}
       />
@@ -633,12 +637,12 @@ export default function VendorWorkersManager({ vendorId }: VendorWorkersManagerP
         isOpen={isServicesFormOpen}
         onClose={handleCloseServicesForm}
         onSubmit={handleSubmitWorkerServices}
-        worker={editingWorker} // Pass editingWorker here too for context
+        worker={editingWorker}
         allVendorServices={allVendorServices}
         isProcessing={isProcessingServicesForm}
         actionError={serviceAssignmentError}
       />
-      
+
       <WorkerScheduleForm
         isOpen={isScheduleFormOpen}
         onClose={handleCloseScheduleForm}
@@ -655,7 +659,7 @@ export default function VendorWorkersManager({ vendorId }: VendorWorkersManagerP
           <div className="modal-box">
             <h3 className="font-bold text-lg text-error">Potvrda Brisanja Radnika</h3>
              <button type="button" onClick={handleCloseDeleteModal} className="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" disabled={isProcessingDelete}>✕</button>
-            <p className="py-4">Da li ste sigurni da želite da obrišete radnika "<strong>{workerToDelete.name}</strong>"? Ova akcija se ne može opozvati.</p>
+            <p className="py-4">Da li ste sigurni da želite da obrišete radnika &quot;<strong>{workerToDelete.name}</strong>&quot;? Ova akcija se ne može opozvati.</p>
             {deleteActionError && ( <div role="alert" className="alert alert-warning text-xs p-2 my-2"> <AlertTriangle className="w-4 h-4" /> <span>{deleteActionError}</span> </div> )}
             <div className="modal-action">
               <button type="button" className="btn btn-ghost" onClick={handleCloseDeleteModal} disabled={isProcessingDelete}>Otkaži</button>

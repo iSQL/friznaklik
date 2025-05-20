@@ -5,7 +5,8 @@ import {
   withRoleProtection,
   AuthenticatedUser,
 } from '@/lib/authUtils';
-import { UserRole, SenderType, ChatMessage } from '@prisma/client'; 
+import { SenderType, ChatMessage } from '@prisma/client'; 
+import { UserRole } from '@/lib/types/prisma-enums'; 
 import { z } from 'zod';
 
 interface RouteContext {

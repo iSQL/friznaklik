@@ -5,7 +5,8 @@ import {
   withRoleProtection,
   AuthenticatedUser,
 } from '@/lib/authUtils';
-import { UserRole, Prisma } from '@prisma/client'; 
+import { Prisma } from '@prisma/client'; 
+import { UserRole } from '@/lib/types/prisma-enums'; 
 import { z, ZodError } from 'zod'; 
 
 const serviceUpdateSchema = z.object({

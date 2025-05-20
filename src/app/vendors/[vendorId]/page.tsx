@@ -1,27 +1,38 @@
 import prisma from '@/lib/prisma';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
-import { Vendor, Service as PrismaService, Worker as PrismaWorker, VendorStatus } from '@prisma/client';
-import { Store, ListOrdered, Users2, MapPin, Phone, ClockIcon, Info, Briefcase, ExternalLink, Sparkles, UserCog, CheckSquare } from 'lucide-react';
-import type { Metadata, ResolvingMetadata } from 'next';
+import Image from 'next/image';
+import { Vendor, Service as PrismaService, Worker as PrismaWorker, VendorStatus, Prisma } from '@prisma/client';
+import { Store, ListOrdered, Users2, MapPin, Phone, ClockIcon, Briefcase, Sparkles, CheckSquare } from 'lucide-react';
+import type { Metadata } from 'next';
 
 interface VendorProfilePageParams {
   vendorId: string;
 }
 
 interface VendorProfileProps {
-  params: Promise<VendorProfilePageParams>; // Params je sada Promise
-  // searchParams?: { [key: string]: string | string[] | undefined }; // Dodajte ako koristite searchParams
+  params: Promise<VendorProfilePageParams>;
 }
 
-// Definišemo tipove za podatke koje ćemo dohvatiti
-interface ServiceWithDetails extends Pick<PrismaService, 'id' | 'name' | 'description' | 'price' | 'duration'> {}
+type ServiceWithDetails = Pick<PrismaService, 'id' | 'name' | 'description' | 'price' | 'duration'>;
 
 interface WorkerWithAssignedServices extends Pick<PrismaWorker, 'id' | 'name' | 'bio' | 'photoUrl'> {
   services: Array<Pick<PrismaService, 'id' | 'name'>>;
 }
 
-interface VendorProfileData extends Pick<Vendor, 'id' | 'name' | 'description' | 'address' | 'phoneNumber' | 'operatingHours' | 'status'> {
+// Define a more specific type for the operatingHours JSON structure
+interface DailyOperatingHour {
+  open: string | null;
+  close: string | null;
+  isClosed?: boolean; 
+}
+
+type OperatingHoursStructure = {
+  [key: string]: DailyOperatingHour | null; // Allow null for days not defined
+} | Prisma.JsonValue | null; // Allow Prisma.JsonValue or null as per schema
+
+interface VendorProfileData extends Pick<Vendor, 'id' | 'name' | 'description' | 'address' | 'phoneNumber' | 'status'> {
+  operatingHours: OperatingHoursStructure; // Use the more specific type here
   services: ServiceWithDetails[];
   workers: WorkerWithAssignedServices[];
 }
@@ -69,7 +80,8 @@ async function getVendorProfile(vendorId: string): Promise<VendorProfileData | n
     if (!vendor || vendor.status !== VendorStatus.ACTIVE) {
       return null;
     }
-    return vendor;
+    // Ensure operatingHours is treated as OperatingHoursStructure
+    return vendor as unknown as VendorProfileData;
   } catch (error) {
     console.error(`Greška pri dobavljanju profila salona ${vendorId}:`, error);
     return null;
@@ -77,10 +89,9 @@ async function getVendorProfile(vendorId: string): Promise<VendorProfileData | n
 }
 
 export async function generateMetadata(
-  { params: paramsPromise }: VendorProfileProps, // Destrukturiramo i preimenujemo params u paramsPromise
-  parent: ResolvingMetadata
+  { params: paramsPromise }: VendorProfileProps
 ): Promise<Metadata> {
-  const params = await paramsPromise; // Čekamo da se Promise razreši
+  const params = await paramsPromise;
   const vendorId = params.vendorId;
   const vendor = await getVendorProfile(vendorId);
 
@@ -111,16 +122,22 @@ export async function generateMetadata(
 }
 
 
-export default async function VendorProfilePage({ params: paramsPromise }: VendorProfileProps) { // Destrukturiramo i preimenujemo params u paramsPromise
-  const params = await paramsPromise; // Čekamo da se Promise razreši
+export default async function VendorProfilePage({ params: paramsPromise }: VendorProfileProps) {
+  const params = await paramsPromise;
   const vendor = await getVendorProfile(params.vendorId);
 
   if (!vendor) {
     notFound();
   }
 
-  const formatOperatingHours = (operatingHours: any): Array<{ day: string; hours: string }> => {
-    if (!operatingHours || typeof operatingHours !== 'object') return [];
+  const formatOperatingHours = (operatingHoursJson: OperatingHoursStructure): Array<{ day: string; hours: string }> => {
+
+    if (operatingHoursJson === null || typeof operatingHoursJson !== 'object' || Array.isArray(operatingHoursJson)) {
+        return [];
+    }
+    // Cast to a more specific type if we are sure about the structure
+    const structuredHours = operatingHoursJson as Record<string, DailyOperatingHour | null>;
+
     const daysOrder = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
     const translations: Record<string, string> = {
         monday: "Ponedeljak", tuesday: "Utorak", wednesday: "Sreda",
@@ -129,9 +146,9 @@ export default async function VendorProfilePage({ params: paramsPromise }: Vendo
 
     return daysOrder
         .map(dayKey => {
-            const dayInfo = operatingHours[dayKey];
+            const dayInfo = structuredHours[dayKey];
             const dayName = translations[dayKey] || dayKey.charAt(0).toUpperCase() + dayKey.slice(1);
-            if (dayInfo && dayInfo.open && dayInfo.close && !dayInfo.isClosed) { // Dodata provera za isClosed
+            if (dayInfo && dayInfo.open && dayInfo.close && !dayInfo.isClosed) {
                 return { day: dayName, hours: `${dayInfo.open} - ${dayInfo.close}` };
             }
             return { day: dayName, hours: "Zatvoreno" };
@@ -231,7 +248,14 @@ export default async function VendorProfilePage({ params: paramsPromise }: Vendo
                     {worker.photoUrl ? (
                        <div className="avatar">
                          <div className="w-20 h-20 rounded-full ring ring-primary ring-offset-base-100 ring-offset-2">
-                           <img src={worker.photoUrl} alt={worker.name || 'Radnik'} onError={(e) => (e.currentTarget.src = `https://placehold.co/80x80/E0E0E0/B0B0B0?text=${(worker.name || 'R').charAt(0)}&font=roboto`)} />
+                           <Image
+                             src={worker.photoUrl}
+                             alt={worker.name || 'Radnik'}
+                             width={80}
+                             height={80}
+                             className="object-cover"
+                             onError={(e) => (e.currentTarget.src = `https://placehold.co/80x80/E0E0E0/B0B0B0?text=${(worker.name || 'R').charAt(0)}&font=roboto`)}
+                           />
                          </div>
                        </div>
                     ) : (

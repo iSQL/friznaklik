@@ -1,9 +1,8 @@
-// src/app/dashboard/my-schedule/page.tsx
 import { getCurrentUser, AuthenticatedUser } from '@/lib/authUtils';
 import { UserRole } from '@/lib/types/prisma-enums';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { ShieldAlert, CalendarDays, Briefcase, UserCircle, Clock, Building, AlertTriangle } from 'lucide-react';
+import { ShieldAlert, CalendarDays, AlertTriangle } from 'lucide-react';
 import WorkerDashboardClient from '@/components/worker/WorkerDashboardClient';
 import { formatErrorMessage } from '@/lib/errorUtils';
 import type { Metadata } from 'next';
@@ -86,10 +85,9 @@ async function getWorkerScheduleData(): Promise<WorkerScheduleData | { error: st
       try {
         const errorData = await response.json();
         errorResponseMessage = errorData.message || errorData.details || errorResponseMessage;
-      } catch (e) {
-        errorResponseMessage = `Nije moguće preuzeti podatke o rasporedu: ${response.statusText} (Status: ${response.status})`;
+      } catch (e) { 
+        console.error("API Error in getWorkerScheduleData:", e);
       }
-      console.error("API Error in getWorkerScheduleData:", errorResponseMessage);
       return { error: errorResponseMessage };
     }
     return await response.json() as WorkerScheduleData;
@@ -114,7 +112,7 @@ export default async function MySchedulePage() {
             <div className="card-body items-center text-center">
                 <ShieldAlert className="h-16 w-16 text-error mb-4" />
                 <h1 className="card-title text-2xl text-error mb-2">Pristup Odbijen</h1>
-                <p className="mb-4">Samo korisnici sa ulogom 'Radnik' mogu pristupiti ovoj stranici.</p>
+                <p className="mb-4">Samo korisnici sa ulogom &lsquo;Radnik&lsquo; mogu pristupiti ovoj stranici.</p>
                 <p className="text-sm mb-6">Ako smatrate da je ovo greška, molimo kontaktirajte administratora vašeg salona.</p>
                 <Link href="/dashboard" className="btn btn-primary">
                   Nazad na Kontrolnu Tablu
