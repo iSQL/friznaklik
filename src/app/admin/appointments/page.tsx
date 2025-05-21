@@ -42,6 +42,7 @@ export default async function AdminAppointmentsPage() {
       </h1>
       <AdminAppointmentsClient 
         userRole={user.role} 
+        ownedVendorId={user.ownedVendorId}
       />
     </div>
   );

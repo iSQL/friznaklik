@@ -13,8 +13,8 @@ export default function Home() {
           <div className="max-w-md">
             <h1 className="text-5xl font-bold text-primary">Dobrodošli u FrizNaKlik!</h1>
             <p className="py-6 text-lg">
-              Vaša frizura iz snova je na samo par klikova od Vas. Brzo i lako zakažite svoj termin,
-              pregledajte naše usluge ili se konsultujte sa našim AI asistentom.
+              Vaša frizura iz snova je na samo par klikova od Vas. Brzo i lako zakažite svoj termin ili
+              pregledajte naše usluge 
             </p>
             <Link href="/book" className="btn btn-primary btn-wide">
               <CalendarDays className="mr-2 h-5 w-5" /> Zakažite Termin

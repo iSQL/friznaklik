@@ -1,12 +1,12 @@
-// src/components/admin/appointments/AdminAppointmentsClient.tsx
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
 import AppointmentList from './AppointmentList';
 import { Worker as PrismaWorker } from '@prisma/client';
 import { UserRole, AppointmentStatus } from '@/lib/types/prisma-enums';
+import { formatErrorMessage } from '@/lib/errorUtils';
 
-import { Loader2, AlertTriangle, Users2 as NoAppointmentsIcon } from 'lucide-react'; // Added NoAppointmentsIcon
+import { Loader2, AlertTriangle, Users2 as NoAppointmentsIcon, CheckCircle, Trash2, Filter } from 'lucide-react';
 
 interface AppointmentUser {
   firstName?: string | null;
@@ -46,8 +46,10 @@ export interface AdminAppointment {
 
 interface AdminAppointmentsClientProps {
   userRole: UserRole;
-  ownedVendorId?: string | null; // Passed from page if VENDOR_OWNER
+  ownedVendorId?: string | null;
 }
+
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
 
 export default function AdminAppointmentsClient({ userRole, ownedVendorId }: AdminAppointmentsClientProps) {
   const [appointments, setAppointments] = useState<AdminAppointment[]>([]);
@@ -58,9 +60,23 @@ export default function AdminAppointmentsClient({ userRole, ownedVendorId }: Adm
   const [statusFilter, setStatusFilter] = useState<AppointmentStatus | ''>('');
   const [vendorWorkers, setVendorWorkers] = useState<PrismaWorker[]>([]);
 
+  const [isApprovingAll, setIsApprovingAll] = useState(false);
+  const [approveAllError, setApproveAllError] = useState<string | null>(null);
+  const [approveAllSuccess, setApproveAllSuccess] = useState<string | null>(null);
+
+  const [isCleaningUp, setIsCleaningUp] = useState(false);
+  const [cleanupError, setCleanupError] = useState<string | null>(null);
+  const [cleanupSuccess, setCleanupSuccess] = useState<string | null>(null);
+
+
   const fetchAppointments = useCallback(async (page: number = 1, status: AppointmentStatus | '' = '') => {
     setIsLoading(true);
     setError(null);
+    // Clear batch action messages on new fetch
+    setApproveAllError(null);
+    setApproveAllSuccess(null);
+    setCleanupError(null);
+    setCleanupSuccess(null);
     try {
       const queryParams = new URLSearchParams();
       queryParams.append('page', page.toString());
@@ -68,8 +84,7 @@ export default function AdminAppointmentsClient({ userRole, ownedVendorId }: Adm
       if (status) {
         queryParams.append('status', status);
       }
-      // API /api/appointments now includes worker data
-      const response = await fetch(`/api/appointments?${queryParams.toString()}`);
+      const response = await fetch(`${SITE_URL}/api/appointments?${queryParams.toString()}`);
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ message: `Neuspešno preuzimanje termina: ${response.statusText}` }));
         throw new Error(errorData.message || `Neuspešno preuzimanje termina: ${response.statusText}`);
@@ -94,10 +109,10 @@ export default function AdminAppointmentsClient({ userRole, ownedVendorId }: Adm
     if (userRole === UserRole.VENDOR_OWNER && ownedVendorId) {
       const fetchVendorWorkers = async () => {
         try {
-          const response = await fetch(`/api/admin/vendors/${ownedVendorId}/workers`);
+          const response = await fetch(`${SITE_URL}/api/admin/vendors/${ownedVendorId}/workers`);
           if (!response.ok) {
             console.error('Neuspešno preuzimanje radnika za salon.');
-            setVendorWorkers([]); // Set to empty array on error
+            setVendorWorkers([]);
             return;
           }
           const data: PrismaWorker[] = await response.json();
@@ -114,7 +129,7 @@ export default function AdminAppointmentsClient({ userRole, ownedVendorId }: Adm
 
   const handleStatusChange = (newStatus: AppointmentStatus | '') => {
     setStatusFilter(newStatus);
-    setCurrentPage(1);
+    setCurrentPage(1); // Reset to first page when filter changes
   };
 
   const handlePageChange = (newPage: number) => {
@@ -126,7 +141,7 @@ export default function AdminAppointmentsClient({ userRole, ownedVendorId }: Adm
   const handleApprove = async (appointmentId: string) => {
     setError(null);
     try {
-      const response = await fetch(`/api/admin/appointments/${appointmentId}/approve`, { method: 'POST' });
+      const response = await fetch(`${SITE_URL}/api/admin/appointments/${appointmentId}/approve`, { method: 'POST' });
       if (!response.ok) {
         const errData = await response.json().catch(()=> ({message: 'Odobravanje termina nije uspelo.'}));
         throw new Error(errData.message || 'Neuspešno odobravanje termina.');
@@ -140,7 +155,7 @@ export default function AdminAppointmentsClient({ userRole, ownedVendorId }: Adm
   const handleReject = async (appointmentId: string, rejectionReason?: string) => {
     setError(null);
     try {
-      const response = await fetch(`/api/admin/appointments/${appointmentId}/reject`, {
+      const response = await fetch(`${SITE_URL}/api/admin/appointments/${appointmentId}/reject`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ rejectionReason })
@@ -158,7 +173,7 @@ export default function AdminAppointmentsClient({ userRole, ownedVendorId }: Adm
   const handleUpdateDuration = async (appointmentId: string, newDuration: number) => {
     setError(null);
     try {
-      const response = await fetch(`/api/admin/appointments/${appointmentId}/duration`, {
+      const response = await fetch(`${SITE_URL}/api/admin/appointments/${appointmentId}/duration`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ newDuration }),
@@ -176,7 +191,7 @@ export default function AdminAppointmentsClient({ userRole, ownedVendorId }: Adm
   const handleAssignWorker = async (appointmentId: string, workerId: string | null) => {
     setError(null);
     try {
-      const response = await fetch(`/api/admin/appointments/${appointmentId}/assign-worker`, {
+      const response = await fetch(`${SITE_URL}/api/admin/appointments/${appointmentId}/assign-worker`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ workerId }),
@@ -185,9 +200,66 @@ export default function AdminAppointmentsClient({ userRole, ownedVendorId }: Adm
         const errData = await response.json().catch(() => ({ message: 'Dodela radnika nije uspela.' }));
         throw new Error(errData.message || 'Neuspešna dodela radnika.');
       }
-      fetchAppointments(currentPage, statusFilter); // Refresh list to show updated worker
+      fetchAppointments(currentPage, statusFilter);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Greška pri dodeli radnika.');
+    }
+  };
+
+  const handleApproveAllPending = async () => {
+    if (!ownedVendorId && userRole === UserRole.VENDOR_OWNER) {
+        setApproveAllError("ID salona nije dostupan za odobravanje svih termina.");
+        return;
+    }
+    if (!confirm("Da li ste sigurni da želite da odobrite sve termine na čekanju za Vaš salon?")) return;
+
+    setIsApprovingAll(true);
+    setApproveAllError(null);
+    setApproveAllSuccess(null);
+    try {
+        const response = await fetch(`${SITE_URL}/api/admin/appointments/bulk-approve`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            // VENDOR_OWNER doesn't need to send vendorId, it's derived from their session
+            // SUPER_ADMIN would need to send vendorId if they were to use this for a specific vendor
+            body: userRole === UserRole.SUPER_ADMIN && ownedVendorId ? JSON.stringify({ vendorId: ownedVendorId }) : undefined,
+        });
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.message || "Neuspešno masovno odobravanje termina.");
+        }
+        setApproveAllSuccess(data.message || "Svi termini na čekanju su uspešno odobreni.");
+        fetchAppointments(1, AppointmentStatus.PENDING); // Refresh and show pending (which should now be empty or fewer)
+    } catch (err) {
+        setApproveAllError(formatErrorMessage(err, "masovnog odobravanja termina"));
+    } finally {
+        setIsApprovingAll(false);
+    }
+  };
+
+  const handleCleanupAppointments = async () => {
+    if (!confirm("Da li ste sigurni da želite da uklonite otkazane, odbijene i veoma stare završene termine? Ova akcija je nepovratna.")) return;
+
+    setIsCleaningUp(true);
+    setCleanupError(null);
+    setCleanupSuccess(null);
+    try {
+        const response = await fetch(`${SITE_URL}/api/admin/appointments/bulk-cleanup`, {
+            method: 'POST', // Using POST for batch delete as DELETE usually targets one resource
+            headers: { 'Content-Type': 'application/json' },
+            // VENDOR_OWNER cleans their own, SUPER_ADMIN could potentially clean all or specific if API supports
+            body: userRole === UserRole.SUPER_ADMIN && ownedVendorId ? JSON.stringify({ vendorId: ownedVendorId }) : undefined,
+        });
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.message || "Neuspešno čišćenje termina.");
+        }
+        setCleanupSuccess(data.message || "Terminalni i stari termini su uspešno uklonjeni.");
+        fetchAppointments(1, statusFilter); 
+    } catch (err) {
+        setCleanupError(formatErrorMessage(err, "čišćenja termina"));
+    } finally {
+        setIsCleaningUp(false);
     }
   };
 
@@ -216,21 +288,55 @@ export default function AdminAppointmentsClient({ userRole, ownedVendorId }: Adm
 
   return (
     <div>
-      <div className="mb-6 flex flex-col sm:flex-row gap-4 items-center">
-        <label htmlFor="statusFilter" className="label font-medium text-base-content">Filtriraj po statusu:</label>
-        <select
-            id="statusFilter"
-            value={statusFilter}
-            onChange={(e) => handleStatusChange(e.target.value as AppointmentStatus | '')}
-            className="select select-bordered w-full sm:w-auto focus:select-primary"
-        >
-            <option value="">Svi Statusi</option>
-            {Object.values(AppointmentStatus).map(status => (
-                <option key={status} value={status}>{status.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, l => l.toUpperCase())}</option>
-            ))}
-        </select>
-         {isLoading && <Loader2 className="h-5 w-5 animate-spin text-primary ml-2" />}
-      </div>
+        <div className="mb-6 flex flex-col sm:flex-row gap-4 items-center justify-between">
+            <div className="flex flex-col sm:flex-row gap-2 items-center w-full sm:w-auto">
+                <label htmlFor="statusFilter" className="label font-medium text-base-content whitespace-nowrap">
+                    <Filter size={16} className="mr-2"/>
+                    Filtriraj po statusu:
+                </label>
+                <select
+                    id="statusFilter"
+                    value={statusFilter}
+                    onChange={(e) => handleStatusChange(e.target.value as AppointmentStatus | '')}
+                    className="select select-bordered w-full sm:w-auto focus:select-primary"
+                >
+                    <option value="">Svi Statusi</option>
+                    {Object.values(AppointmentStatus).map(status => (
+                        <option key={status} value={status}>{status.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, l => l.toUpperCase())}</option>
+                    ))}
+                </select>
+                {isLoading && <Loader2 className="h-5 w-5 animate-spin text-primary ml-2" />}
+            </div>
+            {userRole === UserRole.VENDOR_OWNER && (
+                <button
+                    onClick={handleApproveAllPending}
+                    className="btn btn-success btn-sm w-full sm:w-auto"
+                    disabled={isApprovingAll}
+                >
+                    {isApprovingAll ? <Loader2 className="animate-spin h-4 w-4 mr-2"/> : <CheckCircle className="h-4 w-4 mr-2"/>}
+                    Odobri sve na čekanju
+                </button>
+            )}
+        </div>
+         <div className="mb-6 flex justify-end">
+             {(userRole === UserRole.VENDOR_OWNER || userRole === UserRole.SUPER_ADMIN) && (
+                <button
+                    onClick={handleCleanupAppointments}
+                    className="btn btn-outline btn-error btn-sm"
+                    disabled={isCleaningUp}
+                >
+                    {isCleaningUp ? <Loader2 className="animate-spin h-4 w-4 mr-2"/> : <Trash2 className="h-4 w-4 mr-2"/>}
+                    Očisti stare/otkazane
+                </button>
+            )}
+        </div>
+
+
+        {approveAllSuccess && <div role="alert" className="alert alert-success my-4"><CheckCircle/><span>{approveAllSuccess}</span></div>}
+        {approveAllError && <div role="alert" className="alert alert-error my-4"><AlertTriangle/><span>{approveAllError}</span></div>}
+        {cleanupSuccess && <div role="alert" className="alert alert-success my-4"><CheckCircle/><span>{cleanupSuccess}</span></div>}
+        {cleanupError && <div role="alert" className="alert alert-error my-4"><AlertTriangle/><span>{cleanupError}</span></div>}
+
 
       {appointments.length === 0 && !isLoading ? (
         <div className="text-center py-10 card bg-base-200 shadow border border-base-300/50">
