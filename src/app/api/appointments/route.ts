@@ -24,24 +24,23 @@ import {
     format,
     addHours as addHoursFns,
     getDay,
+    isToday // Added isToday
 } from 'date-fns';
 import { srLatn } from 'date-fns/locale';
 
 const createAppointmentSchema = z.object({
   serviceId: z.string().cuid('Neispravan ID usluge.'),
   vendorId: z.string().cuid('Neispravan ID salona.'),
-  workerId: z.string().cuid('Neispravan ID radnika.').nullable().optional(), // Optional: customer might not select a specific worker
+  workerId: z.string().cuid('Neispravan ID radnika.').nullable().optional(),
   startTime: z.string().datetime({ message: 'Neispravan format početnog vremena (očekivano YYYY-MM-DDTHH:mm:ss.sssZ).' }),
   notes: z.string().max(500, "Napomena ne može biti duža od 500 karaktera.").optional().nullable(),
 });
 
-// --- Start Helper Functions (Ideally move to a shared utility) ---
 interface EffectiveSchedule {
   openTime: Date;
   closeTime: Date;
 }
 
-// Define a more specific type for the operatingHours JSON structure
 interface DailyOperatingHour {
   open: string | null;
   close: string | null;
@@ -53,10 +52,9 @@ type OperatingHoursMap = {
 
 
 function getVendorOperatingHoursForDay(
-    operatingHoursJson: Prisma.JsonValue | OperatingHoursMap | null, // Updated type
+    operatingHoursJson: Prisma.JsonValue | OperatingHoursMap | null,
     date: Date
 ): EffectiveSchedule | null {
-    // Corrected condition: Prisma.JsonNull is an input type; on read, it's typically just `null`.
     if (!operatingHoursJson || typeof operatingHoursJson !== 'object' || operatingHoursJson === null || Array.isArray(operatingHoursJson)) {
         return null;
     }
@@ -83,19 +81,16 @@ function getVendorOperatingHoursForDay(
 async function getWorkerEffectiveSchedule(
   workerId: string,
   forDate: Date,
-  vendorOperatingHoursJson: Prisma.JsonValue | OperatingHoursMap | null // Updated type
+  vendorOperatingHoursJson: Prisma.JsonValue | OperatingHoursMap | null
 ): Promise<EffectiveSchedule | null> {
-  const dayOfWeek = getDay(forDate); // 0 for Sunday, 1 for Monday, etc.
+  const dayOfWeek = getDay(forDate);
 
-  // 1. Check for specific date override
   const override = await prisma.workerScheduleOverride.findUnique({
     where: { workerId_date: { workerId, date: forDate } },
   });
 
   if (override) {
-    if (override.isDayOff || !override.startTime || !override.endTime) {
-      return null; // Worker is off or no specific times given for this override day
-    }
+    if (override.isDayOff || !override.startTime || !override.endTime) return null;
     try {
       const [oH, oM] = override.startTime.split(':').map(Number);
       const [cH, cM] = override.endTime.split(':').map(Number);
@@ -103,21 +98,15 @@ async function getWorkerEffectiveSchedule(
         openTime: setMilliseconds(setSeconds(setMinutes(setHours(forDate, oH), oM), 0), 0),
         closeTime: setMilliseconds(setSeconds(setMinutes(setHours(forDate, cH), cM), 0), 0),
       };
-    } catch (e) {
-        console.error(`Error parsing override times for worker ${workerId} on ${format(forDate, 'yyyy-MM-dd')}:`, e);
-        return null;
-    }
+    } catch { return null; }
   }
 
-  // 2. Check for weekly availability
   const weeklyAvail = await prisma.workerAvailability.findUnique({
     where: { workerId_dayOfWeek: { workerId, dayOfWeek } },
   });
 
   if (weeklyAvail) {
-    if (!weeklyAvail.isAvailable || !weeklyAvail.startTime || !weeklyAvail.endTime) {
-        return null; // Worker not available on this day of week based on their default schedule
-    }
+    if (!weeklyAvail.isAvailable || !weeklyAvail.startTime || !weeklyAvail.endTime) return null;
     try {
       const [wOH, wOM] = weeklyAvail.startTime.split(':').map(Number);
       const [wCH, wCM] = weeklyAvail.endTime.split(':').map(Number);
@@ -125,58 +114,39 @@ async function getWorkerEffectiveSchedule(
         openTime: setMilliseconds(setSeconds(setMinutes(setHours(forDate, wOH), wOM), 0), 0),
         closeTime: setMilliseconds(setSeconds(setMinutes(setHours(forDate, wCH), wCM), 0), 0),
       };
-    } catch (e) {
-      console.error(`Error parsing weekly availability times for worker ${workerId} on day ${dayOfWeek}:`, e);
-      // Fall through to vendor hours if weekly is misconfigured or error occurs
-    }
+    } catch { /* Fall through */ }
   }
-
-  // 3. Fallback to vendor's general operating hours for that day of the week
   return getVendorOperatingHoursForDay(vendorOperatingHoursJson, forDate);
 }
 
-// Re-verification of availability for a specific worker and slot
 async function isWorkerSlotStillAvailable(
     workerId: string,
     vendorId: string,
     serviceId: string,
     slotStartTime: Date,
-    vendorOperatingHoursJson: Prisma.JsonValue | OperatingHoursMap | null // Updated type
+    vendorOperatingHoursJson: Prisma.JsonValue | OperatingHoursMap | null
 ): Promise<boolean> {
     const service = await prisma.service.findUnique({ where: {id: serviceId}, select: { duration: true}});
-    if (!service) {
-        console.error(`Service with ID ${serviceId} not found during slot availability check.`);
-        return false;
-    }
+    if (!service) return false;
     const slotEndTime = addMinutes(slotStartTime, service.duration);
 
     const workerSchedule = await getWorkerEffectiveSchedule(workerId, startOfDay(slotStartTime), vendorOperatingHoursJson);
-    if (!workerSchedule) {
-        // console.log(`Worker ${workerId} is not scheduled for ${format(slotStartTime, 'yyyy-MM-dd')}.`);
-        return false;
-    }
+    if (!workerSchedule) return false;
 
-    // Check if slot is within worker's effective working hours
     if (isBefore(slotStartTime, workerSchedule.openTime) || isBefore(workerSchedule.closeTime, slotEndTime) || slotEndTime > workerSchedule.closeTime) {
-        // console.log(`Slot ${format(slotStartTime, 'HH:mm')}-${format(slotEndTime, 'HH:mm')} is outside worker ${workerId}'s hours (${format(workerSchedule.openTime, 'HH:mm')}-${format(workerSchedule.closeTime, 'HH:mm')}).`);
         return false;
     }
 
-    // Check for conflicting appointments for this specific worker
     const conflictingAppointments = await prisma.appointment.count({
         where: {
             workerId: workerId,
             vendorId: vendorId,
             status: { in: [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED] },
-            OR: [
-                { startTime: { lt: slotEndTime }, endTime: { gt: slotStartTime } },
-            ],
+            OR: [ { startTime: { lt: slotEndTime }, endTime: { gt: slotStartTime } } ],
         },
     });
     return conflictingAppointments === 0;
 }
-// --- End Helper Functions ---
-
 
 async function POST_handler(req: NextRequest) {
   try {
@@ -192,13 +162,18 @@ async function POST_handler(req: NextRequest) {
     const { serviceId, vendorId, workerId: requestedWorkerId, startTime: startTimeString, notes } = parseResult.data;
     const parsedStartTime = parseISO(startTimeString);
 
-    if (!isValid(parsedStartTime) || isBefore(parsedStartTime, addHoursFns(new Date(), 1))) {
-        return NextResponse.json({ message: 'Neispravno vreme termina. Termin mora biti najmanje 1 sat unapred i validan datum/vreme.' }, { status: 400 });
+    // Prevent same-day bookings
+    if (isToday(parsedStartTime)) {
+        return NextResponse.json({ message: 'Rezervacije za danas nisu moguće. Molimo odaberite sutrašnji ili kasniji datum.' }, { status: 400 });
+    }
+
+    if (!isValid(parsedStartTime) || isBefore(parsedStartTime, addHoursFns(new Date(), 1))) { // This 1-hour rule might be redundant if today is blocked
+        return NextResponse.json({ message: 'Neispravno vreme termina. Termin mora biti najmanje 1 sat unapred (od sutra) i validan datum/vreme.' }, { status: 400 });
     }
 
     const vendor = await prisma.vendor.findUnique({
         where: { id: vendorId, status: VendorStatus.ACTIVE },
-        select: { operatingHours: true, name: true, ownerId: true } // Include ownerId
+        select: { operatingHours: true, name: true, ownerId: true }
     });
     if (!vendor) {
         return NextResponse.json({ message: 'Salon nije pronađen ili nije aktivan.' }, { status: 404 });
@@ -285,19 +260,17 @@ async function POST_handler(req: NextRequest) {
       },
       include: {
           service: {select: {name: true}},
-          vendor: {select: {name: true, owner: { select: { email: true, firstName: true}}}}, // Include owner email and name
+          vendor: {select: {name: true, owner: { select: { email: true, firstName: true}}}},
           worker: {select: {name: true}},
-          user: {select: {firstName: true, lastName: true, email: true}} // Include booking user's details
+          user: {select: {firstName: true, lastName: true, email: true}}
       }
     });
 
-    // --- Send Notification Email to Vendor Owner ---
     if (newAppointment.vendor?.owner?.email) {
       const vendorOwner = newAppointment.vendor.owner;
       const customer = newAppointment.user;
       const formattedStartTime = format(new Date(newAppointment.startTime), "eeee, dd. MMMM yyyy 'u' HH:mm", { locale: srLatn });
       const adminAppointmentsLink = `${process.env.NEXT_PUBLIC_SITE_URL}/admin/appointments`;
-
       const emailSubject = `Novi zahtev za termin: ${newAppointment.service.name} u ${newAppointment.vendor.name}`;
       const emailHtmlContent = `
         <p>Poštovani ${vendorOwner.firstName || 'vlasniče salona'},</p>
@@ -314,46 +287,32 @@ async function POST_handler(req: NextRequest) {
         <p><a href="${adminAppointmentsLink}">Idi na Admin Panel - Termini</a></p>
         <p>S poštovanjem,<br>FrizNaKlik Tim</p>
       `;
-
       try {
-        await sendEmail({
-          to: vendorOwner.email,
-          subject: emailSubject,
-          html: emailHtmlContent,
-        });
+        await sendEmail({ to: vendorOwner.email, subject: emailSubject, html: emailHtmlContent });
       } catch (emailError) {
-        // Log email sending failure but don't let it fail the appointment creation
         console.error("Greška pri slanju email notifikacije vlasniku salona:", emailError);
       }
     } else {
       console.warn(`Email vlasnika salona nije pronađen za salon ID: ${newAppointment.vendorId}. Notifikacija nije poslata.`);
     }
-    // --- End Send Notification Email ---
 
-    // Prepare response by removing sensitive owner data from the newAppointment object if necessary
     const { vendor: vendorDataForResponse, ...restOfAppointment } = newAppointment;
     const responseAppointment = {
         ...restOfAppointment,
-        vendor: { name: vendorDataForResponse.name } // Only include vendor name in response to client
+        vendor: { name: vendorDataForResponse.name }
     };
-
-
     return NextResponse.json(responseAppointment, { status: 201 });
 
   } catch (error: unknown) {
-    // ... (your existing error handling)
     console.error('Greška pri kreiranju termina:', error);
     if (error instanceof z.ZodError) {
       return NextResponse.json({ message: 'Neispravan unos.', errors: error.flatten().fieldErrors }, { status: 400 });
     }
-    if (error instanceof Prisma.PrismaClientKnownRequestError) {
-        // Handle specific Prisma errors if needed
-    }
+    if (error instanceof Prisma.PrismaClientKnownRequestError) { /* ... */ }
     return NextResponse.json({ message: 'Interna greška servera prilikom kreiranja termina.' }, { status: 500 });
   }
 }
 
-// GET handler for fetching appointments (admin/vendor view)
 async function GET_handler(req: NextRequest) {
   try {
     const user: AuthenticatedUser | null = await getCurrentUser();
@@ -367,7 +326,7 @@ async function GET_handler(req: NextRequest) {
     const limit = parseInt(queryParams.get('limit') || '10', 10);
     const skip = (page - 1) * limit;
 
-    const whereClause: Prisma.AppointmentWhereInput = {}; // Use Prisma.AppointmentWhereInput
+    const whereClause: Prisma.AppointmentWhereInput = {};
 
     if (statusFilter) {
         whereClause.status = statusFilter;
@@ -379,7 +338,6 @@ async function GET_handler(req: NextRequest) {
       }
       whereClause.vendorId = user.ownedVendorId;
     }
-    // SUPER_ADMIN can see all appointments if no specific vendorId filter is applied from client
 
     const appointments = await prisma.appointment.findMany({
       where: whereClause,
@@ -411,3 +369,4 @@ async function GET_handler(req: NextRequest) {
 
 export const POST = POST_handler;
 export const GET = withRoleProtection(GET_handler, [UserRole.SUPER_ADMIN, UserRole.VENDOR_OWNER]);
+

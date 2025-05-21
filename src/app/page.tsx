@@ -27,7 +27,7 @@ export default function Home() {
       <div className="card bg-base-100 shadow-xl">
         <div className="card-body">
           <h2 className="card-title text-2xl mb-4">
-            <Scissors className="mr-2 h-6 w-6 text-secondary" /> Brza Rezervacija za Danas
+            <Scissors className="mr-2 h-6 w-6 text-secondary" /> Brza Rezervacija za sutra
           </h2>
           <QuickReserveWidget />
         </div>

@@ -421,7 +421,7 @@ export default function VendorForm({ initialData, currentUserRole }: VendorFormP
 
       {showOwnerSelection && (
         <div className="form-control w-full relative">
-          <label htmlFor="ownerSearchTerm" className="label">
+          <label htmlFor="ownerSearchTerm" className="label" >
             <span className="label-text text-base font-medium">Vlasnik Salona (Email ili Ime)</span>
           </label>
           <div className="relative">

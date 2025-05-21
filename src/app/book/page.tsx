@@ -3,14 +3,14 @@
 import { useBookingStore, type SlotWithWorkers } from '@/store/bookingStore';
 import { useState, useEffect, Suspense, useRef } from 'react';
 import type { Service, Vendor } from '@prisma/client';
-import Image from 'next/image'; 
-import { useSearchParams } from 'next/navigation'; 
+import Image from 'next/image';
+import { useSearchParams } from 'next/navigation';
 import { formatErrorMessage } from '@/lib/errorUtils';
 import { CalendarDays, Clock, ShoppingBag, AlertTriangle, CheckCircle2, ArrowLeft, Loader2, X, Users, Building2, Info, UserCog, UserCircle as UserAvatarIcon } from 'lucide-react';
 
 import DatePicker, { registerLocale } from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css'; 
-import { format, getDay, addHours, isBefore, startOfToday, isSameDay, setHours, setMinutes, set } from 'date-fns';
+import { format, getDay, addHours, isBefore, isSameDay, setHours, setMinutes, set, startOfTomorrow, isToday } from 'date-fns';
 import { srLatn } from 'date-fns/locale';
 
 registerLocale('sr-Latn', srLatn);
@@ -35,7 +35,6 @@ type BookingStep = 'SELECT_VENDOR' | 'SELECT_SERVICE' | 'SELECT_WORKER' | 'SELEC
 function BookingForm() {
   const searchParams = useSearchParams();
   const successModalRef = useRef<HTMLDialogElement>(null);
-  // const router = useRouter(); // This was unused
 
   const {
     selectedVendorId,
@@ -93,9 +92,7 @@ function BookingForm() {
     }
 
     const vendorIdFromUrl = searchParams.get('vendorId');
-    // const serviceIdFromUrl = searchParams.get('serviceId'); // Not used here, handled in service effect
 
-    // Only set initial step if not already further along due to other interactions
     if (currentStep === 'SELECT_VENDOR') {
         if (vendorIdFromUrl && storeAllVendors.some(v => v.id === vendorIdFromUrl)) {
             if (selectedVendorId !== vendorIdFromUrl) selectVendor(vendorIdFromUrl);
@@ -106,7 +103,6 @@ function BookingForm() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isHydrated, storeIsLoadingAllVendors, storeAllVendors, searchParams]);
-  // Removed services from deps to reduce re-runs that might reset step
 
   useEffect(() => {
     if (isHydrated && storeAllVendors.length === 0 && !storeIsLoadingAllVendors) {
@@ -118,7 +114,6 @@ function BookingForm() {
   useEffect(() => {
     if (selectedVendorId && (currentStep === 'SELECT_SERVICE' || currentStep === 'SELECT_WORKER' || currentStep === 'SELECT_DATETIME' || currentStep === 'CONFIRM')) {
       if (services.length > 0 && services[0].vendorId === selectedVendorId && currentStep !== 'SELECT_SERVICE') {
-        // Avoid refetch if services for this vendor are already loaded and we are past service selection step
         return;
       }
       setIsLoadingServices(true);
@@ -144,19 +139,15 @@ function BookingForm() {
     } else if (!selectedVendorId) {
       setServices([]);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedVendorId, currentStep]);
 
-  // Fetch qualified workers for selected service and vendor
   useEffect(() => {
     if (selectedVendorId && selectedServiceId &&
         (currentStep === 'SELECT_WORKER' || currentStep === 'SELECT_DATETIME' || currentStep === 'CONFIRM')) {
 
-      // Only fetch if on SELECT_WORKER step or if qualifiedWorkers is empty (needed for subsequent steps)
       if (currentStep === 'SELECT_WORKER' || qualifiedWorkers.length === 0) {
         setIsLoadingWorkers(true);
         setWorkersError(null);
-        // setQualifiedWorkers([]); // Clear only if actively re-fetching for this step
 
         fetch(`${SITE_URL}/api/vendors/${selectedVendorId}/services/${selectedServiceId}/workers`)
           .then(res => {
@@ -166,12 +157,10 @@ function BookingForm() {
           .then((data: PublicWorkerInfo[]) => {
             setQualifiedWorkers(data);
             if (data.length === 0 && currentStep === 'SELECT_WORKER') {
-                if (preferredWorkerIdForFilter !== null) { // If a preference was set for a service that now has no workers
-                    selectPreferredWorkerForFilter(null); // Reset to "Any"
+                if (preferredWorkerIdForFilter !== null) {
+                    selectPreferredWorkerForFilter(null);
                 }
-                // Stay on SELECT_WORKER, UI will show message and "Proceed with Any" button
             }
-            // No automatic step change here. User makes a choice on SELECT_WORKER step.
           })
           .catch(err => {
               setWorkersError(formatErrorMessage(err, "preuzimanja liste kvalifikovanih radnika"));
@@ -179,7 +168,6 @@ function BookingForm() {
                   if (preferredWorkerIdForFilter !== null) {
                       selectPreferredWorkerForFilter(null);
                   }
-                  // Stay on SELECT_WORKER, UI will show error and "Proceed with Any" button
               }
           })
           .finally(() => setIsLoadingWorkers(false));
@@ -188,14 +176,20 @@ function BookingForm() {
       setQualifiedWorkers([]);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedVendorId, selectedServiceId, currentStep]); // Removed selectPreferredWorkerForFilter from deps to avoid loop
+  }, [selectedVendorId, selectedServiceId, currentStep]);
 
   // Fetch available slots
   useEffect(() => {
     if (selectedVendorId && selectedServiceId && selectedDate &&
         (currentStep === 'SELECT_DATETIME' || currentStep === 'CONFIRM')) {
 
-      // Only fetch if on SELECT_DATETIME or if slots are empty (needed for confirm)
+      if (isToday(selectedDate)) { // Prevent fetching for today
+        setAvailableSlotsData([]);
+        setSlotsError("Rezervacije za danas nisu moguće. Molimo odaberite sutrašnji ili kasniji datum.");
+        setIsLoadingSlots(false);
+        return;
+      }
+
       if (currentStep === 'SELECT_DATETIME' || availableSlotsData.length === 0) {
         setIsLoadingSlots(true);
         setSlotsError(null);
@@ -215,16 +209,7 @@ function BookingForm() {
             if (data.message && data.availableSlots.length === 0) {
               setSlotsError(data.message);
             } else {
-              let slotsToSet = data.availableSlots;
-              const currentMinBookingTime = addHours(new Date(), 1);
-              if (isSameDay(selectedDate, new Date())) {
-                  slotsToSet = slotsToSet.filter(slot => {
-                      const [slotHours, slotMinutes] = slot.time.split(':').map(Number);
-                      const slotDateTime = setMinutes(setHours(selectedDate, slotHours), slotMinutes);
-                      return isBefore(currentMinBookingTime, slotDateTime);
-                  });
-              }
-              setAvailableSlotsData(slotsToSet);
+              setAvailableSlotsData(data.availableSlots);
             }
           })
           .catch(err => setSlotsError(formatErrorMessage(err, "preuzimanja dostupnih termina")))
@@ -238,46 +223,37 @@ function BookingForm() {
 
 
   const handleVendorSelect = (vendorId: string) => {
-    if (selectedVendorId !== vendorId) selectVendor(vendorId); // Resets service, worker, date, slot
+    if (selectedVendorId !== vendorId) selectVendor(vendorId);
     setCurrentStep('SELECT_SERVICE');
     setServicesError(null); setWorkersError(null); setSlotsError(null); setBookingError(null);
   };
 
   const handleServiceSelect = (serviceId: string) => {
-    if (selectedServiceId !== serviceId) selectService(serviceId); // Resets worker pref and date
+    if (selectedServiceId !== serviceId) selectService(serviceId);
     setCurrentStep('SELECT_WORKER');
     setWorkersError(null); setSlotsError(null); setBookingError(null);
   };
 
   const handleWorkerSelectForFilter = (workerId: string | null) => {
-    // Only update if the preference actually changes
     if (preferredWorkerIdForFilter !== workerId) {
-        selectPreferredWorkerForFilter(workerId); // This resets date and slots in the store
+        selectPreferredWorkerForFilter(workerId);
     }
     setCurrentStep('SELECT_DATETIME');
-    setSlotsError(null); setBookingError(null); // Clear errors for the next step
+    setSlotsError(null); setBookingError(null);
   };
 
   const handleDateSelect = (date: Date | null) => {
-    if (date && isBefore(date, startOfToday()) && !isSameDay(date, startOfToday())) {
-      selectDate(startOfToday());
+    // Prevent selecting today or past dates
+    if (date && isBefore(date, startOfTomorrow())) {
+      selectDate(startOfTomorrow()); // Default to tomorrow if today or past is selected
     } else {
-      selectDate(date); // This resets slots in the store
+      selectDate(date);
     }
     setSlotsError(null); setBookingError(null);
   };
 
   const handleSlotButtonClick = (slotDataTime: string) => {
-    const currentMinBookingTime = addHours(new Date(), 1);
-    if (selectedDate && isSameDay(selectedDate, new Date())) {
-        const [hours, minutes] = slotDataTime.split(':').map(Number);
-        const slotDateTime = setMinutes(setHours(selectedDate, hours), minutes);
-        if (isBefore(slotDateTime, currentMinBookingTime)) {
-            setBookingError("Odabrani termin je unutar narednih sat vremena i ne može se rezervisati.");
-            selectSlotTime(null);
-            return;
-        }
-    }
+    // Same-day check is now primarily handled by DatePicker's minDate and API
     selectSlotTime(slotDataTime);
     setCurrentStep('CONFIRM');
     setBookingError(null);
@@ -288,6 +264,11 @@ function BookingForm() {
       setBookingError("Molimo Vas odaberite salon, uslugu, datum i vreme termina.");
       setBookingStatus('error');
       return;
+    }
+    if (isToday(selectedDate)) {
+        setBookingError("Rezervacije za danas nisu moguće. Molimo odaberite sutrašnji ili kasniji datum.");
+        setBookingStatus('error');
+        return;
     }
 
     setBookingStatus('submitting');
@@ -337,12 +318,19 @@ function BookingForm() {
 
   const isWeekday = (date: Date) => getDay(date) !== 0 && getDay(date) !== 6;
   const getDayClassName = (date: Date): string => {
-    if (isBefore(date, startOfToday()) && !isSameDay(date, startOfToday())) return "react-datepicker__day--past react-datepicker__day--disabled";
-    if (!isWeekday(date)) return "react-datepicker__day--weekend react-datepicker__day--disabled";
+    // Disable today and past dates
+    if (isBefore(date, startOfTomorrow()) && !isSameDay(date, startOfTomorrow())) return "react-datepicker__day--past react-datepicker__day--disabled";
+    if (!isWeekday(date)) return "react-datepicker__day--weekend react-datepicker__day--disabled"; // Keep weekend disabling
     return "";
   };
+
   const isSlotDisabled = (slotTime: string): boolean => {
-    if (selectedDate && isSameDay(selectedDate, new Date())) {
+    // This function might become simpler if date selection already prevents today
+    if (selectedDate && isToday(selectedDate)) {
+        return true; // Disable all slots for today
+    }
+    // Original logic for slots too close to current time (now only relevant if minDate was somehow bypassed)
+    if (selectedDate && isSameDay(selectedDate, new Date())) { // Should not happen if minDate is tomorrow
         const [hours, minutes] = slotTime.split(':').map(Number);
         const slotDateTime = setMinutes(setHours(selectedDate, hours), minutes);
         return isBefore(slotDateTime, addHours(new Date(), 1));
@@ -372,10 +360,10 @@ function BookingForm() {
     if (step === 'SELECT_VENDOR') selectVendor(null);
     else if (step === 'SELECT_SERVICE') resetServiceAndBelow();
     else if (step === 'SELECT_WORKER') resetWorkerAndBelow();
-    else if (step === 'SELECT_DATETIME') { selectDate(null); } // This resets slots in store
+    else if (step === 'SELECT_DATETIME') { selectDate(null); }
 
     setCurrentStep(step);
-    setBookingError(null); // Clear any previous booking error when navigating steps
+    setBookingError(null);
   }
 
   return (
@@ -389,7 +377,6 @@ function BookingForm() {
         <StepIndicator step="SELECT_VENDOR" title="1. Salon" currentStepProp={currentStep} onClick={() => handleGoToStep('SELECT_VENDOR')} isEnabled={true} />
         <StepIndicator step="SELECT_SERVICE" title="2. Usluga" currentStepProp={currentStep} onClick={() => handleGoToStep('SELECT_SERVICE')} isEnabled={!!selectedVendorId} />
         <StepIndicator step="SELECT_WORKER" title="3. Radnik" currentStepProp={currentStep} onClick={() => handleGoToStep('SELECT_WORKER')} isEnabled={!!selectedServiceId} />
-        {/* Enable Step 4 if service is selected AND (worker preference is set OR we are already on/past datetime step) */}
         <StepIndicator step="SELECT_DATETIME" title="4. Vreme" currentStepProp={currentStep} onClick={() => handleGoToStep('SELECT_DATETIME')}
                        isEnabled={!!selectedServiceId && (preferredWorkerIdForFilter !== undefined || currentStep === 'SELECT_DATETIME' || currentStep === 'CONFIRM')} />
         <StepIndicator step="CONFIRM" title="5. Potvrda" currentStepProp={currentStep} isEnabled={!!selectedSlotTime} />
@@ -457,7 +444,7 @@ function BookingForm() {
                 <span>{workersError}</span>
                 <button onClick={() => handleWorkerSelectForFilter(null)} className="btn btn-sm btn-outline btn-info ml-auto">Nastavi sa &quot;Bilo koji&quot;</button>
             </div>
-          ) : qualifiedWorkers.length === 0 && !isLoadingWorkers ? ( // Explicitly check !isLoadingWorkers
+          ) : qualifiedWorkers.length === 0 && !isLoadingWorkers ? (
             <div className="text-center p-4 bg-base-100 rounded-md border">
                 <Info className="h-8 w-8 mx-auto text-info mb-2" />
                 <p className="text-base-content/80 mb-3">Nema specifičnih radnika koji pružaju ovu uslugu.</p>
@@ -512,10 +499,20 @@ function BookingForm() {
             <div className="flex-1 lg:max-w-xs mx-auto lg:mx-0">
               <h3 className="text-lg font-medium mb-3 text-neutral-content text-center lg:text-left">Datum</h3>
               <div className="p-1 border rounded-lg inline-block bg-base-100 shadow-sm">
-                <DatePicker selected={selectedDate} onChange={handleDateSelect} dateFormat="dd.MM.yyyy" minDate={startOfToday()} filterDate={isWeekday} inline locale="sr-Latn" calendarClassName="bg-base-100" dayClassName={getDayClassName}/>
+                <DatePicker
+                    selected={selectedDate}
+                    onChange={handleDateSelect}
+                    dateFormat="dd.MM.yyyy"
+                    minDate={startOfTomorrow()} // Set minDate to tomorrow
+                    filterDate={isWeekday}
+                    inline
+                    locale="sr-Latn"
+                    calendarClassName="bg-base-100"
+                    dayClassName={getDayClassName}
+                />
               </div>
             </div>
-            {selectedDate && (
+            {selectedDate && !isToday(selectedDate) && ( // Only show slots if a valid future date is selected
               <div className="flex-1 min-w-0">
                 <h3 className="text-lg font-medium mb-3 text-neutral-content">Dostupni Termini za {format(selectedDate, "dd. MMMM yy'.'", { locale: srLatn })}</h3>
                 {isLoadingSlots ? ( <div className="flex justify-center items-center h-24"> <Loader2 className="h-10 w-10 animate-spin text-primary" /> </div>
@@ -524,7 +521,7 @@ function BookingForm() {
                 ) : (
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
                     {availableSlotsData.map(slotData => {
-                      const disabledSlot = isSlotDisabled(slotData.time);
+                      const disabledSlot = isSlotDisabled(slotData.time); // isSlotDisabled will also prevent today's slots
                       return (
                         <button key={slotData.time}
                           className={`btn btn-md ${selectedSlotTime === slotData.time && !disabledSlot ? 'btn-primary' : 'btn-outline'} ${disabledSlot ? 'btn-disabled' : ''}`}
@@ -536,6 +533,14 @@ function BookingForm() {
                   </div>
                 )}
               </div>
+            )}
+             {selectedDate && isToday(selectedDate) && ( 
+                <div className="flex-1 min-w-0">
+                     <div role="alert" className="alert alert-info text-sm p-3">
+                        <Info className="h-5 w-5" />
+                        <span>Rezervacije za danas nisu moguće. Molimo odaberite sutrašnji ili kasniji datum.</span>
+                    </div>
+                </div>
             )}
           </div>
         </section>
@@ -629,7 +634,7 @@ function BookingForm() {
           background-color: hsl(var(--p)/0.1);
           border-radius: var(--rounded-btn, 0.5rem);
         }
-        .react-datepicker__day--disabled,
+        .react-datepicker__day--disabled, /* This will cover today if minDate is tomorrow */
         .react-datepicker__day--past,
         .react-datepicker__day--weekend:not(.react-datepicker__day--selected) {
           color: hsl(var(--bc) / 0.3) !important;
@@ -685,4 +690,3 @@ function BookingPageSkeleton() {
         </div>
     );
 }
-

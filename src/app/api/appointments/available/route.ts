@@ -13,20 +13,20 @@ import {
     setSeconds,
     setMilliseconds,
     getDay,
-    addHours as addHoursFns,
-    isSameDay,
+    isToday 
 } from 'date-fns';
 import { getCurrentUser, AuthenticatedUser } from '@/lib/authUtils';
-import { Prisma } from '@prisma/client'; 
-import { AppointmentStatus, VendorStatus } from '@/lib/types/prisma-enums'; 
+import { Prisma } from '@prisma/client';
+import { AppointmentStatus, VendorStatus } from '@/lib/types/prisma-enums';
 
-const BASE_SLOT_INTERVAL = 15; //TODO: Make this configurable, maybe as a vendor setting
+const BASE_SLOT_INTERVAL = 15;
+
 interface WorkerInfo {
     id: string;
     name: string | null;
 }
 interface SlotWithWorkers {
-    time: string; // HH:mm format
+    time: string;
     availableWorkers: WorkerInfo[];
 }
 
@@ -44,32 +44,23 @@ type OperatingHoursMap = {
   [key: string]: DailyOperatingHour | null;
 };
 
-
-// Helper to get vendor's operating hours for a specific day
 function getVendorOperatingHoursForDay(
-    operatingHoursJson: Prisma.JsonValue | OperatingHoursMap | null, 
+    operatingHoursJson: Prisma.JsonValue | OperatingHoursMap | null,
     date: Date
 ): EffectiveSchedule | null {
     if (!operatingHoursJson || typeof operatingHoursJson !== 'object' || operatingHoursJson === null || Array.isArray(operatingHoursJson)) {
-        console.warn("Vendor operatingHours is null or not an object.");
         return null;
     }
-    const dayOfWeekString = format(date, 'eeee').toLowerCase(); // e.g., 'monday'
+    const dayOfWeekString = format(date, 'eeee').toLowerCase();
     const daySchedule = (operatingHoursJson as OperatingHoursMap)[dayOfWeekString];
 
     if (!daySchedule || !daySchedule.open || !daySchedule.close) {
-        // console.log(`Vendor is closed on ${dayOfWeekString} or hours not set.`);
         return null;
     }
-
     try {
         const [openHour, openMinute] = daySchedule.open.split(':').map(Number);
         const [closeHour, closeMinute] = daySchedule.close.split(':').map(Number);
-
-        if (isNaN(openHour) || isNaN(openMinute) || isNaN(closeHour) || isNaN(closeMinute)) {
-            console.error('Invalid time format in vendor operatingHours:', daySchedule);
-            return null;
-        }
+        if (isNaN(openHour) || isNaN(openMinute) || isNaN(closeHour) || isNaN(closeMinute)) return null;
         const openTime = setMilliseconds(setSeconds(setMinutes(setHours(startOfDay(date), openHour), openMinute), 0), 0);
         const closeTime = setMilliseconds(setSeconds(setMinutes(setHours(startOfDay(date), closeHour), closeMinute), 0), 0);
         return { openTime, closeTime };
@@ -79,64 +70,49 @@ function getVendorOperatingHoursForDay(
     }
 }
 
-
-// Helper to get a worker's effective schedule for a specific date, considering overrides and weekly defaults
 async function getWorkerEffectiveSchedule(
   workerId: string,
-  forDate: Date, // Should be startOfDay(forDate)
-  vendorOperatingHoursJson: Prisma.JsonValue | OperatingHoursMap | null // Updated type
+  forDate: Date,
+  vendorOperatingHoursJson: Prisma.JsonValue | OperatingHoursMap | null
 ): Promise<EffectiveSchedule | null> {
-  const dayOfWeek = getDay(forDate); // 0 for Sunday, 1 for Monday, etc.
+  const dayOfWeek = getDay(forDate);
 
-  // 1. Check for specific date override
   const override = await prisma.workerScheduleOverride.findUnique({
     where: { workerId_date: { workerId, date: forDate } },
   });
 
   if (override) {
-    if (override.isDayOff || !override.startTime || !override.endTime) {
-      return null; // Worker is off or no specific times given for this override day
-    }
+    if (override.isDayOff || !override.startTime || !override.endTime) return null;
     try {
-      const [overrideOpenHour, overrideOpenMinute] = override.startTime.split(':').map(Number);
-      const [overrideCloseHour, overrideCloseMinute] = override.endTime.split(':').map(Number);
-      const openTime = setMilliseconds(setSeconds(setMinutes(setHours(forDate, overrideOpenHour), overrideOpenMinute), 0), 0);
-      const closeTime = setMilliseconds(setSeconds(setMinutes(setHours(forDate, overrideCloseHour), overrideCloseMinute), 0), 0);
-      return { openTime, closeTime };
-    } catch (e) {
-      console.error(`Error parsing override times for worker ${workerId} on ${format(forDate, 'yyyy-MM-dd')}:`, e);
-      return null; // Invalid time format in override
-    }
+      const [oH, oM] = override.startTime.split(':').map(Number);
+      const [cH, cM] = override.endTime.split(':').map(Number);
+      return {
+        openTime: setMilliseconds(setSeconds(setMinutes(setHours(forDate, oH), oM), 0), 0),
+        closeTime: setMilliseconds(setSeconds(setMinutes(setHours(forDate, cH), cM), 0), 0),
+      };
+    } catch { return null; }
   }
 
-  // 2. Check for weekly availability
   const weeklyAvail = await prisma.workerAvailability.findUnique({
     where: { workerId_dayOfWeek: { workerId, dayOfWeek } },
   });
 
   if (weeklyAvail) {
-    if (!weeklyAvail.isAvailable || !weeklyAvail.startTime || !weeklyAvail.endTime) {
-        return null; // Worker not available on this day of week based on their default schedule
-    }
+    if (!weeklyAvail.isAvailable || !weeklyAvail.startTime || !weeklyAvail.endTime) return null;
     try {
-      const [weeklyOpenHour, weeklyOpenMinute] = weeklyAvail.startTime.split(':').map(Number);
-      const [weeklyCloseHour, weeklyCloseMinute] = weeklyAvail.endTime.split(':').map(Number);
-      const openTime = setMilliseconds(setSeconds(setMinutes(setHours(forDate, weeklyOpenHour), weeklyOpenMinute), 0), 0);
-      const closeTime = setMilliseconds(setSeconds(setMinutes(setHours(forDate, weeklyCloseHour), weeklyCloseMinute), 0), 0);
-      return { openTime, closeTime };
-    } catch (e) {
-      console.error(`Error parsing weekly availability times for worker ${workerId} on day ${dayOfWeek}:`, e);
-      // Fall through to vendor hours if weekly is misconfigured or error occurs
-    }
+      const [wOH, wOM] = weeklyAvail.startTime.split(':').map(Number);
+      const [wCH, wCM] = weeklyAvail.endTime.split(':').map(Number);
+      return {
+        openTime: setMilliseconds(setSeconds(setMinutes(setHours(forDate, wOH), wOM), 0), 0),
+        closeTime: setMilliseconds(setSeconds(setMinutes(setHours(forDate, wCH), wCM), 0), 0),
+      };
+    } catch { /* Fall through */ }
   }
-
-  // 3. Fallback to vendor's general operating hours for that day of the week
   return getVendorOperatingHoursForDay(vendorOperatingHoursJson, forDate);
 }
 
 
 export async function GET(request: NextRequest) {
-  console.log("--- GET /api/appointments/available (Phase 4 Logic) ---");
   const user: AuthenticatedUser | null = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ message: 'Neautorizovan pristup.' }, { status: 401 });
@@ -147,7 +123,7 @@ export async function GET(request: NextRequest) {
     const serviceId = searchParams.get('serviceId');
     const dateString = searchParams.get('date');
     const vendorId = searchParams.get('vendorId');
-    const requestedWorkerId = searchParams.get('workerId'); // Optional
+    const requestedWorkerId = searchParams.get('workerId');
 
     if (!serviceId || !dateString || !vendorId) {
       return NextResponse.json({ message: 'Nedostaju obavezni parametri: serviceId, date, vendorId.' }, { status: 400 });
@@ -157,9 +133,14 @@ export async function GET(request: NextRequest) {
     if (!isValid(selectedDate)) {
       return NextResponse.json({ message: 'Neispravan format datuma. Očekivani format je YYYY-MM-DD.' }, { status: 400 });
     }
-    selectedDate = startOfDay(selectedDate); // Normalize to start of day
+    selectedDate = startOfDay(selectedDate);
 
-    // Fetch Service
+    // Prevent fetching slots for today
+    if (isToday(selectedDate)) {
+        return NextResponse.json({ availableSlots: [], message: "Rezervacije za danas nisu moguće. Molimo odaberite sutrašnji ili kasniji datum." }, { status: 200 });
+    }
+
+
     const service = await prisma.service.findUnique({
       where: { id: serviceId, vendorId: vendorId, active: true },
       select: { duration: true, name: true },
@@ -169,7 +150,6 @@ export async function GET(request: NextRequest) {
     }
     const serviceDuration = service.duration;
 
-    // Fetch Vendor
     const vendor = await prisma.vendor.findUnique({
       where: { id: vendorId },
       select: { operatingHours: true, status: true, name: true },
@@ -181,7 +161,6 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ availableSlots: [], message: `Salon "${vendor.name}" trenutno nije aktivan.` }, { status: 200 });
     }
 
-    // Determine which workers to consider
     let workersToConsider: Array<{ id: string; name: string | null; services: Array<{id: string}> }> = [];
     if (requestedWorkerId) {
       const worker = await prisma.worker.findUnique({
@@ -204,7 +183,6 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Fetch existing appointments for all potentially relevant workers on the selected date
     const dayStartQuery = startOfDay(selectedDate);
     const dayEndQuery = endOfDay(selectedDate);
     const workerIdsToQuery = workersToConsider.map(w => w.id);
@@ -220,12 +198,12 @@ export async function GET(request: NextRequest) {
     });
 
     const availableSlotsMap = new Map<string, WorkerInfo[]>();
-    const now = new Date();
-    const minBookingTime = addHoursFns(now, 1); // Minimum 1 hour from now for booking
+    // const now = new Date(); // Not needed if we block today entirely
+    // const minBookingTime = addHoursFns(now, 1);
 
     for (const worker of workersToConsider) {
       const workerSchedule = await getWorkerEffectiveSchedule(worker.id, selectedDate, vendor.operatingHours);
-      if (!workerSchedule) continue; // Worker not working this day
+      if (!workerSchedule) continue;
 
       let potentialSlotStart = workerSchedule.openTime;
 
@@ -233,16 +211,15 @@ export async function GET(request: NextRequest) {
         const potentialSlotEnd = addMinutes(potentialSlotStart, serviceDuration);
 
         if (isBefore(workerSchedule.closeTime, potentialSlotEnd) || potentialSlotEnd > workerSchedule.closeTime) {
-            break; // Slot extends beyond worker's closing time
+            break;
         }
 
-        // Check if slot is in the past or too soon
-        if (isBefore(potentialSlotStart, minBookingTime) && isSameDay(selectedDate, now)) {
-            potentialSlotStart = addMinutes(potentialSlotStart, BASE_SLOT_INTERVAL);
-            continue;
-        }
+        // No need to check minBookingTime if today is blocked
+        // if (isBefore(potentialSlotStart, minBookingTime) && isSameDay(selectedDate, now)) {
+        //     potentialSlotStart = addMinutes(potentialSlotStart, BASE_SLOT_INTERVAL);
+        //     continue;
+        // }
 
-        // Check for conflicts with this worker's existing appointments
         const conflict = existingAppointments.some(app =>
           app.workerId === worker.id &&
           isBefore(app.startTime, potentialSlotEnd) &&
@@ -274,7 +251,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ availableSlots: finalSlots }, { status: 200 });
 
   } catch (error: unknown) {
-    console.error('Greška pri dobavljanju dostupnih termina (Phase 4):', error);
+    console.error('Greška pri dobavljanju dostupnih termina:', error);
     let errorMessage = 'Interna greška servera.';
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
          errorMessage = 'Greška pri komunikaciji sa bazom podataka.';
