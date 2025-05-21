@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import {
   getCurrentUser,
@@ -11,7 +11,7 @@ import { sendEmail } from '@/lib/emailService';
 import { format } from 'date-fns';
 import { srLatn } from 'date-fns/locale';
 
-async function POST_handler(req: NextRequest) {
+async function POST_handler() {
   try {
     const user: AuthenticatedUser | null = await getCurrentUser();
     if (!user) {
@@ -59,14 +59,6 @@ async function POST_handler(req: NextRequest) {
     if (pendingAppointments.length === 0) {
       return NextResponse.json({ message: 'Nema termina na čekanju za odobravanje.', approvedCount: 0 }, { status: 200 });
     }
-
-    const appointmentIdsToApprove = pendingAppointments.map(app => app.id);
-
-    // Auto-assign worker logic (simplified: assign first available if not already assigned)
-    // This is a complex part; for bulk, a simpler strategy or pre-assignment might be better.
-    // For now, we'll just approve. Worker assignment can be a separate step or handled by admin individually.
-    // If a worker is already assigned (e.g. by user preference), keep it.
-    // If not, and if salon has workers, assign one.
 
     const workersOfVendor = await prisma.worker.findMany({
         where: { vendorId: targetVendorId },

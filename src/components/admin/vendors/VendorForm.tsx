@@ -2,9 +2,9 @@
 
 import { useState, FormEvent, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import Image from 'next/image'; 
-import { Vendor, Prisma } from '@prisma/client';
-import { UserRole, VendorStatus } from '@/lib/types/prisma-enums';
+import Image from 'next/image';
+import { Vendor as PrismaVendor, Prisma } from '@prisma/client';
+import { UserRole as LocalUserRole, VendorStatus as LocalVendorStatus } from '@/lib/types/prisma-enums';
 import { Info, Loader2, Clock } from 'lucide-react';
 import { z } from 'zod';
 
@@ -24,39 +24,42 @@ interface BasicUser {
     email: string;
     firstName?: string | null;
     lastName?: string | null;
-    role: UserRole;
+    role: LocalUserRole;
     profileImageUrl?: string | null;
 }
 
-interface VendorFormData {
+interface VendorFormDataState {
   name: string;
   description: string;
-  ownerClerkId: string;
+  ownerClerkId: string; 
   address: string;
   phoneNumber: string;
   operatingHours: FormOperatingHours;
 }
 
-type VendorFormInitialData = Omit<Vendor, 'operatingHours' | 'status'> & {
+// Type for the initialData prop, ensuring it uses local enums TODO: replace with $Enums from Prisma
+// This type is now EXPORTED
+export type VendorFormInitialData = Omit<PrismaVendor, 'operatingHours' | 'status' | 'ownerId'> & {
     operatingHours?: Prisma.JsonValue | null;
-    status: VendorStatus; 
-    owner?: BasicUser;
+    status: LocalVendorStatus; // Uses local enum
+    owner?: BasicUser; // owner.role uses local enum
 };
+
 
 interface VendorFormProps {
   initialData?: VendorFormInitialData | null;
-  currentUserRole: UserRole;
-  allVendors?: Vendor[];
+  currentUserRole: LocalUserRole;
+  allVendors?: PrismaVendor[]; // allVendors can remain PrismaVendor as it's for listing
 }
 
-// Define a more specific type for the API payload
+// Define a more specific type for the API payload TODO: replace with $Enums from Prisma
 interface VendorApiPayload {
   name: string;
   description?: string | null;
   address?: string | null;
   phoneNumber?: string | null;
   operatingHours?: Prisma.InputJsonValue;
-  status?: VendorStatus;
+  status?: LocalVendorStatus; // API expects local enum string values
   ownerId?: string; // Clerk ID of the owner for creation
 }
 
@@ -91,10 +94,8 @@ const dailyHoursSchemaForValidation = z.object({
 });
 
 
-export default function VendorForm({ initialData, currentUserRole, allVendors = [] }: VendorFormProps) {
+export default function VendorForm({ initialData, currentUserRole }: VendorFormProps) {
   const router = useRouter();
-  console.log("[VendorForm] Initialized. Props - currentUserRole:", currentUserRole, "initialData exists:", !!initialData, "allVendors count:", allVendors.length);
-
 
   const initialFormOperatingHours = useCallback((): FormOperatingHours => {
     const defaultOpenTime = '09:00';
@@ -122,7 +123,7 @@ export default function VendorForm({ initialData, currentUserRole, allVendors = 
     return hours;
   }, [initialData?.operatingHours]);
 
-  const [formData, setFormData] = useState<VendorFormData>({
+  const [formData, setFormData] = useState<VendorFormDataState>({
     name: initialData?.name || '',
     description: initialData?.description || '',
     ownerClerkId: initialData?.owner?.clerkId || '',
@@ -138,41 +139,36 @@ export default function VendorForm({ initialData, currentUserRole, allVendors = 
   const [isLoading, setIsLoading] = useState(false);
   const [isSearchingUsers, setIsSearchingUsers] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [formErrors, setFormErrors] = useState<Partial<Record<keyof VendorFormData | string, string>>>({});
+  const [formErrors, setFormErrors] = useState<Partial<Record<keyof VendorFormDataState | string, string>>>({});
 
 
   const fetchUsers = useCallback(async (searchTerm: string) => {
-    console.log(`[VendorForm] fetchUsers called with searchTerm: "${searchTerm}"`);
-    if (searchTerm.length < 2 && currentUserRole === UserRole.SUPER_ADMIN && !initialData) {
+    if (searchTerm.length < 2 && currentUserRole === LocalUserRole.SUPER_ADMIN && !initialData) {
         setSuggestedUsers([]);
-        console.log("[VendorForm] Search term too short for SUPER_ADMIN creating new, clearing suggestions.");
         return;
     }
     setIsSearchingUsers(true);
     setSuggestedUsers([]);
     try {
-      const apiUrl = `/api/admin/users?search=${encodeURIComponent(searchTerm)}&role=${UserRole.USER}&limit=5`;
+      const apiUrl = `/api/admin/users?search=${encodeURIComponent(searchTerm)}&role=${LocalUserRole.USER}&limit=5`;
       const response = await fetch(apiUrl);
       const responseBody = await response.text();
-      console.log(`[VendorForm] fetchUsers - API URL: ${apiUrl}, Status: ${response.status}, Body: ${responseBody}`);
 
       if (!response.ok) {
         let errMessage = `Neuspešno dobavljanje korisnika. Status: ${response.status}`;
         try { const errData = JSON.parse(responseBody); errMessage = errData.message || errMessage; }
-        catch { console.warn("[VendorForm] API error response was not valid JSON."); }
+        catch { }
         throw new Error(errMessage);
       }
 
       const data = JSON.parse(responseBody) as { users: BasicUser[] };
       setSuggestedUsers(data.users || []);
-      if (!data.users || data.users.length === 0) console.log("[VendorForm] No users found for the search term.");
 
     } catch (err) {
       console.error("[VendorForm] Greška pri dobavljanju korisnika:", err);
       setSuggestedUsers([]);
     } finally {
       setIsSearchingUsers(false);
-      console.log("[VendorForm] fetchUsers finished.");
     }
   }, [currentUserRole, initialData]);
 
@@ -195,14 +191,12 @@ export default function VendorForm({ initialData, currentUserRole, allVendors = 
         return;
     }
 
-    const shouldFetch = currentUserRole === UserRole.SUPER_ADMIN && !initialData && ownerSearchTerm.trim().length >= 2;
-    console.log(`[VendorForm] useEffect for ownerSearchTerm - shouldFetch: ${shouldFetch}, ownerSearchTerm: "${ownerSearchTerm}"`);
-
+    const shouldFetch = currentUserRole === LocalUserRole.SUPER_ADMIN && !initialData && ownerSearchTerm.trim().length >= 2;
 
     const debounceTimeout = setTimeout(() => {
         if (shouldFetch) {
             fetchUsers(ownerSearchTerm);
-        } else if (currentUserRole === UserRole.SUPER_ADMIN && !initialData) {
+        } else if (currentUserRole === LocalUserRole.SUPER_ADMIN && !initialData) {
             setSuggestedUsers([]);
         }
     }, 500);
@@ -212,29 +206,20 @@ export default function VendorForm({ initialData, currentUserRole, allVendors = 
 
 
   const validateForm = (): boolean => {
-    const errors: Partial<Record<keyof VendorFormData | string, string>> = {};
+    const errors: Partial<Record<keyof VendorFormDataState | string, string>> = {};
     if (!formData.name.trim()) errors.name = 'Naziv salona je obavezan.';
 
-    console.log("[VendorForm] validateForm - Checking owner. currentUserRole:", currentUserRole, "initialData:", !!initialData, "selectedOwner:", !!selectedOwner, "ownerSearchTerm:", `"${ownerSearchTerm.trim()}"`, "isSearchingUsers:", isSearchingUsers, "suggestedUsers.length:", suggestedUsers.length);
-
-    if (currentUserRole === UserRole.SUPER_ADMIN && !initialData) {
+    if (currentUserRole === LocalUserRole.SUPER_ADMIN && !initialData) {
       if (!selectedOwner) {
-        console.log("[VendorForm] validateForm - SUPER_ADMIN creating new, selectedOwner is NULL.");
         if (ownerSearchTerm.trim() === '') {
-          console.log("[VendorForm] validateForm - ownerSearchTerm is empty. Setting error: Vlasnik salona je obavezan.");
           errors.ownerClerkId = 'Vlasnik salona je obavezan.';
         } else if (isSearchingUsers) {
-          console.log("[VendorForm] validateForm - isSearchingUsers is true. Setting error: Pretraga korisnika je u toku...");
           errors.ownerClerkId = 'Pretraga korisnika je u toku, molimo sačekajte.';
         } else if (suggestedUsers.length > 0) {
-            console.log("[VendorForm] validateForm - suggestions available but none selected. Setting error: Molimo odaberite vlasnika...");
             errors.ownerClerkId = 'Molimo odaberite vlasnika sa liste predloga.';
         } else {
-          console.log("[VendorForm] validateForm - no suggestions and not searching. Setting error for not found/role.");
           errors.ownerClerkId = 'Korisnik sa unetim emailom nije pronađen ili nema odgovarajuću ulogu (USER).';
         }
-      } else {
-        console.log("[VendorForm] validateForm - SUPER_ADMIN creating new, selectedOwner IS SET. No owner error.");
       }
     }
 
@@ -251,17 +236,14 @@ export default function VendorForm({ initialData, currentUserRole, allVendors = 
         }
     });
 
-    console.log("[VendorForm] validateForm - currentFormErrors before setFormErrors:", JSON.stringify(errors));
     setFormErrors(errors);
-    const isValid = Object.keys(errors).length === 0;
-    console.log("[VendorForm] validateForm - returning:", isValid, "Errors object after set:", JSON.stringify(errors));
-    return isValid;
+    return Object.keys(errors).length === 0;
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
-    if (formErrors[name as keyof VendorFormData]) {
+    if (formErrors[name as keyof VendorFormDataState]) {
       setFormErrors(prev => ({ ...prev, [name]: undefined }));
     }
   };
@@ -329,10 +311,8 @@ export default function VendorForm({ initialData, currentUserRole, allVendors = 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const isFormValid = validateForm();
-    console.log("[VendorForm] handleSubmit - isFormValid from validateForm():", isFormValid);
 
     if (!isFormValid) {
-      console.log("[VendorForm] Form is NOT valid based on validateForm(), returning. Current formErrors:", JSON.stringify(formErrors));
       return;
     }
 
@@ -359,22 +339,23 @@ export default function VendorForm({ initialData, currentUserRole, allVendors = 
       description: formData.description || null,
       address: formData.address || null,
       phoneNumber: formData.phoneNumber || null,
-      operatingHours: operatingHoursPayload as Prisma.JsonObject, // Cast to Prisma.JsonObject
-      ...(method === 'PUT' && initialData?.status && { status: initialData.status })
+      operatingHours: operatingHoursPayload as Prisma.JsonObject,
     };
 
-    if (method === 'POST' && currentUserRole === UserRole.SUPER_ADMIN) {
+    if (method === 'PUT' && initialData?.status) {
+        payload.status = initialData.status; // Pass the original status (LocalVendorStatus)
+    }
+
+
+    if (method === 'POST' && currentUserRole === LocalUserRole.SUPER_ADMIN) {
         if (selectedOwner && selectedOwner.clerkId) {
             payload.ownerId = selectedOwner.clerkId; // This is the Clerk ID
         } else {
-            console.error("[VendorForm] handleSubmit: CRITICAL - selectedOwner is null or has no clerkId when creating a new vendor as SUPER_ADMIN. ValidateForm should have caught this.");
             setError("Kritična greška: Vlasnik nije ispravno odabran ili nema validan ID. Molimo osvežite i pokušajte ponovo.");
             setIsLoading(false);
             return;
         }
     }
-
-    console.log("[VendorForm] Submitting payload:", JSON.stringify(payload, null, 2));
 
     try {
       const response = await fetch(url, {
@@ -384,8 +365,6 @@ export default function VendorForm({ initialData, currentUserRole, allVendors = 
       });
 
       const responseText = await response.text();
-      console.log(`[VendorForm] API Response for ${method} ${url}: ${response.status}`, responseText);
-
 
       if (!response.ok) {
         let errorData = { message: `Neuspešno ${initialData ? 'ažuriranje' : 'kreiranje'} salona. Status: ${response.status}` };
@@ -397,20 +376,18 @@ export default function VendorForm({ initialData, currentUserRole, allVendors = 
         throw new Error(errorData.message || `Neuspešno ${initialData ? 'ažuriranje' : 'kreiranje'} salona.`);
       }
 
-      router.push(currentUserRole === UserRole.SUPER_ADMIN ? '/admin/vendors' : '/admin');
+      router.push(currentUserRole === LocalUserRole.SUPER_ADMIN ? '/admin/vendors' : '/admin');
       router.refresh();
 
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Došlo je do nepoznate greške.';
       setError(errorMessage);
-      console.error("[VendorForm] Greška pri slanju forme:", err);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const showOwnerSelection = currentUserRole === UserRole.SUPER_ADMIN && !initialData;
-  console.log("[VendorForm] Render - showOwnerSelection:", showOwnerSelection);
+  const showOwnerSelection = currentUserRole === LocalUserRole.SUPER_ADMIN && !initialData;
 
 
   return (
@@ -479,7 +456,7 @@ export default function VendorForm({ initialData, currentUserRole, allVendors = 
                         alt="profilna"
                         width={24}
                         height={24}
-                        className="w-6 h-6 rounded-full"
+                        className="w-6 h-6 rounded-full object-cover"
                     />
                   }
                   <span>{user.firstName || ''} {user.lastName || ''} ({user.email}) - <span className="text-xs opacity-70">{user.role}</span></span>
@@ -500,7 +477,7 @@ export default function VendorForm({ initialData, currentUserRole, allVendors = 
          <div className="form-control w-full">
             <label className="label"><span className="label-text text-base font-medium">Vlasnik Salona</span></label>
             <input type="text" value={`${initialData.owner.firstName || ''} ${initialData.owner.lastName || ''} (${initialData.owner.email})`} className="input input-bordered w-full" disabled />
-            {currentUserRole === UserRole.SUPER_ADMIN && <p className="text-xs text-base-content/70 mt-1">Vlasnik se ne može menjati nakon kreiranja salona putem ove forme.</p>}
+            {currentUserRole === LocalUserRole.SUPER_ADMIN && <p className="text-xs text-base-content/70 mt-1">Vlasnik se ne može menjati nakon kreiranja salona putem ove forme.</p>}
          </div>
       )}
 
@@ -607,7 +584,7 @@ export default function VendorForm({ initialData, currentUserRole, allVendors = 
         <button
             type="submit"
             className="btn btn-primary"
-            disabled={isLoading || (!initialData && currentUserRole === UserRole.SUPER_ADMIN && ownerSearchTerm.length > 0 && suggestedUsers.length > 0 && !selectedOwner)}
+            disabled={isLoading || (!initialData && currentUserRole === LocalUserRole.SUPER_ADMIN && ownerSearchTerm.length > 0 && suggestedUsers.length > 0 && !selectedOwner)}
         >
           {isLoading ? (
             <>

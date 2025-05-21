@@ -1,28 +1,12 @@
 import { getCurrentUser, AuthenticatedUser } from '@/lib/authUtils';
 import prisma from '@/lib/prisma';
-import VendorForm from '@/components/admin/vendors/VendorForm';
-import { Vendor, Prisma } from '@prisma/client'; 
-import { UserRole } from '@prisma/client'; 
+import VendorForm, { VendorFormInitialData } from '@/components/admin/vendors/VendorForm';
+import { Vendor as PrismaVendor, Prisma, $Enums as PrismaEnums } from '@prisma/client';
+import { UserRole as LocalUserRole, VendorStatus as LocalVendorStatus } from '@/lib/types/prisma-enums';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { ShieldAlert, Edit2 } from 'lucide-react'; 
+import { ShieldAlert, Edit2 } from 'lucide-react';
 import type { Metadata } from 'next';
-import { VendorStatus as LocalVendorStatus } from '@/lib/types/prisma-enums';
-
-
-// Tip koji VendorForm očekuje za initialData
-// owner.role treba da koristi LocalUserRole
-type VendorFormInitialDataForForm = Omit<Vendor, 'operatingHours'> & {
-    operatingHours?: Prisma.JsonValue | null;
-    owner?: { 
-        id: string;
-        clerkId: string;
-        email: string;
-        firstName?: string | null;
-        lastName?: string | null;
-        role: UserRole; // Koristi lokalni enum ovde
-    };
-};
 
 export async function generateMetadata({ params: paramsPromise }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const routeParams = await paramsPromise;
@@ -41,38 +25,42 @@ export async function generateMetadata({ params: paramsPromise }: { params: Prom
   };
 }
 
-type VendorWithPrismaOwnerRole = Omit<Vendor, 'operatingHours'> & {
+// Type for data fetched from DB (owner.role and status are Prisma enums)
+type VendorWithPrismaOwnerAndStatus = Omit<PrismaVendor, 'operatingHours' | 'status'> & {
     operatingHours?: Prisma.JsonValue | null;
+    status: PrismaEnums.VendorStatus; // Prisma enum
     owner: ({
         id: string;
         clerkId: string;
         email: string;
         firstName: string | null;
         lastName: string | null;
-        role: UserRole; // Prisma enum
+        role: PrismaEnums.UserRole; 
+        profileImageUrl: string | null; 
     }) | null;
 };
 
 
-async function getVendorWithOwnerById(vendorId: string): Promise<VendorWithPrismaOwnerRole | null> {
+async function getVendorWithOwnerById(vendorId: string): Promise<VendorWithPrismaOwnerAndStatus | null> {
   try {
     const vendor = await prisma.vendor.findUnique({
       where: { id: vendorId },
       include: {
-        owner: { 
+        owner: {
           select: {
             id: true,
             clerkId: true,
             email: true,
             firstName: true,
             lastName: true,
-            role: true, 
+            role: true,
+            profileImageUrl: true, 
           },
         },
       },
     });
-    
-    return vendor as VendorWithPrismaOwnerRole | null;
+
+    return vendor as VendorWithPrismaOwnerAndStatus | null;
   } catch (error) {
     console.error(`Greška pri dobavljanju salona sa ID ${vendorId}:`, error);
     return null;
@@ -82,17 +70,17 @@ async function getVendorWithOwnerById(vendorId: string): Promise<VendorWithPrism
 export default async function EditVendorPage(
   { params: paramsPromise }: { params: Promise<{ id: string }> }
 ) {
-  const routeParams = await paramsPromise; 
+  const routeParams = await paramsPromise;
   const { id: vendorId } = routeParams;
 
-  const user: AuthenticatedUser | null = await getCurrentUser(); 
+  const user: AuthenticatedUser | null = await getCurrentUser();
 
   if (!user) {
     redirect(`/sign-in?redirect_url=/admin/vendors/edit/${vendorId}`);
   }
 
-  const isSuperAdmin = user.role === UserRole.SUPER_ADMIN;
-  const isVendorOwner = user.role === UserRole.VENDOR_OWNER;
+  const isSuperAdmin = user.role === LocalUserRole.SUPER_ADMIN;
+  const isVendorOwner = user.role === LocalUserRole.VENDOR_OWNER;
 
   if (!isSuperAdmin && !isVendorOwner) {
     return (
@@ -146,23 +134,28 @@ export default async function EditVendorPage(
       </div>
     );
   }
-  
-  // Prepravka initialFormData da koristi LocalVendorStatus
-  const initialFormData: any = {
-      ...vendorToEdit,
-      status: vendorToEdit.status as unknown as LocalVendorStatus,
+
+  // Construct initialFormData explicitly to match VendorFormInitialData TODO: replace with $Enums from prisma
+  // and use Prisma enums directly in the form
+  const initialFormData: VendorFormInitialData = {
+      id: vendorToEdit.id,
+      name: vendorToEdit.name,
+      description: vendorToEdit.description ?? null,
+      address: vendorToEdit.address ?? null,
+      phoneNumber: vendorToEdit.phoneNumber ?? null,
+      createdAt: vendorToEdit.createdAt,
+      updatedAt: vendorToEdit.updatedAt,
+      operatingHours: vendorToEdit.operatingHours,
+      status: vendorToEdit.status as LocalVendorStatus, // Cast Prisma enum to local enum
       owner: vendorToEdit.owner ? {
           id: vendorToEdit.owner.id,
           clerkId: vendorToEdit.owner.clerkId,
           email: vendorToEdit.owner.email,
           firstName: vendorToEdit.owner.firstName,
           lastName: vendorToEdit.owner.lastName,
-          role: vendorToEdit.owner.role as UserRole, 
+          role: vendorToEdit.owner.role as LocalUserRole, // Cast Prisma enum to local enum
+          profileImageUrl: vendorToEdit.owner.profileImageUrl ?? undefined,
       } : undefined,
-      description: vendorToEdit.description ?? '',
-      address: vendorToEdit.address ?? '',
-      phoneNumber: vendorToEdit.phoneNumber ?? '',
-      operatingHours: vendorToEdit.operatingHours, 
   };
 
   return (
@@ -178,7 +171,7 @@ export default async function EditVendorPage(
             </p>
         </div>
       </div>
-      <VendorForm initialData={initialFormData} currentUserRole={user.role} />
+      <VendorForm initialData={initialFormData} currentUserRole={user.role as LocalUserRole} />
     </div>
   );
 }

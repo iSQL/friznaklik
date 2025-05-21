@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import {
   getCurrentUser,
@@ -9,7 +9,7 @@ import { Prisma } from '@prisma/client';
 import { UserRole, AppointmentStatus } from '@/lib/types/prisma-enums';
 import { subDays } from 'date-fns';
 
-async function POST_handler(req: NextRequest) {
+async function POST_handler() {
   try {
     const user: AuthenticatedUser | null = await getCurrentUser();
     if (!user) {
