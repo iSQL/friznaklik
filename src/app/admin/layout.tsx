@@ -3,7 +3,7 @@ import Link from 'next/link';
 import AdminShell from '@/components/admin/AdminShell';
 import { ShieldAlert, LogIn } from 'lucide-react';
 import { getCurrentUser, AuthenticatedUser } from '@/lib/authUtils'; 
-import { UserRole } from '@prisma/client';
+import { UserRole } from '@/lib/types/prisma-enums';
 
 export default async function AdminLayout({children, }: { children: React.ReactNode;}) {
   const user: AuthenticatedUser | null = await getCurrentUser();

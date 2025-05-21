@@ -1,5 +1,5 @@
 import { getCurrentUser } from '@/lib/authUtils';
-import { UserRole } from '@prisma/client';
+import { UserRole } from '@/lib/types/prisma-enums';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import AdminAppointmentsClient from '@/components/admin/appointments/AdminAppointmentsClient'; 
