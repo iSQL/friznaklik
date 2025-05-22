@@ -5,27 +5,55 @@ trigger:
   none 
 
 variables:
-  VM_PROJECT_PATH: '/var/www/friznaklik' 
+  homeServerProjectPath: '/var/www/friznaklik' 
   APP_NAME: 'friznaklik-app' 
+  sourceDir: '$(Build.SourcesDirectory)'
 
 pool:
   name: 'Default'
 
 stages:
 - stage: DeployToVM
-  displayName: 'Deploy Application to Ubuntu VM'
+  displayName: 'Deploy Dev Application to Ubuntu VM'
   jobs:
   - job: Deploy
-    displayName: 'Deploy using Docker Compose'
+    displayName: 'Build and Deploy Dev App'
     steps:
     - checkout: self
-      path: s 
+      clean: true
+    - script: |
+        npm install -g pnpm
+      displayName: 'Install pnpm'
+      condition: succeeded()
+
+    - script: |
+        pnpm install --frozen-lockfile
+      displayName: 'Install Dependencies (pnpm install)'
+      workingDirectory: '$(sourceDir)'
+    - script: |
+        pnpm exec prisma generate
+      displayName: 'Prisma Generate Client'
+      workingDirectory: '$(sourceDir)'
+      env:
+        DATABASE_URL: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$localhost:$5432/$(POSTGRES_DB)?schema=public"
+
+    - script: |
+        echo "Running Next.js build (optional for pnpm dev, good for checks)..."
+        pnpm build
+      displayName: 'Build Next.js Application (pnpm build)'
+      workingDirectory: '$(sourceDir)'
+      env:
+        NODE_ENV: 'development'
+        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: $(NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY)
+        NEXT_PUBLIC_CLERK_DOMAIN: $(NEXT_PUBLIC_CLERK_DOMAIN)
+        NEXT_PUBLIC_SITE_URL: $(NEXT_PUBLIC_SITE_URL)
+  
     - task: Bash@3
       displayName: 'Create .env file on VM Agent'
       inputs:
         targetType: 'inline'
         script: |
-          ENV_FILE_PATH="$(VM_PROJECT_PATH)/.env"
+          ENV_FILE_PATH="$(Agent.BuildDirectory)/s/.env"
           echo "Creating .env file at ${ENV_FILE_PATH}"
           # Ensure the file is empty before writing
           > "${ENV_FILE_PATH}" 
@@ -52,63 +80,59 @@ stages:
           echo "Contents (excluding secrets for security):" 
           grep -ivE 'SECRET|PASSWORD|KEY' "${ENV_FILE_PATH}" || echo "No non-secret lines found."
         failOnStderr: false 
-    - task: Bash@3
-      displayName: 'Install dependencies'
+
+    - task: CopyFiles@2
+      displayName: 'Copy Project Files to Home Server Deployment Path'
       inputs:
-        targetType: 'inline'
-        script: 'pnpm install'
+        SourceFolder: '$(sourceDir)'
+        Contents: |
+          **
+          !.git/**
+          !node_modules/** # Typically re-installed or already present from build if not pruned
+          !.env # Don't copy the agent's .env if it exists, we made a specific one
+          !dist-scripts/**
+        TargetFolder: '$(homeServerProjectPath)'
+        CleanTargetFolder: false # Set to true if you want a clean deploy each time
+        OverWrite: true
 
     - script: |
-        cd $(VM_PROJECT_PATH)
-        pnpm exec prisma generate
-      displayName: 'Prisma Generate Client'
+        echo "Ensuring dependencies are installed in $(homeServerProjectPath)..."
+        pnpm install --frozen-lockfile # Installs all dependencies including dev for 'pnpm dev'
+      displayName: 'Install All Dependencies on Home Server (pnpm install)'
+      workingDirectory: '$(homeServerProjectPath)'
 
+    # Run Prisma migrations for the dev database (if applicable)
     - script: |
-        cd $(VM_PROJECT_PATH)
-        echo "Building Next.js application with NODE_ENV=${NODE_ENV}..."
-        pnpm dev
-      displayName: 'Build Next.js Application (pnpm build)'
+        echo "Running Prisma migrations for dev database..."
+        pnpm exec prisma migrate dev --name dev_deployment_update 
+      displayName: 'Run Prisma Migrations (dev)'
+      workingDirectory: '$(homeServerProjectPath)'
       env:
-        NODE_ENV: 'development'
-    - task: Bash@3
-      displayName: 'Prisma Generate Client on VM (Post-Install)'
-      inputs:
-        targetType: 'inline'
-        script: |
-          echo "Running Prisma Generate in deployment directory after fresh install..."
-          npx prisma generate
-          echo "Prisma Client generated for deployment environment."
-        failOnStderr: false
-        workingDirectory: '$(VM_PROJECT_PATH)'
-         
-    - task: Bash@3
-      displayName: 'Run Prisma Database Migrations on VM'
-      inputs:
-        targetType: 'inline'
-        script: |
-          echo "Running Prisma migrations using DATABASE_URL from .env file..."
-          npx prisma migrate dev
-          echo "Prisma migrations applied."
-        failOnStderr: true
-        workingDirectory: '$(VM_PROJECT_PATH)'
+        DATABASE_URL: "postgresql://$(DEV_POSTGRES_USER):$(DEV_POSTGRES_PASSWORD)@$(DEV_POSTGRES_HOST):$(DEV_POSTGRES_PORT)/$(DEV_POSTGRES_DB)?schema=public"
+      condition: succeeded() # Or a custom condition if migrations aren't always needed
 
-    - task: Bash@3
-      displayName: 'Start/Restart Application with pm2'
-      inputs:
-        targetType: 'inline'
-        script: |
-          echo "Managing application with pm2: $(APP_NAME)"
-          
-          pm2 describe $(APP_NAME) > /dev/null 2>&1
-          if [ $? -eq 0 ]; then
-            echo "Application '$(APP_NAME)' is already running. Restarting..."
-            pm2 restart $(APP_NAME) --update-env
-          else
-            echo "Application '$(APP_NAME)' not found by pm2. Starting new process..."
-            pm2 start pnpm --name "$(APP_NAME)" --interpreter none -- start
-          fi
-          pm2 save
-          echo "Application $(APP_NAME) started/restarted successfully."
-          pm2 list
-        failOnStderr: false
-        workingDirectory: '$(VM_PROJECT_PATH)'
+    # Start/Restart the dev application with PM2
+    - script: |
+        echo "Managing dev application with PM2: $(appName)"
+        # Navigate to project directory
+        cd $(homeServerProjectPath) || exit 1
+
+        # Stop if already running to ensure it picks up new env vars from .env.development.local
+        pm2 describe $(appName) > /dev/null 2>&1
+        if [ $? -eq 0 ]; then
+          echo "Application '$(appName)' is already running. Restarting..."
+          # PM2 might not automatically pick up .env.development.local for `pnpm dev`
+          # `next dev` typically loads .env.development.local automatically.
+          # We specify the port explicitly for `pnpm dev`
+          pm2 restart $(appName) -- pnpm dev -p $(devPort)
+        else
+          echo "Application '$(appName)' not found by PM2. Starting new process..."
+          # Start with `pnpm dev -p <port>`
+          # The --interpreter none might not be needed if PM2 correctly handles pnpm scripts
+          pm2 start pnpm --name "$(appName)" -- dev -p $(devPort)
+        fi
+        pm2 save # Save the PM2 process list
+        echo "Dev application $(appName) started/restarted successfully on port $(devPort)."
+        pm2 list
+      displayName: 'Start/Restart Dev App with PM2'
+      workingDirectory: '$(homeServerProjectPath)'
