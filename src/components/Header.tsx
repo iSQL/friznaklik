@@ -4,20 +4,27 @@ import { UserButton, useAuth } from "@clerk/nextjs";
 import Link from "next/link";
 import Image from 'next/image';
 import {
-    Menu as MenuIcon, LogIn, UserPlus, LayoutDashboard, 
-    CalendarPlus, X, ShieldCheck, Store, ChevronDown, Building2, Loader2
+    Menu as MenuIcon, LogIn, UserPlus, LayoutDashboard,
+    CalendarPlus, X, ShieldCheck, Store, ChevronDown, Building2, Loader2,
+    Sun, // Added for light theme icon
+    Moon // Added for dark theme icon
 } from 'lucide-react';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react'; // Added useCallback
 import { usePathname } from 'next/navigation';
-import type { AuthenticatedUser } from '@/lib/authUtils'; 
-import { UserRole } from '@/lib/types/prisma-enums'; 
+import type { AuthenticatedUser } from '@/lib/authUtils';
+import { UserRole } from '@/lib/types/prisma-enums';
 
 import { useBookingStore } from '@/store/bookingStore';
+import Cookies from 'js-cookie'; // For cookie handling
 
 interface HeaderProps {
   user: AuthenticatedUser | null;
   isAdmin: boolean;
 }
+
+const THEME_COOKIE_NAME = 'friznaklik-theme';
+const LIGHT_THEME = 'light'; // Your default light theme
+const DARK_THEME = 'dark';
 
 export default function Header({ user, isAdmin }: HeaderProps) {
   const { isLoaded } = useAuth();
@@ -29,15 +36,43 @@ export default function Header({ user, isAdmin }: HeaderProps) {
   const {
     selectedVendorId,
     selectVendor: setGlobalVendor,
-    allVendors: storeAllVendors, 
-    isLoadingAllVendors: storeIsLoadingAllVendors, 
-    fetchAndSetAllVendors 
+    allVendors: storeAllVendors,
+    isLoadingAllVendors: storeIsLoadingAllVendors,
+    fetchAndSetAllVendors
   } = useBookingStore();
 
   const [isDesktopVendorDropdownOpen, setIsDesktopVendorDropdownOpen] = useState(false);
   const desktopVendorDropdownRef = useRef<HTMLDivElement>(null);
 
   const [isMobileVendorListOpen, setIsMobileVendorListOpen] = useState(false);
+
+  // Theme state
+  const [currentTheme, setCurrentTheme] = useState<string>(LIGHT_THEME);
+
+  // Function to apply theme to HTML element
+  const applyTheme = useCallback((themeToApply: string) => {
+    document.documentElement.setAttribute('data-theme', themeToApply);
+    setCurrentTheme(themeToApply);
+    Cookies.set(THEME_COOKIE_NAME, themeToApply, { expires: 365, path: '/' });
+  }, []);
+
+  // Effect to load and apply theme on initial mount (client-side only)
+  useEffect(() => {
+    const savedTheme = Cookies.get(THEME_COOKIE_NAME);
+    if (savedTheme && (savedTheme === LIGHT_THEME || savedTheme === DARK_THEME)) {
+      applyTheme(savedTheme);
+    } else {
+      // Fallback to system preference if no cookie
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      applyTheme(prefersDark ? DARK_THEME : LIGHT_THEME);
+    }
+  }, [applyTheme]);
+
+  const toggleTheme = () => {
+    const newTheme = currentTheme === LIGHT_THEME ? DARK_THEME : LIGHT_THEME;
+    applyTheme(newTheme);
+  };
+
 
   useEffect(() => {
     const showSelector = !pathname.startsWith('/admin') && !pathname.startsWith('/sign-in') && !pathname.startsWith('/sign-up');
@@ -48,7 +83,7 @@ export default function Header({ user, isAdmin }: HeaderProps) {
 
   useEffect(() => {
     if (selectedVendorId && storeAllVendors.length > 0 && !storeAllVendors.some(v => v.id === selectedVendorId)) {
-        setGlobalVendor(null); 
+        setGlobalVendor(null);
     }
   }, [selectedVendorId, storeAllVendors, setGlobalVendor]);
 
@@ -80,15 +115,13 @@ export default function Header({ user, isAdmin }: HeaderProps) {
 
   const navLinks = [
     { href: "/vendors", label: "Saloni", icon: Building2, disabled: false },
-    //{ href: "/services", label: "Usluge", icon: ListOrdered, disabled: false },
     { href: "/book", label: "Zakazivanje", icon: CalendarPlus, disabled: false },
-    //{ href: "/chat", label: "Pomoć", icon: MessageSquare, disabled: false }, // Onemogućen link
   ];
 
   const userNavLinks = [];
   if (user) {
     userNavLinks.push({ href: "/dashboard", label: "Kontrolna Tabla", icon: LayoutDashboard, disabled: false });
-    if (user.role === UserRole.WORKER) { 
+    if (user.role === UserRole.WORKER) {
     userNavLinks.push({ href: "/dashboard/my-schedule", label: "Moj Raspored", icon: LayoutDashboard, disabled: false });
     }
     if (isAdmin) {
@@ -109,7 +142,7 @@ export default function Header({ user, isAdmin }: HeaderProps) {
     e.stopPropagation();
     setIsDesktopVendorDropdownOpen(prev => !prev);
   };
-  
+
   const toggleMobileVendorList = (e: React.MouseEvent) => {
     e.stopPropagation();
     setIsMobileVendorListOpen(prev => !prev);
@@ -120,7 +153,7 @@ export default function Header({ user, isAdmin }: HeaderProps) {
       <div className="navbar bg-base-200 text-base-content shadow-md sticky top-0 z-50 print:hidden">
         <div className="navbar-start"><div className="btn btn-ghost px-2 flex items-center"><div className="h-8 w-32 bg-base-300 rounded animate-pulse"></div></div></div>
         <div className="navbar-center hidden lg:flex"><ul className="menu menu-horizontal px-1 space-x-1">{[1, 2, 3, 4].map(i => <li key={i} className="h-9 w-24 bg-base-300 rounded animate-pulse"></li>)}</ul></div>
-        <div className="navbar-end"><div className="h-9 w-28 bg-base-300 rounded animate-pulse"></div></div>
+        <div className="navbar-end"><div className="h-9 w-28 bg-base-300 rounded animate-pulse mr-2"></div><div className="h-8 w-8 bg-base-300 rounded-full"></div></div>
       </div>
     );
   }
@@ -130,12 +163,13 @@ export default function Header({ user, isAdmin }: HeaderProps) {
   return (
     <nav className="navbar bg-base-200 text-base-content shadow-md sticky top-0 z-50 print:hidden">
       <div className="navbar-start">
+        {/* Mobile Menu Toggle */}
         <div className={`dropdown lg:hidden ${isMobileMenuOpen ? "dropdown-open" : ""}`} ref={mobileDropdownRef}>
           <button
             tabIndex={0}
             aria-label="Otvori meni"
             role="button"
-            className="btn btn-ghost"
+            className="btn btn-ghost lg:hidden" // Ensure it's hidden on large screens
             onClick={toggleMobileMenu}
           >
             {isMobileMenuOpen ? <X className="h-5 w-5" /> : <MenuIcon className="h-5 w-5" />}
@@ -144,6 +178,19 @@ export default function Header({ user, isAdmin }: HeaderProps) {
             tabIndex={0}
             className="menu menu-sm dropdown-content mt-3 z-[51] p-2 shadow-lg bg-base-100 text-base-content rounded-box w-64"
           >
+            {/* Mobile - Theme Toggle Button */}
+            <li>
+                <button
+                    onClick={toggleTheme}
+                    className="btn btn-ghost btn-sm w-full justify-start"
+                    aria-label={currentTheme === LIGHT_THEME ? "Aktiviraj tamnu temu" : "Aktiviraj svetlu temu"}
+                >
+                    {currentTheme === LIGHT_THEME ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+                    <span className="ml-2">{currentTheme === LIGHT_THEME ? "Tamna tema" : "Svetla tema"}</span>
+                </button>
+            </li>
+            <div className="divider my-1"></div>
+
             {showVendorSelector && (
               <>
                 <li>
@@ -180,13 +227,13 @@ export default function Header({ user, isAdmin }: HeaderProps) {
             )}
             {navLinks.map((link) => (
               <li key={link.href}>
-                <Link 
-                  href={link.disabled ? '#' : link.href} 
+                <Link
+                  href={link.disabled ? '#' : link.href}
                   onClick={(e) => {
                     if (link.disabled) e.preventDefault();
                     else {setIsMobileMenuOpen(false); setIsMobileVendorListOpen(false);}
-                  }} 
-                  className={`flex items-center gap-2 p-2 rounded-md 
+                  }}
+                  className={`flex items-center gap-2 p-2 rounded-md
                               ${pathname === link.href && !link.disabled ? 'bg-primary text-primary-content' : 'hover:bg-base-300'}
                               ${link.disabled ? 'opacity-50 cursor-not-allowed' : ''}
                             `}
@@ -200,13 +247,13 @@ export default function Header({ user, isAdmin }: HeaderProps) {
             ))}
             {userNavLinks.map((link) => (
               <li key={link.href}>
-                <Link 
-                  href={link.disabled ? '#' : link.href} 
+                <Link
+                  href={link.disabled ? '#' : link.href}
                   onClick={(e) => {
                     if (link.disabled) e.preventDefault();
                     else {setIsMobileMenuOpen(false); setIsMobileVendorListOpen(false);}
-                  }} 
-                  className={`flex items-center gap-2 p-2 rounded-md 
+                  }}
+                  className={`flex items-center gap-2 p-2 rounded-md
                               ${pathname.startsWith(link.href) && link.href !== '/' && !link.disabled ? 'bg-primary text-primary-content' : 'hover:bg-base-300'}
                               ${link.disabled ? 'opacity-50 cursor-not-allowed' : ''}
                             `}
@@ -229,12 +276,14 @@ export default function Header({ user, isAdmin }: HeaderProps) {
             )}
           </ul>
         </div>
+        {/* Logo */}
         <Link href="/" className="btn btn-ghost text-xl px-1 sm:px-2 flex items-center" onClick={() => {setIsMobileMenuOpen(false); setIsMobileVendorListOpen(false);}}>
           <Image src="/logo-wide.png" alt="FrizNaKlik Logo" width={125} height={50} priority style={{width: 'auto', height: '50px'}} />
         </Link>
       </div>
 
-      <div className="navbar-center hidden lg:flex">Odaberi salon:
+      {/* Desktop Menu */}
+      <div className="navbar-center hidden lg:flex">
         {showVendorSelector && (
             <div className={`dropdown dropdown-end mr-2 ${isDesktopVendorDropdownOpen ? "dropdown-open" : ""}`} ref={desktopVendorDropdownRef}>
             <button
@@ -242,6 +291,7 @@ export default function Header({ user, isAdmin }: HeaderProps) {
                 role="button"
                 className="btn btn-ghost btn-sm"
                 onClick={toggleDesktopVendorDropdown}
+                aria-label="Izaberi salon"
             >
                 {storeIsLoadingAllVendors ? <Loader2 className="animate-spin h-4 w-4"/> : <Store size={16}/>}
                 <span className="ml-1 hidden xl:inline truncate max-w-[120px]">{selectedVendorName}</span>
@@ -273,9 +323,9 @@ export default function Header({ user, isAdmin }: HeaderProps) {
         <ul className="menu menu-horizontal px-1 space-x-1">
           {navLinks.map((link) => (
             <li key={link.href}>
-              <Link 
-                href={link.disabled ? '#' : link.href} 
-                className={`btn btn-ghost font-medium 
+              <Link
+                href={link.disabled ? '#' : link.href}
+                className={`btn btn-ghost font-medium
                             ${pathname === link.href && !link.disabled ? 'btn-active text-primary' : ''}
                             ${link.disabled ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}
                           `}
@@ -291,14 +341,23 @@ export default function Header({ user, isAdmin }: HeaderProps) {
       </div>
 
       <div className="navbar-end">
+         {/* Desktop Theme Toggle Button */}
+         <button
+            onClick={toggleTheme}
+            className="btn btn-ghost btn-circle hidden lg:inline-flex" // Hidden on small screens, visible on large
+            aria-label={currentTheme === LIGHT_THEME ? "Aktiviraj tamnu temu" : "Aktiviraj svetlu temu"}
+          >
+            {currentTheme === LIGHT_THEME ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
+          </button>
+
         {user ? (
           <>
             <ul className="menu menu-horizontal px-1 space-x-1 hidden lg:flex">
               {userNavLinks.map((link) => (
                 <li key={link.href}>
-                  <Link 
-                    href={link.disabled ? '#' : link.href} 
-                    className={`btn btn-ghost font-medium 
+                  <Link
+                    href={link.disabled ? '#' : link.href}
+                    className={`btn btn-ghost font-medium
                                 ${pathname.startsWith(link.href) && link.href !== '/' && !link.disabled ? 'btn-active text-primary' : ''}
                                 ${link.disabled ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}
                               `}
@@ -311,7 +370,7 @@ export default function Header({ user, isAdmin }: HeaderProps) {
                 </li>
               ))}
             </ul>
-            <div className="ml-2 pl-1 border-l border-base-300/70 hidden lg:flex">
+            <div className="ml-2 pl-1 border-l border-base-300/70 hidden lg:flex items-center"> {/* Added items-center */}
               <UserButton
                 appearance={{ elements: { userButtonAvatarBox: "w-9 h-9", userButtonPopoverCard: "bg-base-100 border border-base-300 shadow-lg"} }}
               />

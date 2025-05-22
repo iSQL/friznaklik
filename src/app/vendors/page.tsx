@@ -36,8 +36,8 @@ export default function VendorsPage() {
         <div className="inline-block p-3 bg-primary/10 rounded-full mb-4">
           <Building2 className="h-12 w-12 text-primary" />
         </div>
-        <h1 className="text-4xl font-bold text-neutral-content mb-2">Pronađite Savršen Salon</h1>
-        <p className="text-lg text-neutral-content/80">
+        <h1 className="text-4xl font-bold text-base-content mb-2">Pronađite Savršen Salon</h1>
+        <p className="text-lg text-base-content/80">
           Pretražite našu mrežu salona i filtrirajte po uslugama koje Vas interesuju.
         </p>
       </header>

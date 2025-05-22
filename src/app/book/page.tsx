@@ -367,8 +367,8 @@ function BookingForm() {
   return (
     <div className="container mx-auto p-4 sm:p-6 lg:p-8">
       <div className="text-center mb-10">
-        <h1 className="text-3xl sm:text-4xl font-bold text-neutral-content">Zakažite Vaš Termin</h1>
-        <p className="text-lg text-neutral-content/80 mt-2">Brzo i lako do savršene frizure.</p>
+        <h1 className="text-3xl sm:text-4xl font-bold text-base-content">Zakažite Vaš Termin</h1>
+        <p className="text-lg text-base-content/80 mt-2">Brzo i lako do savršene frizure.</p>
       </div>
 
       <ul className="steps w-full mb-10">
@@ -495,7 +495,7 @@ function BookingForm() {
           </h2>
           <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
             <div className="flex-1 lg:max-w-xs mx-auto lg:mx-0">
-              <h3 className="text-lg font-medium mb-3 text-neutral-content text-center lg:text-left">Datum</h3>
+              <h3 className="text-lg font-medium mb-3 text-base-content text-center lg:text-left">Datum</h3>
               <div className="p-1 border rounded-lg inline-block bg-base-100 shadow-sm">
                 <DatePicker
                     selected={selectedDate}
@@ -511,7 +511,7 @@ function BookingForm() {
             </div>
             {selectedDate && !isToday(selectedDate) && ( // Only show slots if a valid future date is selected
               <div className="flex-1 min-w-0">
-                <h3 className="text-lg font-medium mb-3 text-neutral-content">Dostupni Termini za {format(selectedDate, "dd. MMMM yy'.'", { locale: srLatn })}</h3>
+                <h3 className="text-lg font-medium mb-3 text-base-content">Dostupni Termini za {format(selectedDate, "dd. MMMM yy'.'", { locale: srLatn })}</h3>
                 {isLoadingSlots ? ( <div className="flex justify-center items-center h-24"> <Loader2 className="h-10 w-10 animate-spin text-primary" /> </div>
                 ) : slotsError ? ( <div role="alert" className="alert alert-warning text-sm p-3"> <AlertTriangle className="h-5 w-5" /> <span>{slotsError}</span> </div>
                 ) : availableSlotsData.length === 0 ? ( <p className="text-base-content/70 mt-2 p-4 bg-base-100 rounded-md">Nema dostupnih termina.</p>
