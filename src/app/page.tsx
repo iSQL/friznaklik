@@ -51,13 +51,13 @@ export default function Home() {
           </div>
         </Link>
 
-        <Link href="/chat" className="card bg-base-100 shadow-md hover:shadow-xl transition-shadow">
+        <div className="card bg-base-100 shadow-md flex-1 opacity-50 cursor-not-allowed" title="Uskoro dostupno"> 
           <div className="card-body items-center text-center">
             <MessageSquare className="h-12 w-12 text-success mb-2" />
             <h2 className="card-title">AI Asistent</h2>
-            <p>Postavite pitanje ili zatražite pomoć.</p>
+            <p>Postavite pitanje ili zakažite termin.</p>
           </div>
-        </Link>
+        </div>
 
         <SignedIn>
           <Link href="/dashboard" className="card bg-base-100 shadow-md hover:shadow-xl transition-shadow">

@@ -1,13 +1,14 @@
 import { NextPage } from 'next';
-import Head from 'next/head';
+
+export const metadata = {
+  title: 'Politika privatnosti - FrizNaKlik',
+  description: 'Politika privatnosti aplikacije FrizNaKlik.',
+};
 
 const PolitikaPrivatnostiPage: NextPage = () => {
   return (
     <>
-      <Head>
-        <title>Politika privatnosti - FrizNaKlik</title>
-        <meta name="description" content="Politika privatnosti aplikacije FrizNaKlik." />
-      </Head>
+
       <main className="container mx-auto px-4 py-8">
         <h1 className="text-3xl font-bold mb-6">Politika privatnosti aplikacije &quot;FrizNaKlik&quot;</h1>
 

@@ -1,14 +1,15 @@
 import { NextPage } from 'next';
-import Head from 'next/head';
 import Link from 'next/link';
+
+export const metadata = {
+  title: 'Uslovi korišćenja - FrizNaKlik',
+  description: 'Uslovi korišćenja - FrizNaKlik.',
+};
 
 const UsloviKoriscenjaPage: NextPage = () => {
   return (
     <>
-      <Head>
-        <title>Uslovi korišćenja - FrizNaKlik</title>
-        <meta name="description" content="Uslovi korišćenja aplikacije FrizNaKlik." />
-      </Head>
+
       <main className="container mx-auto px-4 py-8">
         <h1 className="text-3xl font-bold mb-6">Uslovi korišćenja aplikacije &quot;FrizNaKlik&quot;</h1>
 
