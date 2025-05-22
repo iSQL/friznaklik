@@ -25,7 +25,7 @@ stages:
       inputs:
         targetType: 'inline'
         script: |
-          ENV_FILE_PATH="$(Agent.BuildDirectory)/s/.env"
+          ENV_FILE_PATH="$(VM_PROJECT_PATH)/.env"
           echo "Creating .env file at ${ENV_FILE_PATH}"
           # Ensure the file is empty before writing
           > "${ENV_FILE_PATH}" 
@@ -59,33 +59,17 @@ stages:
         script: 'pnpm install'
 
     - script: |
-        cd $(Build.SourcesDirectory)
+        cd $(VM_PROJECT_PATH)
         pnpm exec prisma generate
       displayName: 'Prisma Generate Client'
 
     - script: |
-        cd $(Build.SourcesDirectory)
+        cd $(VM_PROJECT_PATH)
         echo "Building Next.js application with NODE_ENV=${NODE_ENV}..."
-        pnpm build
+        pnpm dev
       displayName: 'Build Next.js Application (pnpm build)'
       env:
         NODE_ENV: 'development'
-    - task: CopyFiles@2
-      displayName: 'Prepare Artifact: Copy Files to Staging Directory'
-      inputs:
-        SourceFolder: '$(Build.SourcesDirectory)'
-        Contents: |
-          .next/**
-          public/**
-          package.json
-          pnpm-lock.yaml
-          next.config.ts
-          .env
-          prisma/**
-        TargetFolder: '$(VM_PROJECT_PATH)'
-        CleanTargetFolder: true
-        OverWrite: true
-
     - task: Bash@3
       displayName: 'Prisma Generate Client on VM (Post-Install)'
       inputs:
