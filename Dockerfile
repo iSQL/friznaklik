@@ -11,8 +11,8 @@ RUN npm install -g pnpm
 # This stage will fetch and install all dependencies, including devDependencies like Prisma CLI.
 FROM base AS deps
 WORKDIR /app
-COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
+COPY package.json ./
+RUN pnpm install
 
 # ---- Builder Stage ----
 # This stage builds the application. It will use dependencies from the 'deps' stage.
@@ -64,7 +64,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 # Copy the Prisma schema. The Prisma client needs to know where to find the schema file at runtime.
 # The generated client code itself should be part of the .next/standalone/node_modules.
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
-
+COPY --from=builder --chown=nextjs:nodejs /app/dist-scripts ./dist-scripts
 # Switch to the non-root user
 USER nextjs
 

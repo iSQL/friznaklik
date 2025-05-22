@@ -11,9 +11,9 @@ $FullImageNameLatest = "$DockerHubUsername/$ImageName`:latest"
 
 # Build Arguments (Set these values as needed)
 # For sensitive keys, consider using environment variables or prompting the user
-$Env:NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY_BUILD_ARG = "pk_test_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx" # Replace with your actual key
-$Env:NEXT_PUBLIC_CLERK_DOMAIN_BUILD_ARG = "your-instance-name.clerk.accounts.dev"      # Replace with your actual domain
-$Env:NEXT_PUBLIC_SITE_URL_BUILD_ARG = "http://localhost:3000"                     # Replace with your actual site URL for the build if necessary
+$Env:NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY_BUILD_ARG = "pk_live_Y2xlcmsuZnJpem5ha2xpay5jb20k"
+$Env:NEXT_PUBLIC_CLERK_DOMAIN_BUILD_ARG = "friznaklik.com"
+$Env:NEXT_PUBLIC_SITE_URL_BUILD_ARG = "https://friznaklik.com"
 
 # --- Script Start ---
 Write-Host "Starting Docker image build and push process..."
@@ -32,12 +32,14 @@ Write-Host "-----------------------------------------------"
 
 # 2. Build the Docker Image
 Write-Host "Building Docker image: $FullImageNameWithTimestamp (and tagging as latest)..."
-$BuildArgs = "--build-arg NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=$($Env:NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY_BUILD_ARG) " +
-             "--build-arg NEXT_PUBLIC_CLERK_DOMAIN=$($Env:NEXT_PUBLIC_CLERK_DOMAIN_BUILD_ARG) " +
-             "--build-arg NEXT_PUBLIC_SITE_URL=$($Env:NEXT_PUBLIC_SITE_URL_BUILD_ARG)"
+$BuildArgsArray = @(
+    "--build-arg", "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=$($Env:NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY_BUILD_ARG)",
+    "--build-arg", "NEXT_PUBLIC_CLERK_DOMAIN=$($Env:NEXT_PUBLIC_CLERK_DOMAIN_BUILD_ARG)",
+    "--build-arg", "NEXT_PUBLIC_SITE_URL=$($Env:NEXT_PUBLIC_SITE_URL_BUILD_ARG)"
+)
 
 # The -t flag can be used multiple times to apply multiple tags at build time.
-docker build -t $FullImageNameWithTimestamp -t $FullImageNameLatest -f $DockerfilePath $BuildArgs $BuildContextPath
+docker build -t $FullImageNameWithTimestamp -t $FullImageNameLatest -f "$DockerfilePath" $BuildArgsArray "$BuildContextPath"
 
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Docker build failed."
