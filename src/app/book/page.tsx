@@ -316,11 +316,9 @@ function BookingForm() {
        `Radnik (ID: ...${selectedWorkerForBookingId.slice(-4)})`)
     : 'Bilo koji dostupan / Automatski dodeljen';
 
-  const isWeekday = (date: Date) => getDay(date) !== 0 && getDay(date) !== 6;
   const getDayClassName = (date: Date): string => {
     // Disable today and past dates
     if (isBefore(date, startOfTomorrow()) && !isSameDay(date, startOfTomorrow())) return "react-datepicker__day--past react-datepicker__day--disabled";
-    if (!isWeekday(date)) return "react-datepicker__day--weekend react-datepicker__day--disabled"; // Keep weekend disabling
     return "";
   };
 
@@ -504,7 +502,6 @@ function BookingForm() {
                     onChange={handleDateSelect}
                     dateFormat="dd.MM.yyyy"
                     minDate={startOfTomorrow()} // Set minDate to tomorrow
-                    filterDate={isWeekday}
                     inline
                     locale="sr-Latn"
                     calendarClassName="bg-base-100"
@@ -630,13 +627,12 @@ function BookingForm() {
         .react-datepicker__day--selected:hover {
             background-color: hsl(var(--pf, var(--p))) !important;
         }
-        .react-datepicker__day:not(.react-datepicker__day--selected):not(.react-datepicker__day--disabled):not(.react-datepicker__day--past):not(.react-datepicker__day--weekend):hover {
+        .react-datepicker__day:not(.react-datepicker__day--selected):not(.react-datepicker__day--disabled):not(.react-datepicker__day--past):hover {
           background-color: hsl(var(--p)/0.1);
           border-radius: var(--rounded-btn, 0.5rem);
         }
         .react-datepicker__day--disabled, /* This will cover today if minDate is tomorrow */
-        .react-datepicker__day--past,
-        .react-datepicker__day--weekend:not(.react-datepicker__day--selected) {
+        .react-datepicker__day--past:not(.react-datepicker__day--selected) {
           color: hsl(var(--bc) / 0.3) !important;
           background-color: hsl(var(--b2) / 0.5) !important;
           cursor: not-allowed !important;
@@ -644,8 +640,7 @@ function BookingForm() {
           opacity: 0.5;
         }
          .react-datepicker__day--disabled:hover,
-        .react-datepicker__day--past:hover,
-        .react-datepicker__day--weekend:not(.react-datepicker__day--selected):hover {
+        .react-datepicker__day--past:hover(.react-datepicker__day--selected):hover {
             background-color: hsl(var(--b2) / 0.6) !important;
         }
         .react-datepicker__navigation {

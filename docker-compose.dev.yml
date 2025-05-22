@@ -26,6 +26,7 @@ services:
       RESEND_API_KEY: ${RESEND_API_KEY}
       RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL}
       NODE_ENV: development
+      TZ: "Europe/Belgrade"
     volumes:
       [] 
 
