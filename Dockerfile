@@ -1,7 +1,4 @@
-# Dockerfile
-# Use a consistent Node.js LTS version (e.g., Node 20 or 22-alpine).
-# Sticking with 24-alpine if you have specific reasons, but ensure consistency.
-# For this example, I'll use Node 20-alpine for LTS stability.
+
 FROM node:24-alpine AS base
 LABEL authors="iSQL"
 WORKDIR /app
@@ -25,7 +22,6 @@ COPY prisma ./prisma/
 # Copy the rest of your application source code
 COPY . .
 
-# Now, generate Prisma Client right before the build, within this stage.
 # This ensures it uses the exact schema and dependencies present in this stage.
 RUN pnpm exec prisma generate
 
@@ -44,7 +40,6 @@ ENV NEXT_PUBLIC_CLERK_DOMAIN=${NEXT_PUBLIC_CLERK_DOMAIN}
 RUN pnpm build
 
 # ---- Runner Stage (Final Production Image) ----
-# Use the same Node.js version as the base/builder for consistency
 FROM node:24-alpine AS runner
 WORKDIR /app
 
@@ -64,7 +59,6 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 # Copy the Prisma schema. The Prisma client needs to know where to find the schema file at runtime.
 # The generated client code itself should be part of the .next/standalone/node_modules.
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
-COPY --from=builder --chown=nextjs:nodejs /app/dist-scripts ./dist-scripts
 # Switch to the non-root user
 USER nextjs
 
