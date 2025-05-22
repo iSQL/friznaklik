@@ -2,12 +2,11 @@ import { getCurrentUser, AuthenticatedUser } from '@/lib/authUtils';
 import prisma from '@/lib/prisma';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { UserRole } from '@/lib/types/prisma-enums';
 import {
     Appointment as PrismaAppointment,
     Service as PrismaService,
     Vendor as PrismaVendor,
-    Worker as PrismaWorker
+    Worker as PrismaWorker,UserRole
 } from '@prisma/client';
 import UserAppointmentList, { AppointmentWithServiceDetails } from '@/components/user/UserAppointmentList'; 
 import QuickReserveWidget from '@/components/QuickReserveWidget';

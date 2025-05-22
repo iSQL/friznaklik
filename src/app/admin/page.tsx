@@ -1,4 +1,3 @@
-// src/app/admin/page.tsx
 import Link from 'next/link';
 import prisma from '@/lib/prisma';
 import {
@@ -10,12 +9,12 @@ import {
     CalendarCheck,
     LayoutDashboard,
     Store, 
-    Edit2, // Importovana ikona za izmenu
+    Edit2, 
 } from 'lucide-react';
 import { getCurrentUser, AuthenticatedUser } from '@/lib/authUtils'; 
-import { UserRole, AppointmentStatus, VendorStatus } from '@/lib/types/prisma-enums'; // Koristimo UserRole direktno iz @prisma/client
+import { UserRole, AppointmentStatus, VendorStatus } from '@/lib/types/prisma-enums'; 
 import type { Metadata } from 'next';
-import { Prisma } from '@prisma/client'; // Import Prisma for types
+import { Prisma } from '@prisma/client';
 
 export const metadata: Metadata = {
   title: 'Admin Panel - FrizNaKlik',
@@ -26,7 +25,6 @@ export default async function AdminDashboardPage() {
     const user: AuthenticatedUser | null = await getCurrentUser();
 
     if (!user || (user.role !== UserRole.SUPER_ADMIN && user.role !== UserRole.VENDOR_OWNER)) {
-        // Umesto direktnog redirect-a, možemo prikazati poruku ili komponentu za neautorizovan pristup
         return (
              <div className="container mx-auto px-4 py-8 text-center">
                 <h1 className="text-2xl font-bold text-error mb-4">Pristup Odbijen</h1>
@@ -58,7 +56,6 @@ export default async function AdminDashboardPage() {
         whereClauseAppointments.vendorId = user.ownedVendorId;
         whereClauseServices.vendorId = user.ownedVendorId;
     } else if (user.role === UserRole.SUPER_ADMIN) {
-        // SUPER_ADMIN statistike
         totalSessionCount = await prisma.chatSession.count();
         totalUserCount = await prisma.user.count();
         activeVendorCount = await prisma.vendor.count({ where: { status: VendorStatus.ACTIVE }});
@@ -71,7 +68,6 @@ export default async function AdminDashboardPage() {
         ]);
     } catch (dbError) {
         console.error("Greška pri preuzimanju statistika:", dbError);
-        // Možete prikazati poruku o grešci korisniku
     }
 
 
@@ -118,20 +114,19 @@ export default async function AdminDashboardPage() {
             accentColor: 'border-secondary',
             roles: [UserRole.SUPER_ADMIN, UserRole.VENDOR_OWNER],
         },
-        // Panel za izmenu informacija o salonu - samo za VENDOR_OWNER
         ...(user.role === UserRole.VENDOR_OWNER && user.ownedVendorId ? [{
-            href: `/admin/vendors/edit/${user.ownedVendorId}`, // Dinamički link
+            href: `/admin/vendors/edit/${user.ownedVendorId}`, 
             title: 'Informacije o Salonu',
             description: 'Izmenite naziv, opis, adresu i radno vreme Vašeg salona.',
-            icon: Edit2, // Ikona za izmenu
-            accentColor: 'border-success', // Drugačija boja za isticanje
+            icon: Edit2, 
+            accentColor: 'border-success',
             roles: [UserRole.VENDOR_OWNER],
         }] : []),
         {
-            href: '/admin/workers', // VENDOR_OWNER će ovde upravljati svojim radnicima
+            href: '/admin/workers', 
             title: 'Upravljanje Radnicima',
             description: 'Dodajte, izmenite ili uklonite radnike Vašeg salona.',
-            icon: Users, // Ili Users2 ako preferirate
+            icon: Users, 
             accentColor: 'border-info',
             roles: [UserRole.VENDOR_OWNER],
         },
