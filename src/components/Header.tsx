@@ -1,31 +1,23 @@
 // src/components/Header.tsx
 'use client';
 
-import { UserButton, useAuth } from "@clerk/nextjs";
+import { UserButton, useAuth } from "@clerk/nextjs"; // Added useUser for robustness if needed
 import Link from "next/link";
 import Image from 'next/image';
 import {
-    Home, 
     CalendarDays,
-    ListOrdered,
-    MessageSquare,
+    MessageSquare, 
     Store,
-    Users2, 
-    Menu,
-    X,
     ShieldCheck,
-    Edit2,
     Building2,
     Loader2,
     Sun,
     Moon,
-    ShoppingBag,
     LayoutDashboard,
     LogIn,
-    UserPlus,
-    UserCircle, // For 'Moj Profil'
-    Settings, // For profile settings
-    ChevronDown
+    Settings, 
+    ChevronDown,
+    UserCircle 
 } from 'lucide-react';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { usePathname } from 'next/navigation';
@@ -36,16 +28,17 @@ import { useBookingStore } from '@/store/bookingStore';
 import Cookies from 'js-cookie';
 
 interface HeaderProps {
-  user: AuthenticatedUser | null;
-  isAdmin: boolean;
+  user: AuthenticatedUser | null; 
+  isAdmin: boolean; 
 }
 
 const THEME_COOKIE_NAME = 'friznaklik-theme';
 const LIGHT_THEME = 'light';
 const DARK_THEME = 'dark';
 
-export default function Header({ user, isAdmin }: HeaderProps) {
-  const { isLoaded, isSignedIn } = useAuth();
+export default function Header({ user: userProp, isAdmin: isAdminProp }: HeaderProps) { 
+  const { isLoaded: isAuthLoaded, isSignedIn } = useAuth(); 
+
   const pathname = usePathname();
 
   const {
@@ -60,8 +53,8 @@ export default function Header({ user, isAdmin }: HeaderProps) {
   const desktopVendorDropdownRef = useRef<HTMLDivElement>(null);
 
   const [currentTheme, setCurrentTheme] = useState<string>(LIGHT_THEME);
-  const [isPanelPopupOpen, setIsPanelPopupOpen] = useState(false); // State for the Panel popup
-  const panelPopupRef = useRef<HTMLDivElement>(null); // Ref for the Panel popup
+  const [isPanelPopupOpen, setIsPanelPopupOpen] = useState(false);
+  const panelPopupRef = useRef<HTMLDivElement>(null);
 
   const applyTheme = useCallback((themeToApply: string) => {
     document.documentElement.setAttribute('data-theme', themeToApply);
@@ -84,7 +77,6 @@ export default function Header({ user, isAdmin }: HeaderProps) {
     applyTheme(newTheme);
   };
 
-
   useEffect(() => {
     const showSelector = !pathname.startsWith('/admin') && !pathname.startsWith('/sign-in') && !pathname.startsWith('/sign-up');
     if (showSelector) {
@@ -98,7 +90,6 @@ export default function Header({ user, isAdmin }: HeaderProps) {
     }
   }, [selectedVendorId, storeAllVendors, setGlobalVendor]);
 
-
   const handleGlobalVendorSelect = (vendorId: string | null) => {
     setGlobalVendor(vendorId);
     setIsDesktopVendorDropdownOpen(false);
@@ -111,7 +102,6 @@ export default function Header({ user, isAdmin }: HeaderProps) {
       if (desktopVendorDropdownRef.current && !desktopVendorDropdownRef.current.contains(event.target as Node)) {
         setIsDesktopVendorDropdownOpen(false);
       }
-      // Close panel popup if clicked outside
       if (panelPopupRef.current && !panelPopupRef.current.contains(event.target as Node)) {
         setIsPanelPopupOpen(false);
       }
@@ -127,13 +117,15 @@ export default function Header({ user, isAdmin }: HeaderProps) {
     { href: "/book", label: "Zakazivanje", icon: CalendarDays, disabled: false },
   ];
 
+  // Define bottom navigation links with roles and a 'public' flag
   const bottomNavLinks = [
-    { href: "/vendors", label: "Saloni", icon: Building2, disabled: false, roles: [UserRole.USER, UserRole.WORKER, UserRole.VENDOR_OWNER, UserRole.SUPER_ADMIN] },
-    { href: "/book", label: "Zakaži", icon: CalendarDays, disabled: false, roles: [UserRole.USER, UserRole.WORKER, UserRole.VENDOR_OWNER, UserRole.SUPER_ADMIN] },
-    { href: "/chat", label: "AI Asistent", icon: MessageSquare, disabled: true, roles: [UserRole.USER, UserRole.WORKER, UserRole.VENDOR_OWNER, UserRole.SUPER_ADMIN] },
-    { href: "/dashboard", label: "Moj kutak", icon: LayoutDashboard, disabled: false, roles: [UserRole.USER, UserRole.WORKER, UserRole.VENDOR_OWNER, UserRole.SUPER_ADMIN] },
+    { href: "/vendors", label: "Saloni", icon: Building2, disabled: false, roles: [UserRole.USER, UserRole.WORKER, UserRole.VENDOR_OWNER, UserRole.SUPER_ADMIN], public: true },
+    { href: "/book", label: "Zakaži", icon: CalendarDays, disabled: false, roles: [UserRole.USER, UserRole.WORKER, UserRole.VENDOR_OWNER, UserRole.SUPER_ADMIN], public: true },
+    { href: "/admin", label: "Administracija", icon: Settings, disabled: false, roles: [UserRole.VENDOR_OWNER, UserRole.SUPER_ADMIN], public: false },
+    { href: "/my-schedule", label: "Moj raspored", icon: MessageSquare, disabled: false, roles: [UserRole.WORKER], public: false },
+    // Add "Moj kutak" / Dashboard link for all logged-in users
+    { href: "/dashboard", label: "Moj kutak", icon: LayoutDashboard, disabled: false, roles: [UserRole.USER, UserRole.WORKER, UserRole.VENDOR_OWNER, UserRole.SUPER_ADMIN], public: false },
   ];
-
 
   const toggleDesktopVendorDropdown = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -145,11 +137,18 @@ export default function Header({ user, isAdmin }: HeaderProps) {
     setIsPanelPopupOpen(prev => !prev);
   };
 
-  if (!isLoaded) {
+  // Derive current user's role based on client-side isSignedIn and the userProp from server
+  // userProp might be stale immediately after logout, so isSignedIn is the primary gate.
+  const currentUserRole = isSignedIn && userProp ? userProp.role : null;
+  // Derive admin status for top nav based on isSignedIn and server-provided isAdminProp (which is based on userProp)
+  const showDesktopAdminPanelLink = isSignedIn && isAdminProp;
+
+
+  if (!isAuthLoaded) { // Show skeleton loader while Clerk is initializing
     return (
       <div className="navbar bg-base-200 text-base-content shadow-md sticky top-0 z-50 print:hidden">
         <div className="navbar-start"><div className="btn btn-ghost px-2 flex items-center"><div className="h-8 w-32 bg-base-300 rounded animate-pulse"></div></div></div>
-        <div className="navbar-center hidden lg:flex"><ul className="menu menu-horizontal px-1 space-x-1">{[1, 2, 3, 4].map(i => <li key={i} className="h-9 w-24 bg-base-300 rounded animate-pulse"></li>)}</ul></div>
+        <div className="navbar-center hidden lg:flex"><ul className="menu menu-horizontal px-1 space-x-1">{[1, 2].map(i => <li key={i} className="h-9 w-24 bg-base-300 rounded animate-pulse"></li>)}</ul></div>
         <div className="navbar-end"><div className="h-9 w-28 bg-base-300 rounded animate-pulse mr-2"></div><div className="h-8 w-8 bg-base-300 rounded-full"></div></div>
       </div>
     );
@@ -169,22 +168,13 @@ export default function Header({ user, isAdmin }: HeaderProps) {
         <div className="navbar-center hidden lg:flex">
           {showVendorSelector && (
               <div className={`dropdown dropdown-end mr-2 ${isDesktopVendorDropdownOpen ? "dropdown-open" : ""}`} ref={desktopVendorDropdownRef}>
-              <button
-                  tabIndex={0}
-                  role="button"
-                  className="btn btn-ghost btn-sm"
-                  onClick={toggleDesktopVendorDropdown}
-                  aria-label="Izaberi salon"
-              >
+              <button tabIndex={0} role="button" className="btn btn-ghost btn-sm" onClick={toggleDesktopVendorDropdown} aria-label="Izaberi salon">
                   {storeIsLoadingAllVendors ? <Loader2 className="animate-spin h-4 w-4"/> : <Store size={16}/>}
                   <span className="ml-1 hidden xl:inline truncate max-w-[120px]">{selectedVendorName}</span>
                   <span className="ml-1 inline xl:hidden">{selectedVendorId && storeAllVendors.find(v=>v.id === selectedVendorId) ? storeAllVendors.find(v=>v.id === selectedVendorId)!.name.substring(0,5)+'...' : "Salon"}</span>
                   <ChevronDown size={16} className={`ml-1 transition-transform ${isDesktopVendorDropdownOpen ? 'rotate-180' : ''}`}/>
               </button>
-              <ul
-                  tabIndex={0}
-                  className="dropdown-content z-[51] menu p-2 shadow-xl bg-base-100 rounded-box w-52 max-h-60 overflow-y-auto"
-              >
+              <ul tabIndex={0} className="dropdown-content z-[51] menu p-2 shadow-xl bg-base-100 rounded-box w-52 max-h-60 overflow-y-auto">
                   {storeIsLoadingAllVendors && <li className="p-2 text-center"><span className="loading loading-dots loading-md"></span></li>}
                   {!storeIsLoadingAllVendors && storeAllVendors.length === 0 && <li><a className="text-sm text-base-content/70">Nema dostupnih salona</a></li>}
                   {storeAllVendors.map((vendor) => (
@@ -206,16 +196,9 @@ export default function Header({ user, isAdmin }: HeaderProps) {
           <ul className="menu menu-horizontal px-1 space-x-1">
             {topNavLinks.map((link) => (
               <li key={link.href}>
-                <Link
-                  href={link.disabled ? '#' : link.href}
-                  className={`btn btn-ghost font-medium
-                              ${pathname === link.href && !link.disabled ? 'btn-active text-primary' : ''}
-                              ${link.disabled ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}
-                            `}
-                  onClick={link.disabled ? (e) => e.preventDefault() : undefined}
-                  aria-disabled={link.disabled}
-                  tabIndex={link.disabled ? -1 : undefined}
-                  >
+                <Link href={link.disabled ? '#' : link.href}
+                  className={`btn btn-ghost font-medium ${pathname === link.href && !link.disabled ? 'btn-active text-primary' : ''} ${link.disabled ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}`}
+                  onClick={link.disabled ? (e) => e.preventDefault() : undefined} aria-disabled={link.disabled} tabIndex={link.disabled ? -1 : undefined}>
                   {link.label}
                 </Link>
               </li>
@@ -224,15 +207,11 @@ export default function Header({ user, isAdmin }: HeaderProps) {
         </div>
 
         <div className="navbar-end">
-          <button
-              onClick={toggleTheme}
-              className="btn btn-ghost btn-circle hidden lg:inline-flex"
-              aria-label={currentTheme === LIGHT_THEME ? "Aktiviraj tamnu temu" : "Aktiviraj svetlu temu"}
-            >
+          <button onClick={toggleTheme} className="btn btn-ghost btn-circle hidden lg:inline-flex" aria-label={currentTheme === LIGHT_THEME ? "Aktiviraj tamnu temu" : "Aktiviraj svetlu temu"}>
               {currentTheme === LIGHT_THEME ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
           </button>
 
-          {user ? (
+          {isSignedIn ? ( // Use client-side isSignedIn
             <>
               <ul className="menu menu-horizontal px-1 space-x-1 hidden lg:flex">
                   <li>
@@ -240,7 +219,7 @@ export default function Header({ user, isAdmin }: HeaderProps) {
                       <LayoutDashboard className="h-5 w-5" /> Kontrolna Tabla
                     </Link>
                   </li>
-                  {isAdmin && (
+                  {showDesktopAdminPanelLink && ( // Use derived admin status
                     <li>
                       <Link href="/admin" className={`btn btn-ghost font-medium ${pathname.startsWith('/admin') ? 'btn-active text-primary' : ''}`}>
                         <ShieldCheck className="h-5 w-5" /> Admin Panel
@@ -251,137 +230,98 @@ export default function Header({ user, isAdmin }: HeaderProps) {
               <div className="ml-2 pl-1 border-l border-base-300/70 hidden lg:flex items-center">
                 <UserButton
                   appearance={{ elements: { userButtonAvatarBox: "w-9 h-9", userButtonPopoverCard: "bg-base-100 border border-base-300 shadow-lg"} }}
+                  afterSignOutUrl="/"
                 />
               </div>
             </>
           ) : (
             <div className="hidden lg:flex items-center space-x-2">
-              <Link href="/sign-in" className="btn btn-ghost">Prijavi se</Link>
-              <Link href="/sign-up" className="btn btn-primary">Registruj se</Link>
+              <Link href={`/sign-in?redirect_url=${encodeURIComponent(pathname)}`} className="btn btn-ghost">Prijavi se</Link>
+              {/* <Link href={`/sign-up?redirect_url=${encodeURIComponent(pathname)}`} className="btn btn-primary">Registruj se</Link> */} {/* Mozda da sakrijem sign up, jer ga svakako ima na sign in page */}
             </div>
           )}
         </div>
       </nav>
 
+      {/* Bottom Navigation (for lg:hidden screens) */}
       <div className="btm-nav fixed bottom-0 left-0 right-0 w-full flex flex-row items-center justify-around lg:hidden z-[50] shadow-top bg-base-200 print:hidden">
-        {bottomNavLinks.map((item) => (
-          (item.roles.includes(user?.role as UserRole) || !user) && (
+        {bottomNavLinks.map((item) => {
+          let showLink = false;
+          if (item.public) {
+            showLink = true;
+          } else if (isSignedIn && currentUserRole) { // Check isSignedIn first
+            if (item.roles.includes(currentUserRole as UserRole)) {
+              showLink = true;
+            }
+          }
+
+          return showLink ? (
             <Link
               key={item.href}
               href={item.disabled ? '#' : item.href}
               className={`
-                ${pathname === item.href && !item.disabled
-                  ? 'active text-primary'
-                  : 'text-base-content hover:text-primary'
-                }
+                ${pathname === item.href && !item.disabled ? 'active text-primary' : 'text-base-content hover:text-primary'}
                 ${item.disabled ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}
-                flex flex-col items-center justify-center p-2 text-xs font-medium
+                flex flex-col items-center justify-center p-2 text-xs font-medium flex-1 min-w-0
               `}
               aria-current={pathname === item.href && !item.disabled ? 'page' : undefined}
               onClick={item.disabled ? (e) => e.preventDefault() : undefined}
             >
-              <item.icon className="h-5 w-5 mb-1" />
-              <span className="btm-nav-label">{item.label}</span>
+              <item.icon className="h-5 w-5 mb-0.5" />
+              <span className="btm-nav-label truncate">{item.label}</span>
             </Link>
-          )
-        ))}
+          ) : null;
+        })}
 
-        {/* User/Admin specific links or sign in/up for mobile bottom nav */}
+        {/* "Profil" dropdown or Sign In/Up for the last slot in btm-nav */}
         {isSignedIn ? (
-          <>
-            {/* Panel button with popup */}
-            <div className={`dropdown dropdown-top dropdown-end ${isPanelPopupOpen ? 'dropdown-open' : ''}`} ref={panelPopupRef}>
-              <button 
-                tabIndex={0}
-                role="button"
-                className={`
-                  btm-nav-item 
-                  ${isPanelPopupOpen ? 'active text-primary' : 'text-base-content hover:text-primary'}
-                  flex flex-col items-center justify-center p-2 text-xs font-medium
-                `}
-                onClick={togglePanelPopup}
-              >
-                 <Settings className="h-5 w-5 mb-1" /> 
-                <span className="btm-nav-label">Profil</span>
-              </button>
-              {/* Removed the conditional 'hidden' class from here */}
-              <ul tabIndex={0} className="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-52 mb-16">
-                                <li>
-                  {/* Clerk UserButton for Clerk Profile */}
-                  
-                  <div className="flex justify-center">
-                    <UserButton
-                      appearance={{
-                        elements: {
-                          userButtonAvatarBox: "w-8 h-8",
-                          userButtonPopoverCard: "bg-base-100 border border-base-300 shadow-lg"
-                        }
-                      }}
-                    />
-                  </div>
-                </li>
-
-                <li>
-                  <Link href="/user" onClick={() => setIsPanelPopupOpen(false)}>
-                    <Settings className="h-5 w-5" /> Podešavanja Profila
-                    
-                  </Link>
-                </li>
-                
-
-                {isAdmin && (
-                  <>
-                    <div className="divider my-0"></div>
-                    <li>
-                      <Link href="/admin" onClick={() => setIsPanelPopupOpen(false)}>
-                        <ShieldCheck className="h-5 w-5" /> Admin Panel
-                      </Link>
-                    </li>
-                  </>
-                )}
-                <div className="divider my-0"></div>
-                <li>
-                  <button
-                    onClick={() => { toggleTheme(); setIsPanelPopupOpen(false); }}
-                    className="flex items-center w-full"
-                  >
-                    {currentTheme === LIGHT_THEME ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
-                    <span className="ml-2">{currentTheme === LIGHT_THEME ? "Tamna tema" : "Svetla tema"}</span>
-                  </button>
-                </li>
-              </ul>
-            </div>
-          </>
+          <div className={`dropdown dropdown-top dropdown-end ${isPanelPopupOpen ? 'dropdown-open' : ''} flex-1 min-w-0`} ref={panelPopupRef}>
+            <button tabIndex={0} role="button"
+              className={`btm-nav-item ${isPanelPopupOpen ? 'active text-primary' : 'text-base-content hover:text-primary'} flex flex-col items-center justify-center p-2 text-xs font-medium w-full`}
+              onClick={togglePanelPopup}>
+               <Settings className="h-5 w-5 mb-0.5" /> 
+              <span className="btm-nav-label truncate">Profil</span>
+            </button>
+            <ul tabIndex={0} className="dropdown-content z-[51] menu p-2 shadow bg-base-100 rounded-box w-52 mb-16">
+              <li>
+                <div className="flex justify-center p-2">
+                  <UserButton appearance={{ elements: { userButtonAvatarBox: "w-8 h-8", userButtonPopoverCard: "bg-base-100 border border-base-300 shadow-lg"}}} afterSignOutUrl="/" />
+                </div>
+              </li>
+              <li>
+                <Link href="/user" onClick={() => setIsPanelPopupOpen(false)} className="text-sm">
+                  <UserCircle className="h-4 w-4 mr-2" /> Podešavanja Profila
+                </Link>
+              </li>
+              {showDesktopAdminPanelLink && ( // Re-use the same logic as desktop for Admin Panel link
+                <>
+                  <div className="divider my-0"></div>
+                  <li>
+                    <Link href="/admin" onClick={() => setIsPanelPopupOpen(false)} className="text-sm">
+                      <ShieldCheck className="h-4 w-4 mr-2" /> Admin Panel
+                    </Link>
+                  </li>
+                </>
+              )}
+              <div className="divider my-0"></div>
+              <li>
+                <button onClick={() => { toggleTheme(); setIsPanelPopupOpen(false); }} className="flex items-center w-full text-sm p-2 hover:bg-base-200 rounded">
+                  {currentTheme === LIGHT_THEME ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+                  <span className="ml-2">{currentTheme === LIGHT_THEME ? "Tamna tema" : "Svetla tema"}</span>
+                </button>
+              </li>
+            </ul>
+          </div>
         ) : (
           <>
-            <Link
-              href="/sign-in"
-              className={`
-                ${pathname.startsWith('/sign-in') ? 'active text-primary' : 'text-base-content hover:text-primary'}
-                flex flex-col items-center justify-center p-2 text-xs font-medium
-              `}
-            >
-              <LogIn className="h-5 w-5 mb-1" />
-              <span className="btm-nav-label">Prijava</span>
+            <Link href={`/sign-in?redirect_url=${encodeURIComponent(pathname)}`} className="text-base-content hover:text-primary flex flex-col items-center justify-center p-2 text-xs font-medium flex-1 min-w-0">
+              <LogIn className="h-5 w-5 mb-0.5" />
+              <span className="btm-nav-label truncate">Prijava</span>
             </Link>
-            <Link
-              href="/sign-up"
-              className={`
-                ${pathname.startsWith('/sign-up') ? 'active text-primary' : 'text-base-content hover:text-primary'}
-                flex flex-col items-center justify-center p-2 text-xs font-medium
-              `}
-            >
-              <UserPlus className="h-5 w-5 mb-1" />
-              <span className="btm-nav-label">Registracija</span>
-            </Link>
-             {/* Theme toggle for mobile bottom nav for signed out users */}
-             <button
-              onClick={toggleTheme}
-              className="flex flex-col items-center justify-center p-2 text-xs font-medium text-base-content hover:text-primary"
-              aria-label={currentTheme === LIGHT_THEME ? "Aktiviraj tamnu temu" : "Aktiviraj svetlu temu"}
-            >
-              {currentTheme === LIGHT_THEME ? <Moon className="h-5 w-5 mb-1" /> : <Sun className="h-5 w-5 mb-1" />}
-              <span className="btm-nav-label">Tema</span>
+
+             <button onClick={toggleTheme} className="text-base-content hover:text-primary flex flex-col items-center justify-center p-2 text-xs font-medium flex-1 min-w-0">
+              {currentTheme === LIGHT_THEME ? <Moon className="h-5 w-5 mb-0.5" /> : <Sun className="h-5 w-5 mb-0.5" />}
+              <span className="btm-nav-label truncate">Tema</span>
             </button>
           </>
         )}

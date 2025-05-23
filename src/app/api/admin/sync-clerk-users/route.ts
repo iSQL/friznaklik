@@ -25,7 +25,7 @@ async function syncClerkUsersLogic() {
             const userListResponse = await clerk.users.getUserList({
                 limit,
                 offset,
-                orderBy: '+created_at' as any,
+                orderBy: '+created_at',
             });
             const users = userListResponse.data ?? [];
             if (users.length > 0) {

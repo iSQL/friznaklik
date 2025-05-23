@@ -15,7 +15,6 @@ import {
     getDay,
     isToday 
 } from 'date-fns';
-import { getCurrentUser, AuthenticatedUser } from '@/lib/authUtils';
 import { Prisma } from '@prisma/client';
 import { AppointmentStatus, VendorStatus } from '@/lib/types/prisma-enums';
 
@@ -106,17 +105,13 @@ async function getWorkerEffectiveSchedule(
         openTime: setMilliseconds(setSeconds(setMinutes(setHours(forDate, wOH), wOM), 0), 0),
         closeTime: setMilliseconds(setSeconds(setMinutes(setHours(forDate, wCH), wCM), 0), 0),
       };
-    } catch { /* Fall through */ }
+    } catch {}
   }
   return getVendorOperatingHoursForDay(vendorOperatingHoursJson, forDate);
 }
 
 
 export async function GET(request: NextRequest) {
-  const user: AuthenticatedUser | null = await getCurrentUser();
-  if (!user) {
-    return NextResponse.json({ message: 'Neautorizovan pristup.' }, { status: 401 });
-  }
 
   try {
     const { searchParams } = new URL(request.url);

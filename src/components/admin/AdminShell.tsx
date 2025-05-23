@@ -246,7 +246,7 @@ export default function AdminShell({ children, user }: AdminShellProps) {
 
         {/* Glavni sadržaj */}
         <div className="flex flex-1 flex-col md:pl-64">
-          <div className="sticky top-0 z-10 flex h-16 flex-shrink-0 bg-base-100 shadow hidden md:flex">
+          <div className="sticky top-0 z-10 h-16 flex-shrink-0 bg-base-100 shadow hidden md:flex">
             <button
               type="button"
               className="border-r border-base-300 px-4 text-base-content focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary md:hidden"

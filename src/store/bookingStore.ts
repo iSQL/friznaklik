@@ -1,17 +1,13 @@
-// src/store/bookingStore.ts
 import { create } from 'zustand';
 import { persist, createJSONStorage, StateStorage } from 'zustand/middleware';
 import Cookies from 'js-cookie'; // For cookie handling
 import type { Vendor } from '@prisma/client';
 
-// Define WorkerInfo structure as returned by the API
 export interface WorkerInfo {
   id: string;
   name: string | null;
-  // Add other relevant worker details if needed for display, e.g., photoUrl
 }
 
-// Define SlotWithWorkers structure as returned by the API
 export interface SlotWithWorkers {
   time: string; // "HH:mm"
   availableWorkers: WorkerInfo[];
@@ -22,7 +18,7 @@ interface BookingState {
   selectedVendorId: string | null;
   selectedServiceId: string | null;
   preferredWorkerIdForFilter: string | null; // User's preferred worker for filtering slots
-  selectedDate: Date | null;
+  selectedDate: Date | null; // Storing as ISO string for persistence, converting on use
   availableSlotsData: SlotWithWorkers[]; // Slots available based on vendor, service, date, AND preferredWorkerIdForFilter
   selectedSlotTime: string | null;
   selectedWorkerForBookingId: string | null; // The actual worker assigned to the booking for this slot
@@ -38,22 +34,23 @@ interface BookingState {
   // Actions to update the state
   selectVendor: (vendorId: string | null) => void;
   selectService: (serviceId: string | null) => void;
-  selectPreferredWorkerForFilter: (workerId: string | null) => void; // New action
+  selectPreferredWorkerForFilter: (workerId: string | null) => void;
   selectDate: (date: Date | null) => void;
   setAvailableSlotsData: (slotsData: SlotWithWorkers[]) => void;
-  selectSlotTime: (slotTime: string | null) => void; // Will also handle setting selectedWorkerForBookingId
+  selectSlotTime: (slotTime: string | null) => void;
   setBookingNotes: (notes: string | null) => void;
   setBookingStatus: (status: 'idle' | 'submitting' | 'success' | 'error') => void;
   setBookingError: (error: string | null) => void;
   resetBookingState: () => void;
-  resetServiceAndBelow: () => void; // Resets from service selection downwards
-  resetWorkerAndBelow: () => void; // Resets from worker filter selection downwards
-  resetDateAndSlots: () => void; // Resets from date selection downwards
+  resetServiceAndBelow: () => void;
+  resetWorkerAndBelow: () => void;
+  resetDateAndSlots: () => void;
 
   setAllVendors: (vendors: Vendor[]) => void;
   setIsLoadingAllVendors: (loading: boolean) => void;
   fetchAndSetAllVendors: () => Promise<void>;
   setHydrated: (hydrated: boolean) => void;
+  clearTransientBookingDetails: () => void; // New action to clear sensitive parts after booking
 }
 
 const initialStateValues: Omit<BookingState,
@@ -62,12 +59,12 @@ const initialStateValues: Omit<BookingState,
   | 'selectSlotTime' | 'setBookingNotes'
   | 'setBookingStatus' | 'setBookingError' | 'resetBookingState'
   | 'resetServiceAndBelow' | 'resetWorkerAndBelow' | 'resetDateAndSlots' | 'setAllVendors'
-  | 'setIsLoadingAllVendors' | 'fetchAndSetAllVendors' | 'setHydrated'
+  | 'setIsLoadingAllVendors' | 'fetchAndSetAllVendors' | 'setHydrated' | 'clearTransientBookingDetails'
 > = {
   selectedVendorId: null,
   selectedServiceId: null,
-  preferredWorkerIdForFilter: null, // Initialize new state
-  selectedDate: null,
+  preferredWorkerIdForFilter: null,
+  selectedDate: null, // Will be stored as ISO string
   availableSlotsData: [],
   selectedSlotTime: null,
   selectedWorkerForBookingId: null,
@@ -75,7 +72,7 @@ const initialStateValues: Omit<BookingState,
   bookingStatus: 'idle',
   bookingError: null,
   allVendors: [],
-  isLoadingAllVendors: true,
+  isLoadingAllVendors: true, // Start with true to indicate initial loading
   isHydrated: false,
 };
 
@@ -87,7 +84,8 @@ const cookieStorage: StateStorage = {
     return value === undefined ? null : value;
   },
   setItem: (name: string, value: string): void | Promise<void> => {
-    Cookies.set(name, value, { expires: 7, path: '/' });
+    // Expires in 1 day for guest booking flow persistence
+    Cookies.set(name, value, { expires: 1, path: '/' });
   },
   removeItem: (name: string): void | Promise<void> => {
     Cookies.remove(name, { path: '/' });
@@ -104,11 +102,18 @@ export const useBookingStore = create<BookingState>()(
       selectVendor: (vendorId) => set((state) => {
         if (state.selectedVendorId !== vendorId) {
           return {
-            ...initialStateValues, // Reset most fields
-            allVendors: state.allVendors,
-            isLoadingAllVendors: state.isLoadingAllVendors,
-            isHydrated: state.isHydrated,
+            // Reset only fields dependent on vendor, keep allVendors and loading state
             selectedVendorId: vendorId,
+            selectedServiceId: null,
+            preferredWorkerIdForFilter: null,
+            selectedDate: null,
+            availableSlotsData: [],
+            selectedSlotTime: null,
+            selectedWorkerForBookingId: null,
+            bookingNotes: null, // Or decide to keep notes
+            bookingStatus: 'idle',
+            bookingError: null,
+            // Keep: allVendors, isLoadingAllVendors, isHydrated
           };
         }
         return { selectedVendorId: vendorId };
@@ -116,32 +121,29 @@ export const useBookingStore = create<BookingState>()(
 
       selectService: (serviceId) => set((state) => {
         if (state.selectedServiceId !== serviceId) {
-          return { // Reset states from worker filter downwards
+          return {
             selectedServiceId: serviceId,
             preferredWorkerIdForFilter: null,
             selectedDate: null,
             availableSlotsData: [],
             selectedSlotTime: null,
             selectedWorkerForBookingId: null,
-            bookingNotes: null,
           };
         }
         return { selectedServiceId: serviceId };
       }),
       
-      selectPreferredWorkerForFilter: (workerId) => set({ // New action
+      selectPreferredWorkerForFilter: (workerId) => set({
         preferredWorkerIdForFilter: workerId,
-        // Reset subsequent selections as changing worker filter invalidates them
         selectedDate: null,
         availableSlotsData: [],
         selectedSlotTime: null,
         selectedWorkerForBookingId: null,
-        // bookingNotes can be kept or reset based on preference
       }),
 
       selectDate: (date) => set({
-        selectedDate: date,
-        availableSlotsData: [], // Reset slots when date changes
+        selectedDate: date, // Store as Date object in memory
+        availableSlotsData: [],
         selectedSlotTime: null,
         selectedWorkerForBookingId: null,
       }),
@@ -153,18 +155,13 @@ export const useBookingStore = create<BookingState>()(
         if (slotTime) {
           const slotData = state.availableSlotsData.find(s => s.time === slotTime);
           if (slotData && slotData.availableWorkers.length > 0) {
-            // If a preferred worker was used for filtering AND they are available in this specific slot, select them.
             if (state.preferredWorkerIdForFilter && slotData.availableWorkers.some(w => w.id === state.preferredWorkerIdForFilter)) {
               workerForBooking = state.preferredWorkerIdForFilter;
             } else {
-              // Otherwise, (no preference or preferred not in slot), pick the first available worker for this slot.
               workerForBooking = slotData.availableWorkers[0].id;
             }
           }
-          // If slotData is found but availableWorkers is empty, workerForBooking remains null.
-          // If slotTime is provided but slotData is not found (shouldn't happen), workerForBooking remains null.
         }
-        // If slotTime is null (deselecting a slot), workerForBooking will be null.
         return {
             selectedSlotTime: slotTime,
             selectedWorkerForBookingId: workerForBooking,
@@ -177,8 +174,8 @@ export const useBookingStore = create<BookingState>()(
 
       resetBookingState: () => set((state) => ({
         ...initialStateValues,
-        allVendors: state.allVendors,
-        isLoadingAllVendors: state.isLoadingAllVendors,
+        allVendors: state.allVendors, // Keep fetched vendors
+        isLoadingAllVendors: state.allVendors.length === 0, // Recalculate loading state
         isHydrated: state.isHydrated,
       })),
 
@@ -189,16 +186,15 @@ export const useBookingStore = create<BookingState>()(
         availableSlotsData: [],
         selectedSlotTime: null,
         selectedWorkerForBookingId: null,
-        bookingNotes: null,
+        bookingNotes: null, // Or decide to keep notes
       }),
       
-      resetWorkerAndBelow: () => set({ // New reset function
+      resetWorkerAndBelow: () => set({
         preferredWorkerIdForFilter: null,
         selectedDate: null,
         availableSlotsData: [],
         selectedSlotTime: null,
         selectedWorkerForBookingId: null,
-        // bookingNotes can be kept or reset
       }),
 
       resetDateAndSlots: () => set({
@@ -207,56 +203,107 @@ export const useBookingStore = create<BookingState>()(
         selectedSlotTime: null,
         selectedWorkerForBookingId: null,
       }),
+      
+      // Action to clear sensitive/transient booking details after successful booking or if user navigates away
+      clearTransientBookingDetails: () => set({
+        preferredWorkerIdForFilter: null,
+        selectedDate: null,
+        availableSlotsData: [],
+        selectedSlotTime: null,
+        selectedWorkerForBookingId: null,
+        bookingNotes: null,
+        bookingStatus: 'idle',
+        bookingError: null,
+      }),
 
       setAllVendors: (vendors) => set({ allVendors: vendors, isLoadingAllVendors: false }),
       setIsLoadingAllVendors: (loading) => set({ isLoadingAllVendors: loading }),
 
       fetchAndSetAllVendors: async () => {
-        if (get().allVendors.length > 0 && !get().isLoadingAllVendors && get().isHydrated) { // Check isHydrated
-            // Data already loaded and store is hydrated, no need to refetch unless forced.
-            // If not hydrated, it means this might be the first load after rehydration,
-            // and we might want to ensure data is fresh or rely on persisted data.
-            // For now, if allVendors has data and store is hydrated, we assume it's okay.
-            // If not hydrated, it will proceed to fetch.
-            if(get().isHydrated) return;
+        // Only fetch if vendors are not loaded or if not hydrated (to ensure data on first load after rehydration)
+        if (get().allVendors.length > 0 && get().isHydrated && !get().isLoadingAllVendors) {
+             // If hydrated and vendors are present, and not currently loading, assume data is fine.
+            return;
         }
+        // If not hydrated, it means this might be the first load after rehydration,
+        // or initial load. Proceed to fetch.
 
         set({ isLoadingAllVendors: true });
         try {
           const response = await fetch(`${SITE_URL}/api/vendors`);
           if (!response.ok) {
-            throw new Error('Neuspešno preuzimanje liste salona za prodavnicu');
+            // Consider logging the actual status: response.status
+            throw new Error('Neuspešno preuzimanje liste salona za prodavnicu.');
           }
           const data: Vendor[] = await response.json();
           set({ allVendors: data, isLoadingAllVendors: false });
         } catch (error) {
           console.error("Greška pri preuzimanju salona za prodavnicu:", error);
-          set({ isLoadingAllVendors: false, allVendors: [] }); // Set to empty on error
+          set({ isLoadingAllVendors: false, allVendors: [] });
         }
       },
     }),
     {
-      name: 'friznaklik-booking-storage', // Updated name to reflect more general booking state
+      name: 'friznaklik-booking-storage-v2', // Consider versioning if schema changes significantly
       storage: createJSONStorage(() => cookieStorage),
-      partialize: (state) => ({
-        selectedVendorId: state.selectedVendorId,
-        // Persist other relevant fields if needed, e.g., preferredWorkerIdForFilter
-        // For now, only selectedVendorId is persisted.
-      }),
-      onRehydrateStorage: () => (state) => {
+      partialize: (state) => {
+        // Persist more details for guest booking flow
+        return {
+          selectedVendorId: state.selectedVendorId,
+          selectedServiceId: state.selectedServiceId,
+          preferredWorkerIdForFilter: state.preferredWorkerIdForFilter,
+          // Persist selectedDate as ISO string if it's a Date object, otherwise null
+          selectedDate: state.selectedDate ? state.selectedDate.toISOString() : null,
+          selectedSlotTime: state.selectedSlotTime,
+          // Do not persist selectedWorkerForBookingId or availableSlotsData as they are transient/large
+          bookingNotes: state.bookingNotes,
+        };
+      },
+      onRehydrateStorage: () => (state, error) => {
+        if (error) {
+          console.error("Greška pri rehidrataciji booking prodavnice:", error);
+          // Fallback: set hydrated to true and potentially reset to initial values
+          // to avoid inconsistent state or loops.
+          useBookingStore.setState({ 
+            ...initialStateValues, // Reset to initial values on error
+            isHydrated: true, 
+            isLoadingAllVendors: initialStateValues.allVendors.length === 0 
+          });
+          return;
+        }
         if (state) {
-            state.setHydrated(true);
-            console.log('Booking store rehydrated, selectedVendorId:', state.selectedVendorId);
-            // After rehydration, if selectedVendorId exists, other dependent states are reset by selectVendor
-            // or subsequent actions. We might want to trigger a fetch for services if a vendor is rehydrated.
-            // This is handled by the useEffect in the /book page now.
+          // Convert selectedDate back to Date object if it was stored as ISO string
+          const rehydratedDate = state.selectedDate;
+          if (typeof rehydratedDate === 'string') {
+            state.selectedDate = new Date(rehydratedDate);
+          } else {
+             state.selectedDate = null; // Or keep as is if already null/Date
+          }
+          state.setHydrated(true);
+          console.log('Booking prodavnica rehidratisana:', {
+            selectedVendorId: state.selectedVendorId,
+            selectedServiceId: state.selectedServiceId,
+            selectedDate: state.selectedDate,
+          });
+          // Trigger fetching all vendors if not already loaded, to ensure vendor list is available
+          // This is important if the user lands directly on /book page after rehydration
+          if (state.allVendors.length === 0) {
+            state.fetchAndSetAllVendors();
+          }
         } else {
-            // If state is null/undefined after rehydration attempt, ensure hydrated is true to prevent loops
-            useBookingStore.setState({ isHydrated: true, isLoadingAllVendors: false });
-            console.log('Booking store rehydration: No persisted state found or error during rehydration.');
+          // If state is null/undefined after rehydration attempt (e.g. no cookie)
+          useBookingStore.setState({ 
+            isHydrated: true, 
+            isLoadingAllVendors: useBookingStore.getState().allVendors.length === 0 
+          });
+          console.log('Booking prodavnica rehidratacija: Nema sačuvanog stanja.');
+           // Fetch vendors if none are loaded, as this might be the first visit
+          if (useBookingStore.getState().allVendors.length === 0) {
+            useBookingStore.getState().fetchAndSetAllVendors();
+          }
         }
       },
+      version: 2, // Increment version if you change persisted state structure
     }
   )
 );
-
