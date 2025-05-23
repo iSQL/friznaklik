@@ -12,7 +12,7 @@ const Footer: React.FC = () => {
           <Link href="/uslovi-koriscenja" className="link link-hover text-sm mx-2">
             Uslovi korišćenja
           </Link>
-          <span className="text-sm mx-1 hidden sm:inline">|</span> {/* Sakrij separator na najmanjim ekranima ako je potrebno */}
+          <span className="text-sm mx-1 hidden sm:inline">|</span>
           <Link href="/politika-privatnosti" className="link link-hover text-sm mx-2">
             Politika privatnosti
           </Link>
