@@ -246,7 +246,7 @@ export default function AdminShell({ children, user }: AdminShellProps) {
 
         {/* Glavni sadržaj */}
         <div className="flex flex-1 flex-col md:pl-64">
-          <div className="sticky top-0 z-10 flex h-16 flex-shrink-0 bg-base-100 shadow">
+          <div className="sticky top-0 z-10 flex h-16 flex-shrink-0 bg-base-100 shadow hidden md:flex">
             <button
               type="button"
               className="border-r border-base-300 px-4 text-base-content focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary md:hidden"
@@ -275,6 +275,29 @@ export default function AdminShell({ children, user }: AdminShellProps) {
             </div>
           </main>
         </div>
+      </div>
+
+      {/* Fixed bottom menu for mobile */}
+      <div className="btm-nav fixed bottom-0 left-0 right-0 w-full flex flex-row items-center justify-around md:hidden z-[50] shadow-top bg-base-200 print:hidden">
+        {visibleNavLinks.slice(0, 5).map((item) => ( // Display up to 5 items in the bottom nav
+          <Link
+            key={item.name}
+            href={item.disabled ? '#' : item.href}
+            className={`
+              ${pathname === item.href && !item.disabled
+                ? 'active text-primary' // DaisyUI active class for btm-nav
+                : 'text-base-content hover:text-primary'
+              }
+              ${item.disabled ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}
+              flex flex-col items-center justify-center p-2 text-xs font-medium
+            `}
+            aria-current={pathname === item.href && !item.disabled ? 'page' : undefined}
+            onClick={item.disabled ? (e) => e.preventDefault() : () => setSidebarOpen(false)} // Close sidebar on click
+          >
+            <item.icon className="h-5 w-5 mb-1" />
+            <span className="btm-nav-label">{item.name}</span>
+          </Link>
+        ))}
       </div>
     </>
   );
