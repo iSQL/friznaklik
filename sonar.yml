@@ -1,5 +1,4 @@
-pool:
-  vmImage: 'Default' # Or your preferwred agent image
+pool: "default"
 
 variables:
   # Define SonarCloud service connection and project details
