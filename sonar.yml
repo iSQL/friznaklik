@@ -1,10 +1,9 @@
 pool:
-  vmImage: 'Default' # Or your preferred agent image
+  vmImage: 'Default' # Or your preferwred agent image
 
 variables:
   # Define SonarCloud service connection and project details
   # The SONAR_TOKEN should be a secret variable in your Azure DevOps pipeline settings
-  - group: SonarCloudSecrets # Example variable group for SONAR_TOKEN
   - name: sonarCloudServiceConnection
     value: 'Sonar Cloud' # Your SonarCloud service connection name in Azure DevOps
   - name: sonarProjectKey
