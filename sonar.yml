@@ -46,11 +46,11 @@ stages:
         #   sonar.sources=src
         #   sonar.typescript.tsconfigPath=tsconfig.json
 
-    - script: |
-        pnpm build
-      displayName: 'Build Project'
-      workingDirectory: '$(Build.SourcesDirectory)'
-      condition: succeeded()
+#    - script: |
+ #       pnpm build
+  #    displayName: 'Build Project'
+   #   workingDirectory: '$(Build.SourcesDirectory)'
+    #  condition: succeeded()
 
     - task: SonarCloudAnalyze@2
       displayName: 'Run SonarCloud Analysis'
