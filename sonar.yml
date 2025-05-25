@@ -1,5 +1,5 @@
-pool: "default"
-
+pool: 
+    name: 'Default'
 variables:
   # Define SonarCloud service connection and project details
   # The SONAR_TOKEN should be a secret variable in your Azure DevOps pipeline settings
