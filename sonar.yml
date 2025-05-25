@@ -1,0 +1,77 @@
+pool:
+  vmImage: 'Default' # Or your preferred agent image
+
+variables:
+  # Define SonarCloud service connection and project details
+  # The SONAR_TOKEN should be a secret variable in your Azure DevOps pipeline settings
+  - group: SonarCloudSecrets # Example variable group for SONAR_TOKEN
+  - name: sonarCloudServiceConnection
+    value: 'Sonar Cloud' # Your SonarCloud service connection name in Azure DevOps
+  - name: sonarProjectKey
+    value: 'ZabariServer_FrizNaKlik'
+  - name: sonarOrganization
+    value: 'zabariserver'
+  - name: buildWrapperTarget
+    value: 'build_wrapper_output_directory' # Directory for the build wrapper output
+
+stages:
+- stage: BuildAndAnalyze
+  displayName: 'Build and Analyze with SonarCloud'
+  jobs:
+  - job: SonarCloudAnalysis
+    displayName: 'Run SonarCloud Analysis'
+    steps:
+    - task: NodeTool@0 # Installs Node.js, adjust version if needed
+      inputs:
+        versionSpec: '20.x' # Or your project's Node.js version
+      displayName: 'Install Node.js'
+
+    - script: |
+        npm install -g pnpm # Install pnpm globally if not already on the agent
+        pnpm install --frozen-lockfile
+      displayName: 'Install Dependencies (pnpm)'
+      workingDirectory: '$(Build.SourcesDirectory)' # Or your project root if different
+
+    - task: SonarCloudPrepare@2 # Prepare SonarCloud analysis configuration
+      inputs:
+        SonarCloud: '$(sonarCloudServiceConnection)'
+        organization: '$(sonarOrganization)'
+        scannerMode: 'CLI'
+        projectKey: '$(sonarProjectKey)'
+        projectName: '$(sonarProjectKey)' # Usually same as projectKey
+        # extraProperties: |
+        #   # Additional SonarCloud properties can be added here, for example:
+        #   sonar.sources=src
+        #   sonar.exclusions=**/__tests__/**,**/*.test.tsx,**/*.spec.tsx
+        #   sonar.typescript.tsconfigPath=tsconfig.json
+        #   # sonar.javascript.lcov.reportPaths=$(Build.SourcesDirectory)/coverage/lcov.info # If you have test coverage
+      displayName: 'Prepare SonarCloud Analysis'
+
+    # If your project requires a build step that SonarCloud needs to wrap (e.g., for C#, C++, Java, etc.)
+    # you would typically use the SonarCloud build wrapper here.
+    # For JavaScript/TypeScript projects, a direct scan after linting/tests is often sufficient.
+    # If a build wrapper is needed for your specific JS/TS setup (e.g. with specific transpilers):
+    # - script: |
+    #     build-wrapper-linux-x86-64 --out-dir $(buildWrapperTarget) pnpm build
+    #   displayName: 'Build with SonarCloud Build Wrapper'
+    #   workingDirectory: '$(Build.SourcesDirectory)'
+    # Else, for typical JS/TS projects, a build might not be wrapped, or it's part of the `sonar.sources`
+    # The `sonar.typescript.tsconfigPath` property usually helps SonarCloud understand the project structure.
+
+    # Optional: Run tests and generate coverage reports if you want SonarCloud to pick them up
+    # - script: |
+    #     pnpm test --coverage
+    #   displayName: 'Run Tests and Generate Coverage'
+    #   workingDirectory: '$(Build.SourcesDirectory)'
+    #   continueOnError: true # Allow analysis even if tests fail (optional)
+
+    - task: SonarCloudAnalyze@2
+      displayName: 'Run SonarCloud Analysis'
+      # If using build wrapper, add:
+      # env:
+      #   SONAR_SCANNER_OPTS: "-Dsonar.cfamily.build-wrapper-output=$(buildWrapperTarget)"
+
+    - task: SonarCloudPublish@2
+      displayName: 'Publish SonarCloud Quality Gate Result'
+      inputs:
+        pollingTimeoutSec: '300' # Timeout for waiting for the analysis to complete
