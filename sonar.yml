@@ -31,11 +31,13 @@ stages:
     - task: SonarCloudPrepare@2
       displayName: 'Prepare SonarCloud Analysis'
       inputs:
-        SonarCloud: '$(sonarCloudServiceConnection)'
-        organization: '$(sonarOrganization)'
+        SonarCloud: 'Sonar Cloud'
+        organization: 'zabariserver'
         scannerMode: 'CLI'
-        projectKey: '$(sonarProjectKey)'
-        projectName: '$(sonarProjectKey)'
+        configMode: 'manual'
+        cliProjectKey: 'ZabariServer_FrizNaKlik'
+        cliProjectName: 'FrizNaKlik'
+        cliSources: '.'
         # Ensure SONAR_TOKEN is available as an environment variable for this task
         # If you've set it as a secret variable named SONAR_TOKEN in the pipeline UI,
         # it should be automatically available.
